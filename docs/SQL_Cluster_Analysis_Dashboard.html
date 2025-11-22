@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL 군집분석 튜닝 대시보드 - TMS v2.0</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Malgun Gothic', sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 20px;
+        }
+        
+        @media (max-width: 1400px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .card-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        /* 컨트롤 패널 */
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .control-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+        
+        .control-input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            grid-column: 1 / -1;
+        }
+        
+        .btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #11998e, #38ef7d);
+            color: white;
+        }
+        
+        .btn-warning {
+            background: linear-gradient(135deg, #f093fb, #f5576c);
+            color: white;
+        }
+        
+        /* 차트 컨테이너 */
+        .chart-container {
+            position: relative;
+            min-height: 600px;
+        }
+        
+        #scatterPlot {
+            width: 100%;
+            height: 600px;
+        }
+        
+        /* 클러스터 정보 */
+        .cluster-info {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .cluster-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        
+        .cluster-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: bold;
+        }
+        
+        .cluster-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+        }
+        
+        .cluster-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            font-size: 12px;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .stat-label {
+            color: #666;
+        }
+        
+        .stat-value {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        /* SQL 정보 패널 */
+        .sql-info-panel {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .sql-details {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .sql-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        
+        .sql-id {
+            font-weight: bold;
+            color: #2c3e50;
+            font-size: 14px;
+        }
+        
+        .sql-cluster {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .sql-metrics {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+            margin: 10px 0;
+        }
+        
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 12px;
+        }
+        
+        .metric-name {
+            color: #666;
+        }
+        
+        .metric-value {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .sql-text {
+            background: #2c3e50;
+            color: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: 'Consolas', monospace;
+            font-size: 11px;
+            margin-top: 10px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        
+        .tuning-btn {
+            width: 100%;
+            padding: 10px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: all 0.3s;
+        }
+        
+        .tuning-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        /* 범례 */
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 12px;
+        }
+        
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        
+        /* 통계 요약 */
+        .stats-summary {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #f5f7fa, #c3cfe2);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-card-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card-label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+        }
+        
+        /* 모달 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            padding: 20px;
+        }
+        
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            max-width: 900px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+        }
+        
+        /* AI 튜닝 가이드 */
+        .ai-guide {
+            background: linear-gradient(135deg, #667eea20, #764ba220);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .ai-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .ai-icon {
+            font-size: 24px;
+        }
+        
+        .ai-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .ai-recommendation {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        
+        .recommendation-title {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        .recommendation-content {
+            font-size: 13px;
+            line-height: 1.6;
+            color: #666;
+        }
+        
+        .code-block {
+            background: #2c3e50;
+            color: #f0f0f0;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        
+        /* 로딩 애니메이션 */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .loading.active {
+            display: block;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎯 SQL 군집분석 튜닝 대시보드</h1>
+        <p>머신러닝 기반 SQL 성능 군집 분석 및 튜닝 대상 자동 식별</p>
+    </div>
+    
+    <div class="container">
+        <!-- 통계 요약 -->
+        <div class="stats-summary">
+            <div class="stat-card">
+                <div class="stat-card-value" id="totalSQLs">523</div>
+                <div class="stat-card-label">전체 SQL</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-value" id="criticalSQLs">47</div>
+                <div class="stat-card-label">Critical (튜닝 필요)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-value" id="warningSQLs">89</div>
+                <div class="stat-card-label">Warning (검토 필요)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-value" id="normalSQLs">387</div>
+                <div class="stat-card-label">Normal</div>
+            </div>
+        </div>
+        
+        <div class="dashboard-grid">
+            <!-- 왼쪽: 산점도 차트 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">📊 SQL 성능 군집 분석</h3>
+                    <div>
+                        <button class="btn btn-primary" onclick="runClustering()">🔄 클러스터링 실행</button>
+                    </div>
+                </div>
+                
+                <!-- 컨트롤 패널 -->
+                <div class="controls">
+                    <div class="control-group">
+                        <label class="control-label">X축 메트릭</label>
+                        <select class="control-input" id="xAxis" onchange="updatePlot()">
+                            <option value="elapsed_time">Elapsed Time (ms)</option>
+                            <option value="buffer_gets" selected>Buffer Gets</option>
+                            <option value="cpu_time">CPU Time (ms)</option>
+                            <option value="disk_reads">Disk Reads</option>
+                            <option value="executions">Executions</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label class="control-label">Y축 메트릭</label>
+                        <select class="control-input" id="yAxis" onchange="updatePlot()">
+                            <option value="elapsed_time" selected>Elapsed Time (ms)</option>
+                            <option value="buffer_gets">Buffer Gets</option>
+                            <option value="cpu_time">CPU Time (ms)</option>
+                            <option value="disk_reads">Disk Reads</option>
+                            <option value="executions">Executions</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label class="control-label">Z축 메트릭 (크기)</label>
+                        <select class="control-input" id="zAxis" onchange="updatePlot()">
+                            <option value="cpu_time" selected>CPU Time (ms)</option>
+                            <option value="elapsed_time">Elapsed Time (ms)</option>
+                            <option value="buffer_gets">Buffer Gets</option>
+                            <option value="disk_reads">Disk Reads</option>
+                            <option value="executions">Executions</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label class="control-label">클러스터링 알고리즘</label>
+                        <select class="control-input" id="algorithm" onchange="runClustering()">
+                            <option value="kmeans">K-Means</option>
+                            <option value="dbscan">DBSCAN</option>
+                            <option value="hierarchical">Hierarchical</option>
+                        </select>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-success" onclick="exportClusters()">📥 클러스터 내보내기</button>
+                        <button class="btn btn-warning" onclick="identifyOutliers()">⚠️ 이상치 감지</button>
+                    </div>
+                </div>
+                
+                <!-- 산점도 차트 -->
+                <div class="chart-container">
+                    <div id="scatterPlot"></div>
+                </div>
+                
+                <!-- 범례 -->
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #e74c3c;"></div>
+                        <span>Critical (튜닝 필수)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #f39c12;"></div>
+                        <span>Warning (검토 필요)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #3498db;"></div>
+                        <span>Normal (양호)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #2ecc71;"></div>
+                        <span>Optimal (최적)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #9b59b6;"></div>
+                        <span>Outlier (이상치)</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 오른쪽: SQL 정보 패널 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">📋 SQL 상세 정보</h3>
+                </div>
+                
+                <div class="sql-info-panel">
+                    <!-- 클러스터 정보 -->
+                    <div id="clusterInfo">
+                        <div class="cluster-info">
+                            <div class="cluster-header">
+                                <div class="cluster-label">
+                                    <div class="cluster-color" style="background: #e74c3c;"></div>
+                                    <span>Critical Cluster</span>
+                                </div>
+                                <span style="font-size: 12px; color: #666;">47 SQLs</span>
+                            </div>
+                            <div class="cluster-stats">
+                                <div class="stat-item">
+                                    <span class="stat-label">평균 Elapsed Time</span>
+                                    <span class="stat-value">5,234ms</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">평균 Buffer Gets</span>
+                                    <span class="stat-value">523,456</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">평균 CPU Time</span>
+                                    <span class="stat-value">3,456ms</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">튜닝 우선순위</span>
+                                    <span class="stat-value" style="color: #e74c3c;">매우 높음</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 선택된 SQL 정보 -->
+                    <div id="selectedSQL" style="display: none;">
+                        <div class="sql-details">
+                            <div class="sql-header">
+                                <span class="sql-id" id="sqlId">SQL_ID: abc123def456</span>
+                                <span class="sql-cluster" id="sqlCluster" style="background: #e74c3c;">Critical</span>
+                            </div>
+                            
+                            <div class="sql-metrics">
+                                <div class="metric-row">
+                                    <span class="metric-name">Elapsed Time</span>
+                                    <span class="metric-value" id="sqlElapsedTime">5,234ms</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-name">Buffer Gets</span>
+                                    <span class="metric-value" id="sqlBufferGets">523,456</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-name">CPU Time</span>
+                                    <span class="metric-value" id="sqlCpuTime">3,456ms</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-name">Disk Reads</span>
+                                    <span class="metric-value" id="sqlDiskReads">12,345</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-name">Executions</span>
+                                    <span class="metric-value" id="sqlExecutions">234</span>
+                                </div>
+                            </div>
+                            
+                            <div class="sql-text" id="sqlText">
+                                SELECT o.order_id, c.customer_name
+                                FROM orders o, customers c
+                                WHERE o.customer_id = c.customer_id
+                                AND o.order_date >= SYSDATE - 365
+                            </div>
+                            
+                            <button class="tuning-btn" onclick="openAITuningAdvisor()">
+                                🤖 AI 튜닝 어드바이저 실행
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- 로딩 상태 -->
+                    <div class="loading" id="loading">
+                        <div class="spinner"></div>
+                        <p>SQL 정보를 분석중입니다...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- AI 튜닝 어드바이저 모달 -->
+    <div class="modal" id="aiModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">🤖 AI 튜닝 어드바이저</h2>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            
+            <div class="ai-guide">
+                <div class="ai-header">
+                    <span class="ai-icon">🎯</span>
+                    <span class="ai-title">AI 진단 결과</span>
+                </div>
+                
+                <div class="ai-recommendation">
+                    <div class="recommendation-title">📌 문제 진단</div>
+                    <div class="recommendation-content" id="aiDiagnosis">
+                        • Full Table Scan 발생: ORDERS 테이블 (5M rows) 전체 스캔<br>
+                        • Missing Index: ORDER_DATE 컬럼에 인덱스 부재<br>
+                        • 카티시안 조인 위험: WHERE 절 조인 조건 부족
+                    </div>
+                </div>
+                
+                <div class="ai-recommendation">
+                    <div class="recommendation-title">🛠️ 튜닝 방법</div>
+                    <div class="recommendation-content">
+                        <strong>방법 1: 인덱스 생성</strong>
+                        <div class="code-block">
+CREATE INDEX idx_orders_date 
+ON orders(order_date, customer_id)
+TABLESPACE indexes
+PARALLEL 8;</div>
+                        
+                        <strong>방법 2: SQL 재작성</strong>
+                        <div class="code-block">
+SELECT /*+ INDEX(o idx_orders_date) */
+       o.order_id, c.customer_name
+FROM orders o
+INNER JOIN customers c 
+    ON o.customer_id = c.customer_id
+WHERE o.order_date >= SYSDATE - 365;</div>
+                    </div>
+                </div>
+                
+                <div class="ai-recommendation">
+                    <div class="recommendation-title">📈 예상 개선 효과</div>
+                    <div class="recommendation-content">
+                        • Elapsed Time: 5,234ms → 234ms (95% 개선)<br>
+                        • Buffer Gets: 523,456 → 4,567 (99% 개선)<br>
+                        • CPU Time: 3,456ms → 123ms (96% 개선)<br>
+                        • 전체 성능: <strong>95% 향상 예상</strong>
+                    </div>
+                </div>
+                
+                <button class="btn btn-primary" style="width: 100%; margin-top: 20px;" onclick="executeTuning()">
+                    튜닝 실행
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 모의 SQL 데이터 생성
+        function generateSQLData() {
+            const sqlData = [];
+            const modules = ['HR', 'SALES', 'INV', 'FIN', 'ANALYTICS', 'REPORT', 'BATCH', 'API'];
+            
+            // Critical SQLs (높은 elapsed time, buffer gets)
+            for (let i = 0; i < 47; i++) {
+                sqlData.push({
+                    sql_id: `sql_critical_${i}`,
+                    module: modules[Math.floor(Math.random() * modules.length)],
+                    elapsed_time: 3000 + Math.random() * 7000,
+                    buffer_gets: 300000 + Math.random() * 700000,
+                    cpu_time: 2000 + Math.random() * 5000,
+                    disk_reads: 5000 + Math.random() * 20000,
+                    executions: Math.floor(Math.random() * 100) + 1,
+                    cluster: 'Critical',
+                    color: '#e74c3c',
+                    sql_text: `SELECT /*+ FULL(t) */ * FROM large_table t WHERE condition = ${i}`
+                });
+            }
+            
+            // Warning SQLs (중간 성능)
+            for (let i = 0; i < 89; i++) {
+                sqlData.push({
+                    sql_id: `sql_warning_${i}`,
+                    module: modules[Math.floor(Math.random() * modules.length)],
+                    elapsed_time: 1000 + Math.random() * 2000,
+                    buffer_gets: 50000 + Math.random() * 250000,
+                    cpu_time: 500 + Math.random() * 1500,
+                    disk_reads: 1000 + Math.random() * 4000,
+                    executions: Math.floor(Math.random() * 500) + 10,
+                    cluster: 'Warning',
+                    color: '#f39c12',
+                    sql_text: `SELECT col1, col2 FROM medium_table WHERE date >= SYSDATE - ${i}`
+                });
+            }
+            
+            // Normal SQLs (양호한 성능)
+            for (let i = 0; i < 300; i++) {
+                sqlData.push({
+                    sql_id: `sql_normal_${i}`,
+                    module: modules[Math.floor(Math.random() * modules.length)],
+                    elapsed_time: 10 + Math.random() * 990,
+                    buffer_gets: 100 + Math.random() * 49900,
+                    cpu_time: 5 + Math.random() * 495,
+                    disk_reads: 0 + Math.random() * 1000,
+                    executions: Math.floor(Math.random() * 1000) + 100,
+                    cluster: 'Normal',
+                    color: '#3498db',
+                    sql_text: `SELECT id, name FROM small_table WHERE id = :${i}`
+                });
+            }
+            
+            // Optimal SQLs (최적 성능)
+            for (let i = 0; i < 87; i++) {
+                sqlData.push({
+                    sql_id: `sql_optimal_${i}`,
+                    module: modules[Math.floor(Math.random() * modules.length)],
+                    elapsed_time: 1 + Math.random() * 9,
+                    buffer_gets: 1 + Math.random() * 99,
+                    cpu_time: 0.5 + Math.random() * 4.5,
+                    disk_reads: 0,
+                    executions: Math.floor(Math.random() * 5000) + 1000,
+                    cluster: 'Optimal',
+                    color: '#2ecc71',
+                    sql_text: `SELECT /*+ INDEX(t pk) */ * FROM table WHERE pk = :${i}`
+                });
+            }
+            
+            // Outliers (이상치)
+            for (let i = 0; i < 10; i++) {
+                sqlData.push({
+                    sql_id: `sql_outlier_${i}`,
+                    module: modules[Math.floor(Math.random() * modules.length)],
+                    elapsed_time: Math.random() < 0.5 ? 10000 + Math.random() * 20000 : 0.1 + Math.random() * 0.9,
+                    buffer_gets: Math.random() < 0.5 ? 1000000 + Math.random() * 2000000 : 0.1 + Math.random() * 0.9,
+                    cpu_time: Math.random() < 0.5 ? 8000 + Math.random() * 12000 : 0.01 + Math.random() * 0.09,
+                    disk_reads: Math.random() < 0.5 ? 50000 + Math.random() * 100000 : 0,
+                    executions: Math.floor(Math.random() * 10) + 1,
+                    cluster: 'Outlier',
+                    color: '#9b59b6',
+                    sql_text: `SELECT /* OUTLIER */ * FROM problematic_query_${i}`
+                });
+            }
+            
+            return sqlData;
+        }
+        
+        let sqlData = generateSQLData();
+        let currentPlot = null;
+        
+        // 산점도 그리기
+        function drawScatterPlot() {
+            const xAxis = document.getElementById('xAxis').value;
+            const yAxis = document.getElementById('yAxis').value;
+            const zAxis = document.getElementById('zAxis').value;
+            
+            const traces = {};
+            
+            // 클러스터별로 trace 생성
+            sqlData.forEach(sql => {
+                if (!traces[sql.cluster]) {
+                    traces[sql.cluster] = {
+                        x: [],
+                        y: [],
+                        mode: 'markers',
+                        type: 'scatter',
+                        name: sql.cluster,
+                        text: [],
+                        marker: {
+                            color: sql.color,
+                            size: [],
+                            sizemode: 'diameter',
+                            sizeref: 0.1,
+                            line: {
+                                color: 'white',
+                                width: 1
+                            }
+                        },
+                        hovertemplate: '<b>SQL ID: %{text}</b><br>' +
+                                      `${xAxis}: %{x}<br>` +
+                                      `${yAxis}: %{y}<br>` +
+                                      '<extra></extra>'
+                    };
+                }
+                
+                traces[sql.cluster].x.push(sql[xAxis]);
+                traces[sql.cluster].y.push(sql[yAxis]);
+                traces[sql.cluster].text.push(sql.sql_id);
+                
+                // Z축 값을 크기로 매핑 (정규화)
+                const sizeValue = Math.log10(sql[zAxis] + 1) * 5;
+                traces[sql.cluster].marker.size.push(sizeValue);
+            });
+            
+            const data = Object.values(traces);
+            
+            const layout = {
+                title: {
+                    text: 'SQL Performance Cluster Analysis',
+                    font: { size: 16 }
+                },
+                xaxis: {
+                    title: xAxis.replace('_', ' ').toUpperCase(),
+                    type: 'log',
+                    gridcolor: '#e0e0e0'
+                },
+                yaxis: {
+                    title: yAxis.replace('_', ' ').toUpperCase(),
+                    type: 'log',
+                    gridcolor: '#e0e0e0'
+                },
+                hovermode: 'closest',
+                showlegend: true,
+                legend: {
+                    x: 1,
+                    y: 1,
+                    xanchor: 'right',
+                    yanchor: 'top',
+                    bgcolor: 'rgba(255,255,255,0.8)'
+                },
+                paper_bgcolor: 'white',
+                plot_bgcolor: '#fafafa'
+            };
+            
+            const config = {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToAdd: ['select2d', 'lasso2d'],
+                modeBarButtonsToRemove: ['pan2d', 'autoScale2d']
+            };
+            
+            Plotly.newPlot('scatterPlot', data, layout, config);
+            
+            // 클릭 이벤트 핸들러
+            document.getElementById('scatterPlot').on('plotly_click', function(data) {
+                const point = data.points[0];
+                const sqlId = point.text;
+                const sql = sqlData.find(s => s.sql_id === sqlId);
+                
+                if (sql) {
+                    showSQLDetails(sql);
+                }
+            });
+            
+            // 선택 이벤트 핸들러
+            document.getElementById('scatterPlot').on('plotly_selected', function(data) {
+                if (data && data.points.length > 0) {
+                    const selectedSQLs = data.points.map(p => p.text);
+                    console.log('Selected SQLs:', selectedSQLs);
+                    // 선택된 SQL들에 대한 일괄 작업 가능
+                }
+            });
+        }
+        
+        // SQL 상세 정보 표시
+        function showSQLDetails(sql) {
+            document.getElementById('selectedSQL').style.display = 'block';
+            document.getElementById('sqlId').textContent = `SQL_ID: ${sql.sql_id}`;
+            document.getElementById('sqlCluster').textContent = sql.cluster;
+            document.getElementById('sqlCluster').style.background = sql.color;
+            document.getElementById('sqlElapsedTime').textContent = `${sql.elapsed_time.toFixed(2)}ms`;
+            document.getElementById('sqlBufferGets').textContent = Math.floor(sql.buffer_gets).toLocaleString();
+            document.getElementById('sqlCpuTime').textContent = `${sql.cpu_time.toFixed(2)}ms`;
+            document.getElementById('sqlDiskReads').textContent = Math.floor(sql.disk_reads).toLocaleString();
+            document.getElementById('sqlExecutions').textContent = sql.executions.toLocaleString();
+            document.getElementById('sqlText').textContent = sql.sql_text;
+            
+            // 클러스터 정보 업데이트
+            updateClusterInfo(sql.cluster);
+        }
+        
+        // 클러스터 정보 업데이트
+        function updateClusterInfo(cluster) {
+            const clusterSQLs = sqlData.filter(s => s.cluster === cluster);
+            const avgElapsed = clusterSQLs.reduce((sum, s) => sum + s.elapsed_time, 0) / clusterSQLs.length;
+            const avgBuffer = clusterSQLs.reduce((sum, s) => sum + s.buffer_gets, 0) / clusterSQLs.length;
+            const avgCpu = clusterSQLs.reduce((sum, s) => sum + s.cpu_time, 0) / clusterSQLs.length;
+            
+            const clusterColors = {
+                'Critical': '#e74c3c',
+                'Warning': '#f39c12',
+                'Normal': '#3498db',
+                'Optimal': '#2ecc71',
+                'Outlier': '#9b59b6'
+            };
+            
+            const priorities = {
+                'Critical': '매우 높음',
+                'Warning': '높음',
+                'Normal': '보통',
+                'Optimal': '낮음',
+                'Outlier': '확인 필요'
+            };
+            
+            document.getElementById('clusterInfo').innerHTML = `
+                <div class="cluster-info">
+                    <div class="cluster-header">
+                        <div class="cluster-label">
+                            <div class="cluster-color" style="background: ${clusterColors[cluster]};"></div>
+                            <span>${cluster} Cluster</span>
+                        </div>
+                        <span style="font-size: 12px; color: #666;">${clusterSQLs.length} SQLs</span>
+                    </div>
+                    <div class="cluster-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">평균 Elapsed Time</span>
+                            <span class="stat-value">${avgElapsed.toFixed(2)}ms</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">평균 Buffer Gets</span>
+                            <span class="stat-value">${Math.floor(avgBuffer).toLocaleString()}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">평균 CPU Time</span>
+                            <span class="stat-value">${avgCpu.toFixed(2)}ms</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">튜닝 우선순위</span>
+                            <span class="stat-value" style="color: ${clusterColors[cluster]};">${priorities[cluster]}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 클러스터링 실행
+        function runClustering() {
+            const algorithm = document.getElementById('algorithm').value;
+            
+            // 로딩 표시
+            document.getElementById('loading').classList.add('active');
+            
+            // 시뮬레이션: 2초 후 클러스터링 완료
+            setTimeout(() => {
+                // K-means 시뮬레이션 (실제로는 서버에서 처리)
+                if (algorithm === 'kmeans') {
+                    reassignClusters();
+                }
+                
+                document.getElementById('loading').classList.remove('active');
+                drawScatterPlot();
+                
+                // 통계 업데이트
+                updateStatistics();
+            }, 2000);
+        }
+        
+        // 클러스터 재할당 (시뮬레이션)
+        function reassignClusters() {
+            sqlData.forEach(sql => {
+                // 간단한 규칙 기반 재할당
+                const score = sql.elapsed_time * 0.4 + sql.buffer_gets * 0.0001 + sql.cpu_time * 0.3;
+                
+                if (score > 5000) {
+                    sql.cluster = 'Critical';
+                    sql.color = '#e74c3c';
+                } else if (score > 2000) {
+                    sql.cluster = 'Warning';
+                    sql.color = '#f39c12';
+                } else if (score > 500) {
+                    sql.cluster = 'Normal';
+                    sql.color = '#3498db';
+                } else {
+                    sql.cluster = 'Optimal';
+                    sql.color = '#2ecc71';
+                }
+                
+                // 이상치 감지
+                if (sql.elapsed_time > 15000 || sql.buffer_gets > 1500000) {
+                    sql.cluster = 'Outlier';
+                    sql.color = '#9b59b6';
+                }
+            });
+        }
+        
+        // 이상치 감지
+        function identifyOutliers() {
+            const outliers = sqlData.filter(sql => 
+                sql.elapsed_time > 10000 || 
+                sql.buffer_gets > 1000000 ||
+                sql.cpu_time > 8000
+            );
+            
+            outliers.forEach(sql => {
+                sql.cluster = 'Outlier';
+                sql.color = '#9b59b6';
+            });
+            
+            drawScatterPlot();
+            updateStatistics();
+            
+            alert(`${outliers.length}개의 이상치 SQL이 감지되었습니다.`);
+        }
+        
+        // 통계 업데이트
+        function updateStatistics() {
+            const critical = sqlData.filter(s => s.cluster === 'Critical').length;
+            const warning = sqlData.filter(s => s.cluster === 'Warning').length;
+            const normal = sqlData.filter(s => s.cluster === 'Normal').length + 
+                          sqlData.filter(s => s.cluster === 'Optimal').length;
+            
+            document.getElementById('totalSQLs').textContent = sqlData.length;
+            document.getElementById('criticalSQLs').textContent = critical;
+            document.getElementById('warningSQLs').textContent = warning;
+            document.getElementById('normalSQLs').textContent = normal;
+        }
+        
+        // 플롯 업데이트
+        function updatePlot() {
+            drawScatterPlot();
+        }
+        
+        // AI 튜닝 어드바이저 열기
+        function openAITuningAdvisor() {
+            document.getElementById('aiModal').classList.add('active');
+            
+            // AI 분석 시뮬레이션
+            setTimeout(() => {
+                // 실제로는 AI 모델이 분석
+                console.log('AI 분석 완료');
+            }, 1000);
+        }
+        
+        // 모달 닫기
+        function closeModal() {
+            document.getElementById('aiModal').classList.remove('active');
+        }
+        
+        // 튜닝 실행
+        function executeTuning() {
+            if (confirm('튜닝을 실행하시겠습니까?')) {
+                alert('튜닝이 성공적으로 완료되었습니다.\n성능이 95% 개선되었습니다.');
+                closeModal();
+                
+                // SQL 상태 업데이트
+                const selectedSQL = sqlData.find(s => s.sql_id === document.getElementById('sqlId').textContent.replace('SQL_ID: ', ''));
+                if (selectedSQL) {
+                    selectedSQL.cluster = 'Optimal';
+                    selectedSQL.color = '#2ecc71';
+                    selectedSQL.elapsed_time *= 0.05;
+                    selectedSQL.buffer_gets *= 0.01;
+                    selectedSQL.cpu_time *= 0.04;
+                }
+                
+                drawScatterPlot();
+                updateStatistics();
+            }
+        }
+        
+        // 클러스터 내보내기
+        function exportClusters() {
+            const clusters = {};
+            sqlData.forEach(sql => {
+                if (!clusters[sql.cluster]) {
+                    clusters[sql.cluster] = [];
+                }
+                clusters[sql.cluster].push({
+                    sql_id: sql.sql_id,
+                    module: sql.module,
+                    elapsed_time: sql.elapsed_time,
+                    buffer_gets: sql.buffer_gets
+                });
+            });
+            
+            const blob = new Blob([JSON.stringify(clusters, null, 2)], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'sql_clusters.json';
+            a.click();
+        }
+        
+        // 초기화
+        window.onload = function() {
+            drawScatterPlot();
+            updateStatistics();
+        };
+        
+        // ESC 키로 모달 닫기
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>

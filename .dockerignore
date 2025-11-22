@@ -1,0 +1,47 @@
+# Node modules
+node_modules
+npm-debug.log
+
+# Next.js
+.next/
+out/
+
+# Environment files
+.env.local
+.env.*.local
+.env.development
+.env.test
+
+# Testing
+coverage
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Logs
+logs
+*.log
+
+# Build artifacts
+dist
+build
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore

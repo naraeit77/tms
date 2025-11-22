@@ -1,0 +1,7 @@
+# Oracle DB 연결을 위한 패키지 추가 필요:
+# npm install oracledb
+# npm install crypto-js
+# npm install @types/crypto-js --save-dev
+
+# API 관련:
+# npm install @tanstack/react-query-devtools --save-dev

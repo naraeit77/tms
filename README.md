@@ -1,3 +1,15 @@
+# Narae TMS v2.0
+## SQL Tuning Management System
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Narae TMS v2.0
+    SQL Tuning Management System
+
+    by 주식회사 나래정보기술
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Oracle 데이터베이스를 위한 엔터프라이즈급 SQL 튜닝 관리 시스템
+
 이 프로젝트는 [`EasyNext`](https://github.com/easynext/easynext)를 사용해 생성된 [Next.js](https://nextjs.org) 프로젝트입니다.
 
 ## Getting Started
