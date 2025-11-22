@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Database, Activity, Play } from 'lucide-react';
+import { Plus, Database, Activity, Play, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +20,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -230,6 +240,42 @@ export default function ConnectionsPage() {
     },
   });
 
+  // 연결 삭제 Mutation
+  const deleteConnectionMutation = useMutation({
+    mutationFn: async (connectionId: string) => {
+      console.log('[DELETE] Attempting to delete connection:', connectionId);
+      const res = await fetch(`/api/oracle/connections/${connectionId}`, {
+        method: 'DELETE',
+      });
+      console.log('[DELETE] Response status:', res.status);
+
+      if (!res.ok) {
+        const error = await res.json();
+        console.error('[DELETE] Error response:', error);
+        throw new Error(error.error || '연결 삭제 실패');
+      }
+      const result = await res.json();
+      console.log('[DELETE] Success:', result);
+      return result;
+    },
+    onSuccess: () => {
+      console.log('[DELETE] Mutation success - invalidating queries');
+      queryClient.invalidateQueries({ queryKey: ['oracle-connections'] });
+      toast({
+        title: '연결 삭제 완료',
+        description: 'DB 연결이 성공적으로 삭제되었습니다.',
+      });
+    },
+    onError: (error: Error) => {
+      console.error('[DELETE] Mutation error:', error);
+      toast({
+        title: '연결 삭제 실패',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setTestResult(null);
@@ -247,6 +293,10 @@ export default function ConnectionsPage() {
 
   const handleCollectData = (connectionId: string) => {
     collectDataMutation.mutate(connectionId);
+  };
+
+  const handleDelete = (connectionId: string) => {
+    deleteConnectionMutation.mutate(connectionId);
   };
 
   return (
@@ -478,6 +528,7 @@ export default function ConnectionsPage() {
               connection={conn}
               onHealthCheck={handleHealthCheck}
               onCollectData={handleCollectData}
+              onDelete={handleDelete}
             />
           ))}
         </div>
@@ -502,9 +553,11 @@ interface ConnectionCardProps {
   connection: OracleConnection;
   onHealthCheck: (id: string) => void;
   onCollectData: (id: string) => void;
+  onDelete: (id: string) => void;
 }
 
-function ConnectionCard({ connection, onHealthCheck, onCollectData }: ConnectionCardProps) {
+function ConnectionCard({ connection, onHealthCheck, onCollectData, onDelete }: ConnectionCardProps) {
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const healthStatusColors = {
     HEALTHY: 'default',
     WARNING: 'outline',
@@ -601,6 +654,42 @@ function ConnectionCard({ connection, onHealthCheck, onCollectData }: Connection
             활성화
           </Button>
         </div>
+
+        <div className="mt-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={() => setShowDeleteDialog(true)}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            연결 삭제
+          </Button>
+        </div>
+
+        <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>연결을 삭제하시겠습니까?</AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="font-semibold">{connection.name}</span> 연결을 삭제합니다.
+                <br />이 작업은 되돌릴 수 없습니다.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>취소</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  onDelete(connection.id);
+                  setShowDeleteDialog(false);
+                }}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                삭제
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );
