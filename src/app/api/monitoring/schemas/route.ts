@@ -6,23 +6,20 @@ import 'server-only';
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { getOracleConfig } from '@/lib/oracle/utils';
 import { executeQuery } from '@/lib/oracle/client';
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const { searchParams } = new URL(request.url);
-
-    // 현재 사용자 확인
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    // 현재 사용자 확인 (Next-Auth 세션 사용)
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const { searchParams } = new URL(request.url);
 
     const connectionId = searchParams.get('connection_id');
 

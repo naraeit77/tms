@@ -173,7 +173,7 @@ export default function UndoAdvisorPage() {
               <CardContent className="pt-6">
                 <div className="space-y-3">
                   {[...Array(4)].map((_, i) => (
-                    <Skeleton key={i} className="h-20 w-full" />
+                    <Skeleton key={`skeleton-undo-${i}`} className="h-20 w-full" />
                   ))}
                 </div>
               </CardContent>
@@ -260,7 +260,7 @@ export default function UndoAdvisorPage() {
                   {analysis.recommendations.length > 0 ? (
                     <div className="space-y-3">
                       {analysis.recommendations.map((rec, index) => (
-                        <div key={index} className="border rounded-lg p-4">
+                        <div key={`undo-rec-${rec.substring(0, 30)}-${index}`} className="border rounded-lg p-4">
                           <div className="flex items-start gap-2">
                             <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
                             <p className="text-sm">{rec}</p>

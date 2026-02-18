@@ -51,17 +51,24 @@ interface MemoryAdvisorData {
     size_mb: number;
     estd_physical_reads: number;
     size_factor: number;
+    benefit_pct: number;
   }>;
   shared_pool_advice: Array<{
     size_mb: number;
     estd_lc_load_time: number;
     size_factor: number;
+    benefit_pct: number;
   }>;
   pga_target_advice: Array<{
     size_mb: number;
     estd_extra_bytes_rw: number;
     size_factor: number;
   }>;
+  hit_ratios: {
+    buffer_cache: number;
+    library_cache: number;
+    dictionary_cache: number;
+  };
 }
 
 export default function MemoryAdvisorPage() {
@@ -208,7 +215,7 @@ export default function MemoryAdvisorPage() {
               <CardContent className="pt-6">
                 <div className="space-y-3">
                   {[...Array(4)].map((_, i) => (
-                    <Skeleton key={i} className="h-24 w-full" />
+                    <Skeleton key={`skeleton-memory-${i}`} className="h-24 w-full" />
                   ))}
                 </div>
               </CardContent>
@@ -300,31 +307,102 @@ export default function MemoryAdvisorPage() {
                 </Card>
               </div>
 
+              {/* 메모리 효율성 (Hit Ratios) */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">메모리 효율성 (Hit Ratios)</CardTitle>
+                  <CardDescription>주요 메모리 영역의 적중률 현황</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-6 md:grid-cols-3">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium">Buffer Cache</span>
+                        <span className={`font-bold ${memoryData.hit_ratios.buffer_cache >= 90 ? 'text-green-600' : 'text-orange-500'}`}>
+                          {memoryData.hit_ratios.buffer_cache}%
+                        </span>
+                      </div>
+                      <Progress value={memoryData.hit_ratios.buffer_cache} className="h-2" />
+                      <p className="text-xs text-muted-foreground">권장: 90% 이상</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium">Library Cache</span>
+                        <span className={`font-bold ${memoryData.hit_ratios.library_cache >= 99 ? 'text-green-600' : 'text-orange-500'}`}>
+                          {memoryData.hit_ratios.library_cache}%
+                        </span>
+                      </div>
+                      <Progress value={memoryData.hit_ratios.library_cache} className="h-2" />
+                      <p className="text-xs text-muted-foreground">권장: 99% 이상</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium">Dictionary Cache</span>
+                        <span className={`font-bold ${memoryData.hit_ratios.dictionary_cache >= 95 ? 'text-green-600' : 'text-orange-500'}`}>
+                          {memoryData.hit_ratios.dictionary_cache}%
+                        </span>
+                      </div>
+                      <Progress value={memoryData.hit_ratios.dictionary_cache} className="h-2" />
+                      <p className="text-xs text-muted-foreground">권장: 95% 이상</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* 상세 분석 */}
               <Card>
                 <CardHeader>
                   <CardTitle>상세 메모리 분석</CardTitle>
-                  <CardDescription>메모리 크기별 성능 예측</CardDescription>
+                  <CardDescription>메모리 크기 조정에 따른 성능 예측</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <Tabs defaultValue="db-cache" className="w-full">
                     <TabsList className="grid w-full grid-cols-3">
-                      <TabsTrigger value="db-cache">DB Cache</TabsTrigger>
-                      <TabsTrigger value="shared-pool">Shared Pool</TabsTrigger>
-                      <TabsTrigger value="pga">PGA</TabsTrigger>
+                      <TabsTrigger value="db-cache">DB Cache (I/O)</TabsTrigger>
+                      <TabsTrigger value="shared-pool">Shared Pool (CPU)</TabsTrigger>
+                      <TabsTrigger value="pga">PGA (Temp)</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="db-cache" className="space-y-3 mt-4">
+                      <div className="bg-secondary/30 p-3 rounded mb-4 text-sm flex items-center gap-2">
+                        <Info className="h-4 w-4 text-blue-500" />
+                        <span>Buffer Cache 크기를 늘리면 <strong>물리적 I/O (Disk Read)</strong>가 감소하여 성능이 향상됩니다.</span>
+                      </div>
                       {memoryData.db_cache_advice?.length > 0 ? (
                         memoryData.db_cache_advice.map((item, index) => (
-                          <div key={index} className="border rounded p-3">
+                          <div
+                            key={`db-cache-${item.size_mb}-${item.size_factor}-${index}`}
+                            className={`border rounded p-3 transition-colors ${item.size_factor === 1 ? 'bg-primary/5 border-primary/20 ring-1 ring-primary/20' : 'hover:bg-muted/50'}`}
+                          >
                             <div className="flex items-center justify-between">
-                              <span className="font-medium">{item.size_mb} MB</span>
-                              <Badge variant={item.size_factor === 1 ? 'default' : 'outline'}>
-                                {item.size_factor}x
-                              </Badge>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold w-20">{item.size_mb} MB</span>
+                                {item.size_factor === 1 && <Badge variant="default">현재 크기</Badge>}
+                                <Badge variant="outline" className="text-xs font-normal text-muted-foreground">x{item.size_factor}</Badge>
+                              </div>
+                              <div className="text-right">
+                                {item.size_factor === 1 ? (
+                                  <span className="text-sm font-medium text-muted-foreground">기준 (Baseline)</span>
+                                ) : item.benefit_pct > 0 ? (
+                                  <span className="text-sm font-bold text-green-600 flex items-center justify-end gap-1">
+                                    <TrendingDown className="h-3 w-3" />
+                                    I/O {item.benefit_pct.toFixed(1)}% 감소
+                                  </span>
+                                ) : (
+                                  <span className="text-sm font-bold text-red-500 flex items-center justify-end gap-1">
+                                    <TrendingUp className="h-3 w-3" />
+                                    I/O {Math.abs(item.benefit_pct).toFixed(1)}% 증가
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <div className="text-sm text-muted-foreground mt-1">
+                            <div className="mt-2 w-full bg-muted/30 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className={`h-full ${item.size_factor === 1 ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                                style={{ width: `${Math.min(100, (item.estd_physical_reads / (memoryData.db_cache_advice.find(x => x.size_factor === 0.5)?.estd_physical_reads || item.estd_physical_reads)) * 100)}%` }}
+                              />
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1 text-right">
                               예상 물리적 읽기: {item.estd_physical_reads.toLocaleString()}
                             </div>
                           </div>
@@ -337,17 +415,40 @@ export default function MemoryAdvisorPage() {
                     </TabsContent>
 
                     <TabsContent value="shared-pool" className="space-y-3 mt-4">
+                      <div className="bg-secondary/30 p-3 rounded mb-4 text-sm flex items-center gap-2">
+                        <Info className="h-4 w-4 text-blue-500" />
+                        <span>Shared Pool 크기를 늘리면 <strong>파싱 시간(CPU)</strong>이 감소하여 성능이 향상됩니다.</span>
+                      </div>
                       {memoryData.shared_pool_advice?.length > 0 ? (
                         memoryData.shared_pool_advice.map((item, index) => (
-                          <div key={index} className="border rounded p-3">
+                          <div
+                            key={`shared-pool-${item.size_mb}-${item.size_factor}-${index}`}
+                            className={`border rounded p-3 transition-colors ${item.size_factor === 1 ? 'bg-primary/5 border-primary/20 ring-1 ring-primary/20' : 'hover:bg-muted/50'}`}
+                          >
                             <div className="flex items-center justify-between">
-                              <span className="font-medium">{item.size_mb} MB</span>
-                              <Badge variant={item.size_factor === 1 ? 'default' : 'outline'}>
-                                {item.size_factor}x
-                              </Badge>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold w-20">{item.size_mb} MB</span>
+                                {item.size_factor === 1 && <Badge variant="default">현재 크기</Badge>}
+                                <Badge variant="outline" className="text-xs font-normal text-muted-foreground">x{item.size_factor}</Badge>
+                              </div>
+                              <div className="text-right">
+                                {item.size_factor === 1 ? (
+                                  <span className="text-sm font-medium text-muted-foreground">기준 (Baseline)</span>
+                                ) : item.benefit_pct > 0 ? (
+                                  <span className="text-sm font-bold text-green-600 flex items-center justify-end gap-1">
+                                    <TrendingDown className="h-3 w-3" />
+                                    로딩 시간 {item.benefit_pct.toFixed(1)}% 단축
+                                  </span>
+                                ) : (
+                                  <span className="text-sm font-bold text-red-500 flex items-center justify-end gap-1">
+                                    <TrendingUp className="h-3 w-3" />
+                                    로딩 시간 {Math.abs(item.benefit_pct).toFixed(1)}% 지연
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <div className="text-sm text-muted-foreground mt-1">
-                              예상 로드 시간: {item.estd_lc_load_time.toFixed(2)}ms
+                            <div className="text-xs text-muted-foreground mt-1 text-right">
+                              예상 로드 시간: {item.estd_lc_load_time.toFixed(0)} s
                             </div>
                           </div>
                         ))
@@ -359,17 +460,27 @@ export default function MemoryAdvisorPage() {
                     </TabsContent>
 
                     <TabsContent value="pga" className="space-y-3 mt-4">
+                      <div className="bg-secondary/30 p-3 rounded mb-4 text-sm flex items-center gap-2">
+                        <Info className="h-4 w-4 text-blue-500" />
+                        <span>PGA 크기를 늘리면 <strong>Temp DB I/O</strong>가 감소하여 정렬/해시 작업 성능이 향상됩니다.</span>
+                      </div>
                       {memoryData.pga_target_advice?.length > 0 ? (
                         memoryData.pga_target_advice.map((item, index) => (
-                          <div key={index} className="border rounded p-3">
+                          <div
+                            key={`pga-target-${item.size_mb}-${item.size_factor}-${index}`}
+                            className={`border rounded p-3 transition-colors ${item.size_factor === 1 ? 'bg-primary/5 border-primary/20 ring-1 ring-primary/20' : 'hover:bg-muted/50'}`}
+                          >
                             <div className="flex items-center justify-between">
-                              <span className="font-medium">{item.size_mb} MB</span>
-                              <Badge variant={item.size_factor === 1 ? 'default' : 'outline'}>
-                                {item.size_factor}x
-                              </Badge>
-                            </div>
-                            <div className="text-sm text-muted-foreground mt-1">
-                              예상 추가 I/O: {formatBytes(item.estd_extra_bytes_rw)}
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold w-20">{item.size_mb} MB</span>
+                                {item.size_factor === 1 && <Badge variant="default">현재 크기</Badge>}
+                                <Badge variant="outline" className="text-xs font-normal text-muted-foreground">x{item.size_factor}</Badge>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-sm font-medium">
+                                  예상 추가 I/O: {formatBytes(item.estd_extra_bytes_rw)}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         ))

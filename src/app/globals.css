@@ -1,6 +1,18 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* CSS Layers - define order first */
+@layer mantine, tailwind-base, tailwind-components, tailwind-utilities;
+
+/* Tailwind CSS */
+@layer tailwind-base {
+  @tailwind base;
+}
+
+@layer tailwind-components {
+  @tailwind components;
+}
+
+@layer tailwind-utilities {
+  @tailwind utilities;
+}
 
 @layer base {
   :root {
@@ -63,8 +75,15 @@
   * {
     @apply border-border;
   }
+  html {
+    font-family: 'Pretendard Variable', var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  }
   body {
     @apply bg-background text-foreground;
+    font-family: inherit;
+  }
+  code, pre, kbd, samp {
+    font-family: var(--font-mono), 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
   }
 }
 

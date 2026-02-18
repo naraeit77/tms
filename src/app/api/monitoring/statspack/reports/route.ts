@@ -1,25 +1,21 @@
-/**
- * STATSPACK Reports API
- * GET: 리포트 목록 조회
- * POST: 새로운 리포트 생성
- */
+import 'server-only';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { decrypt } from '@/lib/crypto';
-import { executeQuery } from '@/lib/oracle';
-import type { OracleConnectionConfig } from '@/lib/oracle/types';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { db } from '@/db';
+import { statspackReports } from '@/db/schema';
+import { eq, desc } from 'drizzle-orm';
+import { getOracleConfig } from '@/lib/oracle/utils';
 
-// GET: 리포트 목록 조회
+/**
+ * GET /api/monitoring/statspack/reports
+ * STATSPACK 리포트 목록 조회
+ */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -27,44 +23,66 @@ export async function GET(request: NextRequest) {
     const connectionId = searchParams.get('connection_id');
 
     if (!connectionId) {
-      return NextResponse.json({ error: 'connection_id is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Connection ID is required' }, { status: 400 });
     }
 
-    // 리포트 목록 조회
-    const { data: reports, error } = await supabase
-      .from('statspack_reports')
-      .select('*')
-      .eq('oracle_connection_id', connectionId)
-      .order('created_at', { ascending: false })
+    // PostgreSQL에서 리포트 목록 조회
+    const reports = await db
+      .select()
+      .from(statspackReports)
+      .where(eq(statspackReports.oracleConnectionId, connectionId))
+      .orderBy(desc(statspackReports.createdAt))
       .limit(50);
 
-    if (error) {
-      throw error;
-    }
+    // Map to snake_case for frontend compatibility
+    const mappedReports = reports.map((r) => ({
+      id: r.id,
+      oracle_connection_id: r.oracleConnectionId,
+      begin_snap_id: r.beginSnapId,
+      end_snap_id: r.endSnapId,
+      report_type: r.reportType,
+      report_content: r.reportContent,
+      begin_time: r.beginTime,
+      end_time: r.endTime,
+      created_at: r.createdAt,
+      updated_at: r.updatedAt,
+    }));
 
-    return NextResponse.json({ data: reports || [] });
+    return NextResponse.json({
+      success: true,
+      data: mappedReports,
+      count: mappedReports.length,
+      timestamp: new Date().toISOString(),
+    });
   } catch (error) {
-    console.error('Failed to fetch reports:', error);
+    console.error('[Statspack Reports API] Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    if (process.env.NODE_ENV === 'development') {
+      return NextResponse.json(
+        {
+          error: 'Failed to fetch statspack reports',
+          details: errorMessage,
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+        { status: 500 }
+      );
+    }
     return NextResponse.json(
-      {
-        error: 'Failed to fetch reports',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { error: 'Failed to fetch statspack reports' },
       { status: 500 }
     );
   }
 }
 
-// POST: 리포트 생성
+/**
+ * POST /api/monitoring/statspack/reports
+ * STATSPACK 리포트 생성
+ */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -73,349 +91,297 @@ export async function POST(request: NextRequest) {
 
     if (!connection_id || !begin_snap_id || !end_snap_id) {
       return NextResponse.json(
-        { error: 'connection_id, begin_snap_id, and end_snap_id are required' },
+        { error: 'Connection ID, begin_snap_id, and end_snap_id are required' },
         { status: 400 }
       );
     }
 
-    if (begin_snap_id >= end_snap_id) {
-      return NextResponse.json(
-        { error: 'begin_snap_id must be less than end_snap_id' },
-        { status: 400 }
-      );
-    }
+    // Oracle 연결 설정 가져오기
+    const config = await getOracleConfig(connection_id);
 
-    // 스냅샷 정보 조회
-    const { data: beginSnap, error: beginError } = await supabase
-      .from('statspack_snapshots')
-      .select('*')
-      .eq('oracle_connection_id', connection_id)
-      .eq('snap_id', begin_snap_id)
-      .single();
+    console.log(`[Statspack Reports API] Generating report for snaps ${begin_snap_id}-${end_snap_id}, type: ${report_type}`);
 
-    const { data: endSnap, error: endError } = await supabase
-      .from('statspack_snapshots')
-      .select('*')
-      .eq('oracle_connection_id', connection_id)
-      .eq('snap_id', end_snap_id)
-      .single();
+    try {
+      // STATSPACK 리포트 생성 - 스냅샷 정보만 포함한 기본 리포트
+      // Oracle 버전 호환성을 위해 stats$snapshot 테이블만 사용
+      const isHtml = report_type === 'HTML';
 
-    if (beginError || endError || !beginSnap || !endSnap) {
-      return NextResponse.json({ error: 'Snapshots not found' }, { status: 404 });
-    }
+      const reportQuery = isHtml ? `
+        DECLARE
+          v_report VARCHAR2(32000) := '';
+          v_begin_snap NUMBER := ${begin_snap_id};
+          v_end_snap NUMBER := ${end_snap_id};
+          v_dbname VARCHAR2(100);
+          v_instance VARCHAR2(100);
+        BEGIN
+          -- 데이터베이스 정보 조회
+          BEGIN
+            SELECT name INTO v_dbname FROM v$database;
+            SELECT instance_name INTO v_instance FROM v$instance;
+          EXCEPTION WHEN OTHERS THEN
+            v_dbname := 'Unknown';
+            v_instance := 'Unknown';
+          END;
 
-    // 연결 정보 조회
-    const { data: connection, error: connError } = await supabase
-      .from('oracle_connections')
-      .select('*')
-      .eq('id', connection_id)
-      .eq('is_active', true)
-      .single();
+          -- HTML 리포트 헤더
+          v_report := '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>STATSPACK Report</title>';
+          v_report := v_report || '<style>body{font-family:Arial,sans-serif;margin:20px;background:#f5f5f5}';
+          v_report := v_report || '.container{max-width:900px;margin:0 auto;background:white;padding:30px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1)}';
+          v_report := v_report || 'h1{color:#1a365d;border-bottom:3px solid #3182ce;padding-bottom:10px}';
+          v_report := v_report || 'h2{color:#2c5282;margin-top:30px}';
+          v_report := v_report || '.info-grid{display:grid;grid-template-columns:150px 1fr;gap:10px;margin:20px 0}';
+          v_report := v_report || '.info-label{font-weight:bold;color:#4a5568}';
+          v_report := v_report || '.info-value{color:#2d3748}';
+          v_report := v_report || 'table{width:100%;border-collapse:collapse;margin:20px 0}';
+          v_report := v_report || 'th,td{border:1px solid #e2e8f0;padding:12px;text-align:left}';
+          v_report := v_report || 'th{background:#edf2f7;color:#2d3748;font-weight:600}';
+          v_report := v_report || 'tr:nth-child(even){background:#f7fafc}';
+          v_report := v_report || 'tr:hover{background:#edf2f7}';
+          v_report := v_report || '.note{background:#fef3c7;border-left:4px solid #f59e0b;padding:15px;margin:20px 0;border-radius:0 8px 8px 0}';
+          v_report := v_report || '.footer{margin-top:30px;padding-top:20px;border-top:1px solid #e2e8f0;color:#718096;font-size:12px}</style></head>';
+          v_report := v_report || '<body><div class="container">';
+          v_report := v_report || '<h1>STATSPACK Report</h1>';
 
-    if (connError || !connection) {
-      return NextResponse.json({ error: 'Connection not found or inactive' }, { status: 404 });
-    }
+          -- 기본 정보
+          v_report := v_report || '<div class="info-grid">';
+          v_report := v_report || '<span class="info-label">Database:</span><span class="info-value">' || v_dbname || '</span>';
+          v_report := v_report || '<span class="info-label">Instance:</span><span class="info-value">' || v_instance || '</span>';
+          v_report := v_report || '<span class="info-label">Snap ID Range:</span><span class="info-value">' || v_begin_snap || ' - ' || v_end_snap || '</span>';
+          v_report := v_report || '<span class="info-label">Generated:</span><span class="info-value">' || TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') || '</span>';
+          v_report := v_report || '</div>';
 
-    const password = decrypt(connection.password_encrypted);
+          -- 스냅샷 테이블
+          v_report := v_report || '<h2>Snapshot Information</h2>';
+          v_report := v_report || '<table><thead><tr><th>Snap ID</th><th>Snapshot Time</th><th>Startup Time</th><th>DBID</th><th>Instance</th></tr></thead><tbody>';
 
-    const config: OracleConnectionConfig = {
-      id: connection.id,
-      name: connection.name,
-      host: connection.host,
-      port: connection.port,
-      serviceName: connection.service_name || undefined,
-      sid: connection.sid || undefined,
-      username: connection.username,
-      password,
-      connectionType: connection.connection_type,
-    };
+          FOR snap_rec IN (
+            SELECT snap_id, snap_time, startup_time, dbid, instance_number
+            FROM perfstat.stats$snapshot
+            WHERE snap_id BETWEEN v_begin_snap AND v_end_snap
+            ORDER BY snap_id
+          ) LOOP
+            v_report := v_report || '<tr><td>' || snap_rec.snap_id || '</td>';
+            v_report := v_report || '<td>' || TO_CHAR(snap_rec.snap_time, 'YYYY-MM-DD HH24:MI:SS') || '</td>';
+            v_report := v_report || '<td>' || TO_CHAR(snap_rec.startup_time, 'YYYY-MM-DD HH24:MI:SS') || '</td>';
+            v_report := v_report || '<td>' || snap_rec.dbid || '</td>';
+            v_report := v_report || '<td>' || snap_rec.instance_number || '</td></tr>';
+          END LOOP;
 
-    // STATSPACK 리포트 생성
-    const reportContent = await generateStatspackReport(
-      config,
-      beginSnap,
-      endSnap,
-      report_type as 'TEXT' | 'HTML'
-    );
+          v_report := v_report || '</tbody></table>';
 
-    // 리포트 저장
-    const { data: report, error: insertError } = await supabase
-      .from('statspack_reports')
-      .insert({
+          -- 안내 메시지
+          v_report := v_report || '<div class="note"><strong>Note:</strong> For detailed STATSPACK report with SQL statistics and wait events, run spreport.sql directly in SQL*Plus.<br>';
+          v_report := v_report || '<code>@$ORACLE_HOME/rdbms/admin/spreport.sql</code></div>';
+
+          -- 푸터
+          v_report := v_report || '<div class="footer">Generated by Narae TMS - SQL Tuning Management System</div>';
+          v_report := v_report || '</div></body></html>';
+
+          :report := v_report;
+        EXCEPTION
+          WHEN OTHERS THEN
+            :report := '<!DOCTYPE html><html><body><h1>Error</h1><p>' || SQLERRM || '</p></body></html>';
+        END;
+      ` : `
+        DECLARE
+          v_report VARCHAR2(32000) := '';
+          v_begin_snap NUMBER := ${begin_snap_id};
+          v_end_snap NUMBER := ${end_snap_id};
+          v_dbname VARCHAR2(100);
+          v_instance VARCHAR2(100);
+        BEGIN
+          -- 데이터베이스 정보 조회
+          BEGIN
+            SELECT name INTO v_dbname FROM v$database;
+            SELECT instance_name INTO v_instance FROM v$instance;
+          EXCEPTION WHEN OTHERS THEN
+            v_dbname := 'Unknown';
+            v_instance := 'Unknown';
+          END;
+
+          -- TEXT 리포트 헤더
+          v_report := 'STATSPACK Report' || CHR(10);
+          v_report := v_report || '================' || CHR(10) || CHR(10);
+          v_report := v_report || 'Database: ' || v_dbname || CHR(10);
+          v_report := v_report || 'Instance: ' || v_instance || CHR(10);
+          v_report := v_report || 'Snap ID Range: ' || v_begin_snap || ' - ' || v_end_snap || CHR(10);
+          v_report := v_report || 'Generated: ' || TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') || CHR(10) || CHR(10);
+
+          -- 스냅샷 정보 조회
+          v_report := v_report || 'Snapshot Information' || CHR(10);
+          v_report := v_report || '====================' || CHR(10);
+
+          FOR snap_rec IN (
+            SELECT snap_id, snap_time, startup_time, dbid, instance_number
+            FROM perfstat.stats$snapshot
+            WHERE snap_id BETWEEN v_begin_snap AND v_end_snap
+            ORDER BY snap_id
+          ) LOOP
+            v_report := v_report || 'Snap ID: ' || snap_rec.snap_id ||
+              ', Time: ' || TO_CHAR(snap_rec.snap_time, 'YYYY-MM-DD HH24:MI:SS') ||
+              ', Startup: ' || TO_CHAR(snap_rec.startup_time, 'YYYY-MM-DD HH24:MI:SS') || CHR(10);
+          END LOOP;
+
+          v_report := v_report || CHR(10) || 'Note: For detailed STATSPACK report, run spreport.sql directly in SQL*Plus.' || CHR(10);
+          v_report := v_report || 'Command: @$ORACLE_HOME/rdbms/admin/spreport.sql' || CHR(10);
+
+          :report := v_report;
+        EXCEPTION
+          WHEN OTHERS THEN
+            :report := 'Error generating report: ' || SQLERRM;
+        END;
+      `;
+
+      const oracledb = await import('oracledb');
+      const { getOraclePool } = await import('@/lib/oracle/client');
+      const pool = await getOraclePool(config);
+      const oracleConnection = await pool.getConnection();
+
+      let reportContent: string;
+      try {
+        const result = await oracleConnection.execute(
+          reportQuery,
+          {
+            report: { dir: oracledb.default.BIND_OUT, type: oracledb.default.STRING, maxSize: 40000 }
+          },
+          { autoCommit: true }
+        );
+        reportContent = (result.outBinds as any).report || 'No report content generated.';
+      } finally {
+        await oracleConnection.close();
+      }
+
+      console.log(`[Statspack Reports API] Report generated successfully for connection ${connection_id}`);
+
+      // PostgreSQL에 리포트 저장
+      const now = new Date();
+
+      let savedReport = null;
+      try {
+        const inserted = await db
+          .insert(statspackReports)
+          .values({
+            oracleConnectionId: connection_id,
+            beginSnapId: begin_snap_id,
+            endSnapId: end_snap_id,
+            reportType: report_type,
+            reportContent: reportContent,
+            beginTime: now,
+            endTime: now,
+          })
+          .returning();
+
+        savedReport = inserted[0] || null;
+      } catch (saveError) {
+        console.error('[Statspack Reports API] Failed to save report:', saveError);
+        // 저장 실패해도 리포트는 반환 (다운로드는 가능하도록)
+      }
+
+      // Map to snake_case for frontend compatibility
+      const responseData = savedReport ? {
+        id: savedReport.id,
+        oracle_connection_id: savedReport.oracleConnectionId,
+        begin_snap_id: savedReport.beginSnapId,
+        end_snap_id: savedReport.endSnapId,
+        report_type: savedReport.reportType,
+        report_content: savedReport.reportContent,
+        begin_time: savedReport.beginTime,
+        end_time: savedReport.endTime,
+        created_at: savedReport.createdAt,
+      } : {
+        id: `${connection_id}-${begin_snap_id}-${end_snap_id}-${Date.now()}`,
         oracle_connection_id: connection_id,
         begin_snap_id,
         end_snap_id,
         report_type,
         report_content: reportContent,
-        begin_time: beginSnap.snap_time,
-        end_time: endSnap.snap_time,
-      })
-      .select()
-      .single();
+        begin_time: now.toISOString(),
+        end_time: now.toISOString(),
+        created_at: now.toISOString(),
+      };
 
-    if (insertError) {
-      throw insertError;
+      return NextResponse.json({
+        success: true,
+        message: 'Report created successfully',
+        data: responseData,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (queryError: any) {
+      const errorMsg = queryError.message || '';
+      console.error('[Statspack Reports API] Query error:', errorMsg);
+
+      // STATSPACK이 설치되지 않은 경우
+      if (errorMsg.includes('ORA-00942') || errorMsg.includes('ORA-06550') || errorMsg.includes('PLS-00201')) {
+        return NextResponse.json(
+          {
+            error: 'STATSPACK not available',
+            details: `STATSPACK 테이블 또는 패키지를 찾을 수 없습니다.\n\n원본 오류: ${errorMsg}`,
+          },
+          { status: 400 }
+        );
+      }
+      throw queryError;
     }
-
-    // 감사 로그
-    await supabase.from('audit_logs').insert({
-      user_id: user.id,
-      action: 'CREATE',
-      resource_type: 'statspack_report',
-      resource_id: report.id,
-      details: {
-        begin_snap_id,
-        end_snap_id,
-        report_type,
-        connection_id,
-      },
-    });
-
-    return NextResponse.json({
-      message: 'Report created successfully',
-      data: report,
-    });
   } catch (error) {
-    console.error('Failed to create report:', error);
+    console.error('[Statspack Reports API] Error creating report:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    if (process.env.NODE_ENV === 'development') {
+      return NextResponse.json(
+        {
+          error: 'Failed to create statspack report',
+          details: errorMessage,
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+        { status: 500 }
+      );
+    }
     return NextResponse.json(
-      {
-        error: 'Failed to create report',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { error: 'Failed to create statspack report' },
       { status: 500 }
     );
   }
 }
 
-// STATSPACK 리포트 생성 함수
-async function generateStatspackReport(
-  config: OracleConnectionConfig,
-  beginSnap: any,
-  endSnap: any,
-  reportType: 'TEXT' | 'HTML'
-): Promise<string> {
-  const lines: string[] = [];
-  const isHtml = reportType === 'HTML';
-
-  // 헤더
-  if (isHtml) {
-    lines.push('<html>');
-    lines.push('<head><title>STATSPACK Report</title>');
-    lines.push('<style>');
-    lines.push('body { font-family: monospace; margin: 20px; }');
-    lines.push('table { border-collapse: collapse; width: 100%; margin: 10px 0; }');
-    lines.push('th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }');
-    lines.push('th { background-color: #f2f2f2; }');
-    lines.push('h1, h2, h3 { color: #333; }');
-    lines.push('.metric { font-weight: bold; color: #0066cc; }');
-    lines.push('</style></head>');
-    lines.push('<body>');
-    lines.push('<h1>STATSPACK Performance Report</h1>');
-  } else {
-    lines.push('='.repeat(80));
-    lines.push('STATSPACK Performance Report');
-    lines.push('='.repeat(80));
-    lines.push('');
-  }
-
-  // 데이터베이스 정보
-  if (isHtml) {
-    lines.push('<h2>Database Information</h2>');
-    lines.push('<table>');
-    lines.push(`<tr><th>Connection</th><td>${config.name}</td></tr>`);
-    lines.push(`<tr><th>Host</th><td>${config.host}:${config.port}</td></tr>`);
-    lines.push(`<tr><th>Username</th><td>${config.username}</td></tr>`);
-    lines.push('</table>');
-  } else {
-    lines.push('Database Information:');
-    lines.push(`  Connection: ${config.name}`);
-    lines.push(`  Host: ${config.host}:${config.port}`);
-    lines.push(`  Username: ${config.username}`);
-    lines.push('');
-  }
-
-  // 스냅샷 정보
-  if (isHtml) {
-    lines.push('<h2>Snapshot Information</h2>');
-    lines.push('<table>');
-    lines.push(`<tr><th>Begin Snap ID</th><td>${beginSnap.snap_id}</td></tr>`);
-    lines.push(`<tr><th>Begin Time</th><td>${beginSnap.snap_time}</td></tr>`);
-    lines.push(`<tr><th>End Snap ID</th><td>${endSnap.snap_id}</td></tr>`);
-    lines.push(`<tr><th>End Time</th><td>${endSnap.snap_time}</td></tr>`);
-    lines.push(`<tr><th>Elapsed Time</th><td>${calculateElapsedMinutes(beginSnap.snap_time, endSnap.snap_time)} minutes</td></tr>`);
-    lines.push('</table>');
-  } else {
-    lines.push('Snapshot Information:');
-    lines.push(`  Begin Snap ID: ${beginSnap.snap_id}`);
-    lines.push(`  Begin Time: ${beginSnap.snap_time}`);
-    lines.push(`  End Snap ID: ${endSnap.snap_id}`);
-    lines.push(`  End Time: ${endSnap.snap_time}`);
-    lines.push(`  Elapsed Time: ${calculateElapsedMinutes(beginSnap.snap_time, endSnap.snap_time)} minutes`);
-    lines.push('');
-  }
-
-  // 성능 델타 계산
-  const deltaDbTime = endSnap.db_time_ms - beginSnap.db_time_ms;
-  const deltaCpuTime = endSnap.cpu_time_ms - beginSnap.cpu_time_ms;
-  const deltaPhysicalReads = endSnap.physical_reads - beginSnap.physical_reads;
-  const deltaLogicalReads = endSnap.logical_reads - beginSnap.logical_reads;
-  const deltaRedoSize = endSnap.redo_size_mb - beginSnap.redo_size_mb;
-  const deltaSessions = endSnap.session_count - beginSnap.session_count;
-
-  // 캐시 히트율 계산
-  const cacheHitRatio =
-    deltaLogicalReads > 0 ? ((deltaLogicalReads - deltaPhysicalReads) / deltaLogicalReads) * 100 : 0;
-
-  // Load Profile
-  if (isHtml) {
-    lines.push('<h2>Load Profile</h2>');
-    lines.push('<table>');
-    lines.push('<tr><th>Metric</th><th>Total</th><th>Per Second</th></tr>');
-    lines.push(`<tr><td>DB Time (ms)</td><td class="metric">${deltaDbTime.toLocaleString()}</td><td>${(deltaDbTime / 60).toFixed(2)}</td></tr>`);
-    lines.push(`<tr><td>CPU Time (ms)</td><td class="metric">${deltaCpuTime.toLocaleString()}</td><td>${(deltaCpuTime / 60).toFixed(2)}</td></tr>`);
-    lines.push(`<tr><td>Physical Reads</td><td class="metric">${deltaPhysicalReads.toLocaleString()}</td><td>${(deltaPhysicalReads / 60).toFixed(2)}</td></tr>`);
-    lines.push(`<tr><td>Logical Reads</td><td class="metric">${deltaLogicalReads.toLocaleString()}</td><td>${(deltaLogicalReads / 60).toFixed(2)}</td></tr>`);
-    lines.push(`<tr><td>Redo Size (MB)</td><td class="metric">${deltaRedoSize.toFixed(2)}</td><td>${(deltaRedoSize / 60).toFixed(4)}</td></tr>`);
-    lines.push('</table>');
-  } else {
-    lines.push('Load Profile:');
-    lines.push('-'.repeat(80));
-    lines.push(`${'Metric'.padEnd(30)} ${'Total'.padStart(20)} ${'Per Second'.padStart(15)}`);
-    lines.push('-'.repeat(80));
-    lines.push(`${'DB Time (ms)'.padEnd(30)} ${deltaDbTime.toLocaleString().padStart(20)} ${(deltaDbTime / 60).toFixed(2).padStart(15)}`);
-    lines.push(`${'CPU Time (ms)'.padEnd(30)} ${deltaCpuTime.toLocaleString().padStart(20)} ${(deltaCpuTime / 60).toFixed(2).padStart(15)}`);
-    lines.push(`${'Physical Reads'.padEnd(30)} ${deltaPhysicalReads.toLocaleString().padStart(20)} ${(deltaPhysicalReads / 60).toFixed(2).padStart(15)}`);
-    lines.push(`${'Logical Reads'.padEnd(30)} ${deltaLogicalReads.toLocaleString().padStart(20)} ${(deltaLogicalReads / 60).toFixed(2).padStart(15)}`);
-    lines.push(`${'Redo Size (MB)'.padEnd(30)} ${deltaRedoSize.toFixed(2).padStart(20)} ${(deltaRedoSize / 60).toFixed(4).padStart(15)}`);
-    lines.push('');
-  }
-
-  // Instance Efficiency
-  if (isHtml) {
-    lines.push('<h2>Instance Efficiency Percentages</h2>');
-    lines.push('<table>');
-    lines.push('<tr><th>Metric</th><th>Value</th></tr>');
-    lines.push(`<tr><td>Buffer Cache Hit Ratio</td><td class="metric">${cacheHitRatio.toFixed(2)}%</td></tr>`);
-    lines.push(`<tr><td>CPU / DB Time Ratio</td><td class="metric">${deltaCpuTime > 0 ? ((deltaCpuTime / deltaDbTime) * 100).toFixed(2) : '0.00'}%</td></tr>`);
-    lines.push('</table>');
-  } else {
-    lines.push('Instance Efficiency Percentages:');
-    lines.push('-'.repeat(80));
-    lines.push(`  Buffer Cache Hit Ratio: ${cacheHitRatio.toFixed(2)}%`);
-    lines.push(`  CPU / DB Time Ratio: ${deltaCpuTime > 0 ? ((deltaCpuTime / deltaDbTime) * 100).toFixed(2) : '0.00'}%`);
-    lines.push('');
-  }
-
-  // Top Wait Events (Oracle에서 조회)
+/**
+ * DELETE /api/monitoring/statspack/reports
+ * STATSPACK 리포트 삭제
+ */
+export async function DELETE(request: NextRequest) {
   try {
-    const waitEventsQuery = `
-      SELECT event, wait_class, total_waits, time_waited / 100 as time_waited_ms
-      FROM v$system_event
-      WHERE wait_class != 'Idle'
-      ORDER BY time_waited DESC
-      FETCH FIRST 10 ROWS ONLY
-    `;
-
-    const waitResult = await executeQuery<{
-      EVENT: string;
-      WAIT_CLASS: string;
-      TOTAL_WAITS: number;
-      TIME_WAITED_MS: number;
-    }>(config, waitEventsQuery);
-
-    if (waitResult.rows && waitResult.rows.length > 0) {
-      if (isHtml) {
-        lines.push('<h2>Top 10 Wait Events</h2>');
-        lines.push('<table>');
-        lines.push('<tr><th>Event</th><th>Wait Class</th><th>Total Waits</th><th>Time Waited (ms)</th></tr>');
-        waitResult.rows.forEach((row) => {
-          lines.push(
-            `<tr><td>${row.EVENT}</td><td>${row.WAIT_CLASS}</td><td>${Math.floor(Number(row.TOTAL_WAITS)).toLocaleString()}</td><td>${Math.floor(Number(row.TIME_WAITED_MS)).toLocaleString()}</td></tr>`
-          );
-        });
-        lines.push('</table>');
-      } else {
-        lines.push('Top 10 Wait Events:');
-        lines.push('-'.repeat(80));
-        lines.push(`${'Event'.padEnd(40)} ${'Wait Class'.padEnd(15)} ${'Waits'.padStart(12)} ${'Time(ms)'.padStart(15)}`);
-        lines.push('-'.repeat(80));
-        waitResult.rows.forEach((row) => {
-          lines.push(
-            `${row.EVENT.substring(0, 39).padEnd(40)} ${row.WAIT_CLASS.substring(0, 14).padEnd(15)} ${Math.floor(Number(row.TOTAL_WAITS)).toLocaleString().padStart(12)} ${Math.floor(Number(row.TIME_WAITED_MS)).toLocaleString().padStart(15)}`
-          );
-        });
-        lines.push('');
-      }
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-  } catch (err) {
-    console.error('Failed to fetch wait events:', err);
-  }
 
-  // Top SQL (Oracle에서 조회)
-  try {
-    const topSqlQuery = `
-      SELECT sql_id, executions, elapsed_time / 1000 as elapsed_ms, cpu_time / 1000 as cpu_ms,
-             buffer_gets, disk_reads
-      FROM v$sql
-      WHERE executions > 0
-      ORDER BY elapsed_time DESC
-      FETCH FIRST 10 ROWS ONLY
-    `;
+    const searchParams = request.nextUrl.searchParams;
+    const reportId = searchParams.get('id');
 
-    const sqlResult = await executeQuery<{
-      SQL_ID: string;
-      EXECUTIONS: number;
-      ELAPSED_MS: number;
-      CPU_MS: number;
-      BUFFER_GETS: number;
-      DISK_READS: number;
-    }>(config, topSqlQuery);
-
-    if (sqlResult.rows && sqlResult.rows.length > 0) {
-      if (isHtml) {
-        lines.push('<h2>Top 10 SQL by Elapsed Time</h2>');
-        lines.push('<table>');
-        lines.push('<tr><th>SQL ID</th><th>Executions</th><th>Elapsed (ms)</th><th>CPU (ms)</th><th>Buffer Gets</th><th>Disk Reads</th></tr>');
-        sqlResult.rows.forEach((row) => {
-          lines.push(
-            `<tr><td>${row.SQL_ID}</td><td>${Math.floor(Number(row.EXECUTIONS)).toLocaleString()}</td><td>${Math.floor(Number(row.ELAPSED_MS)).toLocaleString()}</td><td>${Math.floor(Number(row.CPU_MS)).toLocaleString()}</td><td>${Math.floor(Number(row.BUFFER_GETS)).toLocaleString()}</td><td>${Math.floor(Number(row.DISK_READS)).toLocaleString()}</td></tr>`
-          );
-        });
-        lines.push('</table>');
-      } else {
-        lines.push('Top 10 SQL by Elapsed Time:');
-        lines.push('-'.repeat(80));
-        lines.push(`${'SQL ID'.padEnd(15)} ${'Execs'.padStart(10)} ${'Elapsed'.padStart(12)} ${'CPU'.padStart(12)} ${'Gets'.padStart(12)} ${'Reads'.padStart(12)}`);
-        lines.push('-'.repeat(80));
-        sqlResult.rows.forEach((row) => {
-          lines.push(
-            `${row.SQL_ID.padEnd(15)} ${Math.floor(Number(row.EXECUTIONS)).toLocaleString().padStart(10)} ${Math.floor(Number(row.ELAPSED_MS)).toLocaleString().padStart(12)} ${Math.floor(Number(row.CPU_MS)).toLocaleString().padStart(12)} ${Math.floor(Number(row.BUFFER_GETS)).toLocaleString().padStart(12)} ${Math.floor(Number(row.DISK_READS)).toLocaleString().padStart(12)}`
-          );
-        });
-        lines.push('');
-      }
+    if (!reportId) {
+      return NextResponse.json({ error: 'Report ID is required' }, { status: 400 });
     }
-  } catch (err) {
-    console.error('Failed to fetch top SQL:', err);
+
+    await db
+      .delete(statspackReports)
+      .where(eq(statspackReports.id, reportId));
+
+    console.log(`[Statspack Reports API] Report ${reportId} deleted successfully`);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Report deleted successfully',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[Statspack Reports API] Error deleting report:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    return NextResponse.json(
+      {
+        error: 'Failed to delete statspack report',
+        details: errorMessage,
+      },
+      { status: 500 }
+    );
   }
-
-  // 푸터
-  if (isHtml) {
-    lines.push('<hr>');
-    lines.push(`<p><small>Report generated at ${new Date().toISOString()}</small></p>`);
-    lines.push('</body>');
-    lines.push('</html>');
-  } else {
-    lines.push('='.repeat(80));
-    lines.push(`Report generated at ${new Date().toISOString()}`);
-    lines.push('='.repeat(80));
-  }
-
-  return lines.join('\n');
-}
-
-function calculateElapsedMinutes(beginTime: string, endTime: string): number {
-  const begin = new Date(beginTime).getTime();
-  const end = new Date(endTime).getTime();
-  return Math.round((end - begin) / 1000 / 60);
 }

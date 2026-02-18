@@ -30,9 +30,9 @@ export async function GET(request: NextRequest) {
     // Oracle 연결 설정 가져오기
     const config = await getOracleConfig(connectionId);
 
-    // SQL 텍스트 전체 조회
+    // SQL 텍스트 전체 조회 (CLOB 읽기가 느릴 수 있으므로 타임아웃 30초)
     const sqlTextQuery = `
-      SELECT
+      SELECT /*+ FIRST_ROWS(1) */
         sql_id,
         sql_fulltext,
         sql_text,
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
         AND ROWNUM = 1
     `;
 
-    const result = await executeQuery(config, sqlTextQuery, [sqlId]);
+    const result = await executeQuery(config, sqlTextQuery, [sqlId], { timeout: 30000 });
 
     if (result.rows.length === 0) {
       return NextResponse.json({ error: 'SQL not found' }, { status: 404 });
@@ -113,9 +113,16 @@ export async function GET(request: NextRequest) {
       data: sqlData,
     });
   } catch (error) {
-    console.error('SQL text API error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[SQL Text API] Error:', {
+      message: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return NextResponse.json(
-      { error: 'Failed to fetch SQL text' },
+      {
+        error: 'Failed to fetch SQL text',
+        details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
+      },
       { status: 500 }
     );
   }

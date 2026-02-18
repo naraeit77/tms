@@ -386,7 +386,7 @@ export default function AdvancedAnalysisPage() {
               <p className="text-sm text-muted-foreground mb-4">{action.description}</p>
               <div className="space-y-1">
                 {action.features.map((feature, idx) => (
-                  <div key={idx} className="flex items-center text-xs text-muted-foreground">
+                  <div key={`feature-${action.title}-${feature.substring(0, 20)}-${idx}`} className="flex items-center text-xs text-muted-foreground">
                     <div className="w-1 h-1 bg-gray-400 rounded-full mr-2" />
                     {feature}
                   </div>
@@ -418,7 +418,7 @@ export default function AdvancedAnalysisPage() {
           {sqlsLoading ? (
             <div className="space-y-4">
               {[...Array(3)].map((_, i) => (
-                <div key={i} className="p-4 border rounded-lg animate-pulse">
+                <div key={`skeleton-analysis-sql-${i}`} className="p-4 border rounded-lg animate-pulse">
                   <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
                   <div className="h-3 bg-gray-200 rounded w-1/2"></div>
                 </div>
@@ -552,7 +552,7 @@ export default function AdvancedAnalysisPage() {
                   <div className="grid grid-cols-2 gap-2">
                     {tool.features.map((feature, idx) => (
                       <div
-                        key={idx}
+                        key={`tool-feature-${tool.id}-${feature.substring(0, 20)}-${idx}`}
                         className={`flex items-center text-xs transition-colors ${
                           tool.status === 'active' ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'
                         }`}

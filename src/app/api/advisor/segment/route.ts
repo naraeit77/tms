@@ -23,8 +23,10 @@ export async function GET(request: NextRequest) {
     }
 
     const config = await getOracleConfig(connectionId);
+    const quickQueryOpts = { timeout: 5000 }; // 빠른 쿼리용 5초 타임아웃
+    const mainQueryOpts = { timeout: 60000 }; // 메인 쿼리용 60초 타임아웃
 
-    // Enterprise Edition 확인
+    // Enterprise Edition 확인 (빠른 쿼리)
     const editionCheckQuery = `
       SELECT BANNER
       FROM V$VERSION
@@ -32,43 +34,42 @@ export async function GET(request: NextRequest) {
     `;
 
     try {
-      await executeQuery(config, editionCheckQuery);
+      const editionResult = await executeQuery(config, editionCheckQuery, [], quickQueryOpts);
+      // 결과가 없으면 Enterprise Edition이 아님
+      if (!editionResult.rows || editionResult.rows.length === 0) {
+        return NextResponse.json(
+          {
+            error: 'Segment Advisor requires Oracle Enterprise Edition with Diagnostics Pack license',
+            isEnterprise: false,
+          },
+          { status: 403 }
+        );
+      }
     } catch (error) {
-      return NextResponse.json(
-        {
-          error: 'Segment Advisor requires Oracle Enterprise Edition with Diagnostics Pack license',
-          isEnterprise: false,
-        },
-        { status: 403 }
-      );
+      // 타임아웃이나 연결 오류는 다르게 처리
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      if (errorMessage.includes('timeout')) {
+        return NextResponse.json(
+          { error: `Database query timeout: ${errorMessage}` },
+          { status: 504 }
+        );
+      }
+      // V$VERSION 접근 권한 문제 등
+      console.warn('[Segment Advisor] Edition check failed:', errorMessage);
+      // 권한 문제일 수 있으므로 계속 진행 시도
     }
 
-    // DBMS_ADVISOR 결과 조회 (분석 실행 후) 또는 실시간 계산 (폴백)
-    // 우선순위: DBA_ADVISOR_FINDINGS > 실시간 계산
-    const segmentsQuery = `
-      WITH advisor_recommendations AS (
-        -- DBMS_ADVISOR 분석 결과 (최근 24시간 이내)
+    // 실시간 세그먼트 분석 (간소화된 쿼리 - 성능 최적화)
+    // DBA 권한이 없는 경우 USER_* 뷰로 fallback
+
+    // 먼저 DBA_SEGMENTS 접근 시도, 실패시 USER_SEGMENTS 사용
+    let result;
+    let useDbaViews = true;
+
+    const dbaSegmentsQuery = `
+      SELECT * FROM (
         SELECT
-          o.ATTR1 as OWNER,
-          o.ATTR2 as SEGMENT_NAME,
-          o.TYPE as SEGMENT_TYPE,
-          s.TABLESPACE_NAME,
-          s.BYTES as ALLOCATED_SPACE,
-          f.MESSAGE,
-          TO_NUMBER(REGEXP_SUBSTR(f.MESSAGE, '[0-9]+')) * 1024 * 1024 as RECLAIMABLE_SPACE_ADVISOR
-        FROM DBA_ADVISOR_TASKS t
-        JOIN DBA_ADVISOR_OBJECTS o ON t.TASK_NAME = o.TASK_NAME
-        JOIN DBA_ADVISOR_FINDINGS f ON t.TASK_NAME = f.TASK_NAME AND o.OBJECT_ID = f.OBJECT_ID
-        JOIN DBA_SEGMENTS s ON o.ATTR1 = s.OWNER AND o.ATTR2 = s.SEGMENT_NAME
-        WHERE t.ADVISOR_NAME = 'Segment Advisor'
-          AND t.STATUS = 'COMPLETED'
-          AND t.CREATED >= SYSDATE - 1
-          AND f.TYPE = 'RECOMMENDATION'
-      ),
-      realtime_calculation AS (
-        -- 실시간 계산 (통계 기반)
-        SELECT
-          s.OWNER,
+          s.OWNER as SEGMENT_OWNER,
           s.SEGMENT_NAME,
           s.SEGMENT_TYPE,
           s.TABLESPACE_NAME,
@@ -77,39 +78,78 @@ export async function GET(request: NextRequest) {
             WHEN s.SEGMENT_TYPE = 'TABLE' THEN
               NVL(t.NUM_ROWS * t.AVG_ROW_LEN, s.BYTES * 0.7)
             ELSE
-              s.BYTES * 0.9
-          END as USED_SPACE
+              s.BYTES * 0.85
+          END as USED_SPACE,
+          s.BYTES - CASE
+            WHEN s.SEGMENT_TYPE = 'TABLE' THEN
+              NVL(t.NUM_ROWS * t.AVG_ROW_LEN, s.BYTES * 0.7)
+            ELSE
+              s.BYTES * 0.85
+          END as RECLAIMABLE_SPACE,
+          ROUND((s.BYTES - CASE
+            WHEN s.SEGMENT_TYPE = 'TABLE' THEN
+              NVL(t.NUM_ROWS * t.AVG_ROW_LEN, s.BYTES * 0.7)
+            ELSE
+              s.BYTES * 0.85
+          END) / s.BYTES * 100, 2) as FRAGMENTATION,
+          'ESTIMATED' as SOURCE
         FROM DBA_SEGMENTS s
         LEFT JOIN DBA_TABLES t
-          ON s.OWNER = t.OWNER AND s.SEGMENT_NAME = t.TABLE_NAME
+          ON s.OWNER = t.OWNER AND s.SEGMENT_NAME = t.TABLE_NAME AND s.SEGMENT_TYPE = 'TABLE'
         WHERE s.SEGMENT_TYPE IN ('TABLE', 'INDEX')
-          AND s.OWNER NOT IN ('SYS', 'SYSTEM', 'WMSYS', 'CTXSYS', 'MDSYS', 'OLAPSYS', 'XDB')
-          AND s.BYTES > 5242880
+          AND s.OWNER NOT IN ('SYS', 'SYSTEM', 'WMSYS', 'CTXSYS', 'MDSYS', 'OLAPSYS', 'XDB', 'DBSNMP', 'SYSMAN', 'OUTLN', 'ORDSYS', 'EXFSYS')
+          AND s.BYTES > 10485760
+        ORDER BY RECLAIMABLE_SPACE DESC
       )
-      SELECT
-        COALESCE(a.OWNER, r.OWNER) as SEGMENT_OWNER,
-        COALESCE(a.SEGMENT_NAME, r.SEGMENT_NAME) as SEGMENT_NAME,
-        COALESCE(a.SEGMENT_TYPE, r.SEGMENT_TYPE) as SEGMENT_TYPE,
-        COALESCE(a.TABLESPACE_NAME, r.TABLESPACE_NAME) as TABLESPACE_NAME,
-        COALESCE(a.ALLOCATED_SPACE, r.ALLOCATED_SPACE) as ALLOCATED_SPACE,
-        r.USED_SPACE,
-        COALESCE(a.RECLAIMABLE_SPACE_ADVISOR, GREATEST(r.ALLOCATED_SPACE - r.USED_SPACE, 0)) as RECLAIMABLE_SPACE,
-        CASE
-          WHEN COALESCE(a.ALLOCATED_SPACE, r.ALLOCATED_SPACE) > 0 THEN
-            ROUND(COALESCE(a.RECLAIMABLE_SPACE_ADVISOR, r.ALLOCATED_SPACE - r.USED_SPACE) /
-                  COALESCE(a.ALLOCATED_SPACE, r.ALLOCATED_SPACE) * 100, 2)
-          ELSE 0
-        END as FRAGMENTATION,
-        CASE WHEN a.OWNER IS NOT NULL THEN 'ADVISOR' ELSE 'ESTIMATED' END as SOURCE
-      FROM realtime_calculation r
-      LEFT JOIN advisor_recommendations a
-        ON r.OWNER = a.OWNER AND r.SEGMENT_NAME = a.SEGMENT_NAME
-      WHERE COALESCE(a.ALLOCATED_SPACE, r.ALLOCATED_SPACE) > COALESCE(r.USED_SPACE, 0) * 1.2
-      ORDER BY RECLAIMABLE_SPACE DESC
-      FETCH FIRST 50 ROWS ONLY
+      WHERE ROWNUM <= 30 AND RECLAIMABLE_SPACE > 1048576
     `;
 
-    const result = await executeQuery(config, segmentsQuery);
+    const userSegmentsQuery = `
+      SELECT * FROM (
+        SELECT
+          USER as SEGMENT_OWNER,
+          s.SEGMENT_NAME,
+          s.SEGMENT_TYPE,
+          s.TABLESPACE_NAME,
+          s.BYTES as ALLOCATED_SPACE,
+          CASE
+            WHEN s.SEGMENT_TYPE = 'TABLE' THEN
+              NVL(t.NUM_ROWS * t.AVG_ROW_LEN, s.BYTES * 0.7)
+            ELSE
+              s.BYTES * 0.85
+          END as USED_SPACE,
+          s.BYTES - CASE
+            WHEN s.SEGMENT_TYPE = 'TABLE' THEN
+              NVL(t.NUM_ROWS * t.AVG_ROW_LEN, s.BYTES * 0.7)
+            ELSE
+              s.BYTES * 0.85
+          END as RECLAIMABLE_SPACE,
+          ROUND((s.BYTES - CASE
+            WHEN s.SEGMENT_TYPE = 'TABLE' THEN
+              NVL(t.NUM_ROWS * t.AVG_ROW_LEN, s.BYTES * 0.7)
+            ELSE
+              s.BYTES * 0.85
+          END) / s.BYTES * 100, 2) as FRAGMENTATION,
+          'ESTIMATED' as SOURCE
+        FROM USER_SEGMENTS s
+        LEFT JOIN USER_TABLES t
+          ON s.SEGMENT_NAME = t.TABLE_NAME AND s.SEGMENT_TYPE = 'TABLE'
+        WHERE s.SEGMENT_TYPE IN ('TABLE', 'INDEX')
+          AND s.BYTES > 10485760
+        ORDER BY RECLAIMABLE_SPACE DESC
+      )
+      WHERE ROWNUM <= 30 AND RECLAIMABLE_SPACE > 1048576
+    `;
+
+    try {
+      result = await executeQuery(config, dbaSegmentsQuery, [], mainQueryOpts);
+      console.log('[Segment Advisor] Using DBA_SEGMENTS view');
+    } catch (dbaError) {
+      const errorMessage = dbaError instanceof Error ? dbaError.message : 'Unknown error';
+      console.log('[Segment Advisor] DBA_SEGMENTS not accessible, falling back to USER_SEGMENTS:', errorMessage);
+      useDbaViews = false;
+      result = await executeQuery(config, userSegmentsQuery, [], mainQueryOpts);
+    }
 
     console.log('Segment Advisor query result:', {
       rowCount: result.rows.length,

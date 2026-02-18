@@ -5,6 +5,28 @@ import { getOracleConfig } from '@/lib/oracle/utils';
 import { executeQuery } from '@/lib/oracle/client';
 import oracledb from 'oracledb';
 
+// Helper function to convert CLOB to string
+async function clobToString(clob: any): Promise<string | null> {
+  if (!clob) return null;
+
+  // If it's already a string, return it
+  if (typeof clob === 'string') return clob;
+
+  // If it's a Lob object, read it
+  if (clob && typeof clob.getData === 'function') {
+    try {
+      const data = await clob.getData();
+      return data;
+    } catch (e) {
+      console.error('Error reading CLOB data:', e);
+      return null;
+    }
+  }
+
+  // Try to convert to string
+  return String(clob);
+}
+
 /**
  * POST /api/monitoring/sql-monitor/report
  * SQL Monitor 리포트 생성
@@ -32,77 +54,95 @@ export async function POST(request: NextRequest) {
     const config = await getOracleConfig(connection_id);
     console.log('[SQL Monitor Report] Config loaded successfully');
 
+    // 긴 쿼리를 위한 타임아웃 설정 (60초 - DBMS_SQLTUNE 리포트 생성에 시간이 걸릴 수 있음)
+    const reportTimeout = 60000;
+
+    // Bind parameters as array
+    const bindParams = [sql_id, Number(sql_exec_id)];
+
     // HTML 형식의 SQL Monitor 리포트 생성 (DBMS_SQLTUNE 사용)
     const htmlReportQuery = `
       SELECT
         DBMS_SQLTUNE.REPORT_SQL_MONITOR(
-          sql_id => :sql_id,
-          sql_exec_id => :sql_exec_id,
+          sql_id => :1,
+          sql_exec_id => :2,
           type => 'HTML',
           report_level => 'ALL'
         ) AS HTML_REPORT
       FROM DUAL
     `;
 
-    const htmlResult = await executeQuery(config, htmlReportQuery, {
-      sql_id: sql_id,
-      sql_exec_id: Number(sql_exec_id),
-    }, {
-      fetchInfo: {
-        HTML_REPORT: { type: oracledb.STRING }
-      }
-    });
+    let htmlReportString: string | null = null;
+    try {
+      const htmlResult = await executeQuery(config, htmlReportQuery, bindParams, {
+        timeout: reportTimeout,
+        fetchInfo: {
+          HTML_REPORT: { type: oracledb.STRING }
+        }
+      });
 
-    const htmlReportString = htmlResult.rows?.[0]?.HTML_REPORT || null;
-    console.log('[SQL Monitor Report] HTML Result converted:', htmlReportString ? 'success' : 'null');
+      const rawHtml = htmlResult.rows?.[0]?.HTML_REPORT;
+      htmlReportString = await clobToString(rawHtml);
+      console.log('[SQL Monitor Report] HTML Result converted:', htmlReportString ? 'success' : 'null');
+    } catch (htmlError) {
+      console.error('[SQL Monitor Report] HTML generation failed:', htmlError);
+    }
 
     // TEXT 형식의 SQL Monitor 리포트 생성
     const textReportQuery = `
       SELECT
         DBMS_SQLTUNE.REPORT_SQL_MONITOR(
-          sql_id => :sql_id,
-          sql_exec_id => :sql_exec_id,
+          sql_id => :1,
+          sql_exec_id => :2,
           type => 'TEXT',
           report_level => 'ALL'
         ) AS TEXT_REPORT
       FROM DUAL
     `;
 
-    const textResult = await executeQuery(config, textReportQuery, {
-      sql_id: sql_id,
-      sql_exec_id: Number(sql_exec_id),
-    }, {
-      fetchInfo: {
-        TEXT_REPORT: { type: oracledb.STRING }
-      }
-    });
+    let textReportString: string | null = null;
+    try {
+      const textResult = await executeQuery(config, textReportQuery, bindParams, {
+        timeout: reportTimeout,
+        fetchInfo: {
+          TEXT_REPORT: { type: oracledb.STRING }
+        }
+      });
 
-    const textReportString = textResult.rows?.[0]?.TEXT_REPORT || null;
-    console.log('[SQL Monitor Report] TEXT Result converted:', textReportString ? 'success' : 'null');
+      const rawText = textResult.rows?.[0]?.TEXT_REPORT;
+      textReportString = await clobToString(rawText);
+      console.log('[SQL Monitor Report] TEXT Result converted:', textReportString ? 'success' : 'null');
+    } catch (textError) {
+      console.error('[SQL Monitor Report] TEXT generation failed:', textError);
+    }
 
     // XML 형식의 SQL Monitor 리포트 생성 (추가 분석용)
     const xmlReportQuery = `
       SELECT
         DBMS_SQLTUNE.REPORT_SQL_MONITOR(
-          sql_id => :sql_id,
-          sql_exec_id => :sql_exec_id,
+          sql_id => :1,
+          sql_exec_id => :2,
           type => 'XML',
           report_level => 'ALL'
         ) AS XML_REPORT
       FROM DUAL
     `;
 
-    const xmlResult = await executeQuery(config, xmlReportQuery, {
-      sql_id: sql_id,
-      sql_exec_id: Number(sql_exec_id),
-    }, {
-      fetchInfo: {
-        XML_REPORT: { type: oracledb.STRING }
-      }
-    });
+    let xmlReportString: string | null = null;
+    try {
+      const xmlResult = await executeQuery(config, xmlReportQuery, bindParams, {
+        timeout: reportTimeout,
+        fetchInfo: {
+          XML_REPORT: { type: oracledb.STRING }
+        }
+      });
 
-    const xmlReportString = xmlResult.rows?.[0]?.XML_REPORT || null;
-    console.log('[SQL Monitor Report] XML Result converted:', xmlReportString ? 'success' : 'null');
+      const rawXml = xmlResult.rows?.[0]?.XML_REPORT;
+      xmlReportString = await clobToString(rawXml);
+      console.log('[SQL Monitor Report] XML Result converted:', xmlReportString ? 'success' : 'null');
+    } catch (xmlError) {
+      console.error('[SQL Monitor Report] XML generation failed:', xmlError);
+    }
 
     // 추가 통계 정보 가져오기
     const statsQuery = `
@@ -123,14 +163,11 @@ export async function POST(request: NextRequest) {
         V$SQL_MONITOR m
         LEFT JOIN V$SQL s ON m.SQL_ID = s.SQL_ID
       WHERE
-        m.SQL_ID = :sql_id
-        AND m.SQL_EXEC_ID = :sql_exec_id
+        m.SQL_ID = :1
+        AND m.SQL_EXEC_ID = :2
     `;
 
-    const statsResult = await executeQuery(config, statsQuery, {
-      sql_id: sql_id,
-      sql_exec_id: Number(sql_exec_id),
-    }, {
+    const statsResult = await executeQuery(config, statsQuery, bindParams, {
       fetchInfo: {
         SQL_TEXT: { type: oracledb.STRING }
       }

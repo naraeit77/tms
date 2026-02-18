@@ -390,8 +390,8 @@ export default function SQLComparisonPage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {selectedSQLs.map((sql) => (
-                <div key={sql.sql_id} className="border rounded-lg p-4 relative">
+              {selectedSQLs.map((sql, index) => (
+                <div key={`compare-${sql.sql_id}-${index}`} className="border rounded-lg p-4 relative">
                   <Button
                     size="sm"
                     variant="ghost"
@@ -440,7 +440,7 @@ export default function SQLComparisonPage() {
                   <tr className="border-b">
                     <th className="text-left p-3 font-medium">메트릭</th>
                     {selectedSQLs.map((sql, index) => (
-                      <th key={sql.sql_id} className="text-center p-3 font-medium">
+                      <th key={`compare-th-${sql.sql_id}-${index}`} className="text-center p-3 font-medium">
                         <div className="space-y-1">
                           <div className="font-mono text-sm">{sql.sql_id}</div>
                           <div className="text-xs text-gray-500">{sql.schema_name}</div>
@@ -458,7 +458,7 @@ export default function SQLComparisonPage() {
                         const isWorst = getWorstPerformer(result, index)
                         
                         return (
-                          <td key={index} className="p-3 text-center">
+                          <td key={`compare-${result.metric}-${index}`} className="p-3 text-center">
                             <div className={`inline-flex items-center space-x-1 px-2 py-1 rounded ${
                               isBest ? 'bg-green-100 text-green-700' : 
                               isWorst ? 'bg-red-100 text-red-700' : 

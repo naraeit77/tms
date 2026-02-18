@@ -22,7 +22,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -37,7 +36,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 
 // DBMS_XPLAN 함수 타입
-type XPlanFunction = 'DISPLAY' | 'DISPLAY_CURSOR' | 'DISPLAY_AWR' | 'DISPLAY_SQLSET';
+type XPlanFunction = 'DISPLAY_CURSOR' | 'DISPLAY_AWR';
 
 // 포맷 옵션
 type FormatOption = 'BASIC' | 'TYPICAL' | 'SERIAL' | 'ALL' | 'ADVANCED' | 'ALLSTATS';
@@ -67,9 +66,6 @@ export default function DbmsXplanPage() {
   const [awrPlanHashValue, setAwrPlanHashValue] = useState('');
   const [awrDbId, setAwrDbId] = useState('');
 
-  // DISPLAY 파라미터 (EXPLAIN PLAN)
-  const [statementId, setStatementId] = useState('');
-  const [explainSql, setExplainSql] = useState('');
 
   // 고급 옵션
   const [showPredicate, setShowPredicate] = useState(true);
@@ -135,22 +131,6 @@ export default function DbmsXplanPage() {
           if (awrPlanHashValue) params.append('plan_hash_value', awrPlanHashValue);
           if (awrDbId) params.append('db_id', awrDbId);
           break;
-
-        case 'DISPLAY':
-          if (!statementId && !explainSql) {
-            throw new Error('Statement ID 또는 SQL을 입력해주세요');
-          }
-          endpoint = '/api/dbms-xplan/display';
-          if (statementId) params.append('statement_id', statementId);
-          if (explainSql) params.append('sql', explainSql);
-          break;
-
-        case 'DISPLAY_SQLSET':
-          endpoint = '/api/dbms-xplan/display-sqlset';
-          break;
-
-        default:
-          throw new Error('지원하지 않는 기능입니다');
       }
 
       const res = await fetch(`${endpoint}?${params.toString()}`);
@@ -174,37 +154,6 @@ export default function DbmsXplanPage() {
       format: getFormatString(),
     });
     setSearchTrigger((prev) => prev + 1);
-  };
-
-  // EXPLAIN PLAN 실행
-  const handleExplainPlan = async () => {
-    if (!explainSql.trim()) {
-      alert('SQL을 입력해주세요');
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/dbms-xplan/explain-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connection_id: effectiveConnectionId,
-          sql: explainSql,
-          statement_id: statementId || undefined,
-        }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'EXPLAIN PLAN 실행 실패');
-      }
-
-      const result = await res.json();
-      setStatementId(result.statement_id);
-      handleSearch();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'EXPLAIN PLAN 실행 중 오류가 발생했습니다');
-    }
   };
 
   // 결과 복사
@@ -272,11 +221,9 @@ export default function DbmsXplanPage() {
             </CardHeader>
             <CardContent>
               <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as XPlanFunction)}>
-                <TabsList className="grid w-full grid-cols-2 gap-2">
+                <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="DISPLAY_CURSOR">CURSOR</TabsTrigger>
                   <TabsTrigger value="DISPLAY_AWR">AWR</TabsTrigger>
-                  <TabsTrigger value="DISPLAY">EXPLAIN</TabsTrigger>
-                  <TabsTrigger value="DISPLAY_SQLSET">SQLSET</TabsTrigger>
                 </TabsList>
 
                 {/* DISPLAY_CURSOR 탭 */}
@@ -368,63 +315,6 @@ export default function DbmsXplanPage() {
                   </Button>
                 </TabsContent>
 
-                {/* DISPLAY 탭 (EXPLAIN PLAN) */}
-                <TabsContent value="DISPLAY" className="space-y-4 mt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="statement_id">Statement ID (선택)</Label>
-                    <Input
-                      id="statement_id"
-                      value={statementId}
-                      onChange={(e) => setStatementId(e.target.value)}
-                      placeholder="NULL (최신 plan)"
-                      disabled={effectiveConnectionId === 'all'}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="explain_sql">SQL Statement</Label>
-                    <Textarea
-                      id="explain_sql"
-                      value={explainSql}
-                      onChange={(e) => setExplainSql(e.target.value)}
-                      placeholder="SELECT * FROM employees WHERE department_id = 10"
-                      className="font-mono text-xs h-32"
-                      disabled={effectiveConnectionId === 'all'}
-                    />
-                  </div>
-                  <Alert>
-                    <Info className="h-4 w-4" />
-                    <AlertDescription className="text-xs">
-                      EXPLAIN PLAN FOR 명령으로 실행계획을 생성하고 조회합니다.
-                    </AlertDescription>
-                  </Alert>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      onClick={handleExplainPlan}
-                      disabled={!explainSql || effectiveConnectionId === 'all'}
-                      variant="outline"
-                    >
-                      <FileText className="h-4 w-4 mr-2" />
-                      EXPLAIN
-                    </Button>
-                    <Button
-                      onClick={handleSearch}
-                      disabled={effectiveConnectionId === 'all'}
-                    >
-                      <Search className="h-4 w-4 mr-2" />
-                      조회
-                    </Button>
-                  </div>
-                </TabsContent>
-
-                {/* DISPLAY_SQLSET 탭 */}
-                <TabsContent value="DISPLAY_SQLSET" className="space-y-4 mt-4">
-                  <Alert>
-                    <Info className="h-4 w-4" />
-                    <AlertDescription className="text-xs">
-                      SQL Tuning Set에서 실행계획을 조회합니다. (개발 예정)
-                    </AlertDescription>
-                  </Alert>
-                </TabsContent>
               </Tabs>
             </CardContent>
           </Card>
@@ -576,7 +466,7 @@ export default function DbmsXplanPage() {
               {isLoading ? (
                 <div className="space-y-2">
                   {[...Array(10)].map((_, i) => (
-                    <Skeleton key={i} className="h-4 w-full" />
+                    <Skeleton key={`skeleton-xplan-${i}`} className="h-4 w-full" />
                   ))}
                 </div>
               ) : error ? (
@@ -677,17 +567,6 @@ export default function DbmsXplanPage() {
               <div className="bg-muted p-2 rounded text-xs font-mono">
                 SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_AWR('sql_id', plan_hash_value, db_id,
                 'format'))
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <h4 className="font-medium text-sm">DISPLAY (EXPLAIN PLAN)</h4>
-              <p className="text-xs text-muted-foreground">
-                EXPLAIN PLAN 명령으로 생성된 실행계획을 PLAN_TABLE에서 조회합니다. SQL을 실행하지
-                않고 예상 실행계획을 확인할 수 있습니다.
-              </p>
-              <div className="bg-muted p-2 rounded text-xs font-mono">
-                EXPLAIN PLAN FOR &lt;SQL&gt;; SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY())
               </div>
             </div>
 

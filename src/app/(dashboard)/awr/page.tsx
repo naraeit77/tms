@@ -5,10 +5,12 @@
  * AWR 리포트 및 ADDM 분석
  */
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { FileBarChart, Download, Play, AlertCircle, Trash2 } from 'lucide-react';
+import { parseOracleEdition, checkFeatureAvailability } from '@/lib/oracle/edition-guard';
+import { EnterpriseFeatureAlert } from '@/components/ui/enterprise-feature-alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,6 +53,16 @@ export default function AWRPage() {
   const [reportType, setReportType] = useState<'AWR' | 'ADDM'>('AWR');
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // 에디션 확인
+  const awrAvailability = useMemo(() => {
+    const edition = parseOracleEdition(selectedConnection?.oracleEdition);
+    return checkFeatureAvailability('AWR', edition);
+  }, [selectedConnection?.oracleEdition]);
+
+  const currentEdition = useMemo(() => {
+    return parseOracleEdition(selectedConnection?.oracleEdition);
+  }, [selectedConnection?.oracleEdition]);
 
   // 선택된 데이터베이스 연결 ID 가져오기
   const effectiveConnectionId = selectedConnectionId || 'all';
@@ -104,10 +116,11 @@ export default function AWRPage() {
         description: `${reportType} 리포트가 생성되었습니다.`,
       });
 
-      // 리포트 내용을 다운로드 (HTML 포맷)
+      // 리포트 내용을 다운로드 (AWR: HTML, ADDM: TXT)
       const reportContent = data.data.content;
       const reportName = data.data.report_name;
-      const blob = new Blob([reportContent], { type: 'text/html' });
+      const mimeType = data.data.report_type === 'ADDM' ? 'text/plain; charset=utf-8' : 'text/html';
+      const blob = new Blob([reportContent], { type: mimeType });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -149,6 +162,16 @@ export default function AWRPage() {
           </p>
         )}
       </div>
+
+      {/* Enterprise Edition 전용 기능 안내 */}
+      {!awrAvailability.available && currentEdition !== 'Unknown' && (
+        <EnterpriseFeatureAlert
+          featureName="AWR/ADDM"
+          requiredPack={awrAvailability.requiredPack}
+          alternative={awrAvailability.alternative}
+          currentEdition={currentEdition}
+        />
+      )}
 
       {/* 데이터베이스 선택 경고 */}
       {effectiveConnectionId === 'all' && (
@@ -274,7 +297,7 @@ export default function AWRPage() {
                   <li><strong>ADDM</strong>: 성능 문제를 자동으로 분석하고 개선 권장사항을 제공합니다</li>
                   <li>일반적으로 1시간 이상의 간격으로 스냅샷을 선택하는 것이 좋습니다</li>
                   <li>리포트 생성에는 수 분이 소요될 수 있습니다</li>
-                  <li className="font-medium text-red-700">Oracle Enterprise 라이센스에 Diagnostics Pack 및 Tuning Pack 옵션을 구매하신 고객만 사용 가능합니다</li>
+                  <li className="font-medium text-red-700">Oracle Enterprise Edition + Diagnostics Pack 라이센스 필요 (Standard Edition은 STATSPACK 사용)</li>
                 </ul>
               </div>
             </CardContent>
@@ -292,7 +315,7 @@ export default function AWRPage() {
               {isLoading ? (
                 <div className="space-y-3">
                   {[...Array(3)].map((_, i) => (
-                    <Skeleton key={i} className="h-24 w-full" />
+                    <Skeleton key={`skeleton-awr-${i}`} className="h-24 w-full" />
                   ))}
                 </div>
               ) : reports && reports.length > 0 ? (
@@ -351,10 +374,11 @@ function ReportCard({ report, queryClient }: ReportCardProps) {
         description: '리포트를 다운로드합니다.',
       });
 
-      // 리포트 내용을 다운로드
+      // 리포트 내용을 다운로드 (AWR: HTML, ADDM: TXT)
       const reportContent = data.data.content;
       const reportName = data.data.report_name;
-      const blob = new Blob([reportContent], { type: 'text/html' });
+      const mimeType = report.report_type === 'ADDM' ? 'text/plain; charset=utf-8' : 'text/html';
+      const blob = new Blob([reportContent], { type: mimeType });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

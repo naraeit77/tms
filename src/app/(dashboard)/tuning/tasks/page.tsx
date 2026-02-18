@@ -155,7 +155,9 @@ export default function TuningTasksPage() {
       const data = await res.json();
       return data.data || [];
     },
-    refetchInterval: 30000,
+    refetchInterval: 60000, // 60초로 증가
+    staleTime: 30 * 1000, // 30초간 캐시 유지
+    refetchOnWindowFocus: false,
   });
 
   // Oracle 연결 목록
@@ -618,7 +620,7 @@ export default function TuningTasksPage() {
           {isLoading ? (
             <div className="space-y-3">
               {[...Array(10)].map((_, i) => (
-                <Skeleton key={i} className="h-16 w-full" />
+                <Skeleton key={`skeleton-tuning-tasks-${i}`} className="h-16 w-full" />
               ))}
             </div>
           ) : filteredTasks && filteredTasks.length > 0 ? (

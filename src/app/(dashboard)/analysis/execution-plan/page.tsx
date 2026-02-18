@@ -33,6 +33,7 @@ import {
 import { debounce } from 'es-toolkit'
 import { useSelectedDatabase } from '@/hooks/use-selected-database'
 import { ArrowLeft } from 'lucide-react'
+import { ExecutionPlanTree } from '@/components/charts/execution-plan-tree'
 
 interface SqlData {
   id: string
@@ -80,6 +81,7 @@ interface ExecutionPlan {
   cpu_cost: number
   io_cost: number
   steps: ExecutionPlanStep[]
+  planText?: string
   analysis: {
     total_cost: number
     estimated_rows: number
@@ -89,77 +91,107 @@ interface ExecutionPlan {
   }
 }
 
-// Mock execution plan data
-const generateMockExecutionPlan = (sqlId: string): ExecutionPlan => {
-  const operations = [
-    'SELECT STATEMENT',
-    'NESTED LOOPS',
-    'TABLE ACCESS FULL',
-    'TABLE ACCESS BY INDEX ROWID',
-    'INDEX RANGE SCAN',
-    'INDEX UNIQUE SCAN',
-    'HASH JOIN',
-    'SORT ORDER BY',
-    'FILTER',
-    'MERGE JOIN'
-  ]
-
-  const objects = ['SALES_ORDER', 'CUSTOMER', 'PRODUCT', 'ORDER_ITEM', 'EMPLOYEE']
-  
+// API 응답을 ExecutionPlan 형식으로 변환
+const parseExecutionPlanFromAPI = (apiData: any, sqlId: string): ExecutionPlan => {
   const steps: ExecutionPlanStep[] = []
-  const totalSteps = Math.floor(Math.random() * 8) + 3
+  const planText = apiData.plan_text || ''
 
-  for (let i = 0; i < totalSteps; i++) {
-    const operation = operations[Math.floor(Math.random() * operations.length)]
-    const cost = Math.floor(Math.random() * 1000) + 10
-    
+  // plan_text에서 실행계획 단계 파싱 시도
+  const lines = planText.split('\n')
+  let stepId = 0
+
+  for (const line of lines) {
+    // DBMS_XPLAN 출력 형식 파싱: | 0 | SELECT STATEMENT | | 1 | 100 | ...
+    const match = line.match(/\|\s*(\d+)\s*\|\s*([^|]+)\s*\|\s*([^|]*)\s*\|/)
+    if (match) {
+      const id = parseInt(match[1])
+      const operationFull = match[2].trim()
+      const objectName = match[3].trim() || undefined
+
+      // depth 계산 (들여쓰기 기반)
+      const indentMatch = operationFull.match(/^(\s*)/)
+      const depth = indentMatch ? Math.floor(indentMatch[1].length / 2) : 0
+      const operation = operationFull.trim()
+
+      steps.push({
+        id,
+        operation,
+        object_name: objectName,
+        object_type: objectName ? (operation.includes('INDEX') ? 'INDEX' : 'TABLE') : undefined,
+        cost: apiData.cost || 0,
+        cardinality: apiData.cardinality || 0,
+        bytes: apiData.bytes || 0,
+        cpu_cost: apiData.cpu_cost || 0,
+        io_cost: apiData.io_cost || 0,
+        depth,
+        position: stepId + 1,
+        parent_id: id > 0 ? Math.max(0, id - 1) : undefined,
+        time: 0
+      })
+      stepId++
+    }
+  }
+
+  // 파싱된 steps가 없으면 plan_text를 기반으로 기본 step 생성
+  if (steps.length === 0 && planText) {
     steps.push({
-      id: i,
-      operation,
-      object_name: Math.random() > 0.3 ? objects[Math.floor(Math.random() * objects.length)] : undefined,
-      object_type: Math.random() > 0.5 ? 'TABLE' : 'INDEX',
-      cost,
-      cardinality: Math.floor(Math.random() * 10000) + 1,
-      bytes: Math.floor(Math.random() * 50000) + 100,
-      cpu_cost: Math.floor(cost * 0.6),
-      io_cost: Math.floor(cost * 0.4),
-      depth: Math.floor(i / 2),
-      position: i + 1,
-      parent_id: i > 0 ? Math.floor(Math.random() * i) : undefined,
-      time: Math.floor(Math.random() * 100) + 1
+      id: 0,
+      operation: 'EXECUTION PLAN',
+      object_name: undefined,
+      cost: apiData.cost || 0,
+      cardinality: apiData.cardinality || 0,
+      bytes: apiData.bytes || 0,
+      cpu_cost: apiData.cpu_cost || 0,
+      io_cost: apiData.io_cost || 0,
+      depth: 0,
+      position: 1,
+      time: 0
     })
   }
 
-  const totalCost = steps.reduce((sum, step) => sum + step.cost, 0)
+  const totalCost = apiData.cost || steps.reduce((sum, step) => sum + step.cost, 0)
   const expensiveOps = steps
-    .filter(step => step.cost > totalCost * 0.3)
+    .filter(step => step.cost > totalCost * 0.3 && step.operation)
     .map(step => step.operation)
+
+  // 성능 이슈 분석
+  const performanceIssues: string[] = []
+  const recommendations: string[] = []
+
+  if (planText.includes('TABLE ACCESS FULL')) {
+    performanceIssues.push('Full Table Scan이 감지됨')
+    recommendations.push('적절한 인덱스 추가를 고려하세요')
+  }
+  if (planText.includes('NESTED LOOPS') && totalCost > 1000) {
+    performanceIssues.push('비용이 높은 Nested Loops 조인')
+    recommendations.push('Hash Join 또는 Merge Join을 고려하세요')
+  }
+  if (planText.includes('SORT')) {
+    recommendations.push('정렬 작업 최적화를 위해 인덱스를 검토하세요')
+  }
+  if (totalCost > 5000) {
+    performanceIssues.push('전체 비용이 높음')
+    recommendations.push('통계 정보를 업데이트하세요')
+  }
 
   return {
     sql_id: sqlId,
-    plan_hash_value: Math.floor(Math.random() * 1000000000),
+    plan_hash_value: apiData.plan_hash_value || 0,
     child_number: 0,
     cost: totalCost,
-    cardinality: Math.floor(Math.random() * 100000) + 1000,
-    bytes: Math.floor(Math.random() * 1000000) + 10000,
+    cardinality: apiData.cardinality || 0,
+    bytes: apiData.bytes || 0,
     optimizer: 'ALL_ROWS',
-    cpu_cost: Math.floor(totalCost * 0.6),
-    io_cost: Math.floor(totalCost * 0.4),
+    cpu_cost: apiData.cpu_cost || 0,
+    io_cost: apiData.io_cost || 0,
     steps,
+    planText,
     analysis: {
       total_cost: totalCost,
-      estimated_rows: Math.floor(Math.random() * 100000) + 1000,
+      estimated_rows: apiData.cardinality || 0,
       expensive_operations: expensiveOps,
-      recommendations: [
-        '인덱스 추가를 고려하세요',
-        'JOIN 순서를 최적화하세요',
-        '조건절에 함수 사용을 피하세요',
-        '통계 정보를 업데이트하세요'
-      ].slice(0, Math.floor(Math.random() * 3) + 1),
-      performance_issues: expensiveOps.length > 0 ? [
-        '비용이 높은 연산이 감지됨',
-        'Full Table Scan 최적화 필요'
-      ] : []
+      recommendations: recommendations.length > 0 ? recommendations : ['실행 계획이 양호합니다'],
+      performance_issues: performanceIssues
     }
   }
 }
@@ -174,7 +206,7 @@ export default function ExecutionPlanPage() {
   const [executionPlan, setExecutionPlan] = useState<ExecutionPlan | null>(null)
   const [loading, setLoading] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
-  const [planView, setPlanView] = useState<'tree' | 'table' | 'visual'>('tree')
+  const [planView, setPlanView] = useState<'tree' | 'table' | 'visual' | 'raw' | 'analysis'>('tree')
 
   useEffect(() => {
     if (selectedConnectionId && selectedConnectionId !== 'all') {
@@ -220,24 +252,78 @@ export default function ExecutionPlanPage() {
         const sql = data.data.find((s: SqlData) => s.sql_id === sqlId)
         if (sql) {
           setSelectedSQL(sql)
-          loadExecutionPlan(sql.sql_id)
+        } else {
+          // SQL not found in statistics, create minimal SQL data for display
+          setSelectedSQL({
+            id: sqlId,
+            sql_id: sqlId,
+            sql_text: '',
+            executions: 0,
+            elapsed_time_ms: 0,
+            cpu_time_ms: 0,
+            buffer_gets: 0,
+            disk_reads: 0,
+            rows_processed: 0,
+            avg_elapsed_time_ms: 0
+          })
         }
       }
+      // Always try to load the execution plan
+      loadExecutionPlan(sqlId)
     } catch (error) {
       console.error('Failed to load SQL by ID:', error)
+      // Still try to load execution plan even if sql-statistics fails
+      loadExecutionPlan(sqlId)
     }
   }
 
   const loadExecutionPlan = async (sqlId: string) => {
+    if (!selectedConnectionId || selectedConnectionId === 'all') return
+
     setLoading(true)
     try {
-      // In a real application, this would call an API endpoint
-      // For demo purposes, we'll generate mock data
-      await new Promise(resolve => setTimeout(resolve, 1000)) // Simulate API call
-      const plan = generateMockExecutionPlan(sqlId)
-      setExecutionPlan(plan)
+      const response = await fetch(
+        `/api/monitoring/execution-plans?connection_id=${selectedConnectionId}&sql_id=${sqlId}`
+      )
+      const data = await response.json()
+
+      if (data.success && data.data && Array.isArray(data.data) && data.data.length > 0) {
+        // API returns an array, use the first execution plan
+        const planData = data.data[0]
+        const plan = parseExecutionPlanFromAPI(planData, sqlId)
+        setExecutionPlan(plan)
+
+        // Update selectedSQL with sql_text if available from API
+        if (planData.sql_text && selectedSQL && !selectedSQL.sql_text) {
+          setSelectedSQL(prev => prev ? { ...prev, sql_text: planData.sql_text } : prev)
+        }
+      } else {
+        console.error('Failed to load execution plan:', data.error || data.message || 'No data')
+        // Create an empty plan with error message
+        setExecutionPlan({
+          sql_id: sqlId,
+          plan_hash_value: 0,
+          child_number: 0,
+          cost: 0,
+          cardinality: 0,
+          bytes: 0,
+          optimizer: 'N/A',
+          cpu_cost: 0,
+          io_cost: 0,
+          steps: [],
+          planText: data.message || data.error || '실행 계획을 조회할 수 없습니다.',
+          analysis: {
+            total_cost: 0,
+            estimated_rows: 0,
+            expensive_operations: [],
+            recommendations: ['실행 계획 정보가 없습니다'],
+            performance_issues: []
+          }
+        })
+      }
     } catch (error) {
       console.error('Failed to load execution plan:', error)
+      setExecutionPlan(null)
     } finally {
       setLoading(false)
     }
@@ -620,7 +706,7 @@ export default function ExecutionPlanPage() {
               </div>
               
               <div className="flex items-center space-x-2">
-                <Select value={planView} onValueChange={(value: 'tree' | 'table' | 'visual') => setPlanView(value)}>
+                <Select value={planView} onValueChange={(value: 'tree' | 'table' | 'visual' | 'raw' | 'analysis') => setPlanView(value)}>
                   <SelectTrigger className="w-32">
                     <SelectValue />
                   </SelectTrigger>
@@ -628,17 +714,20 @@ export default function ExecutionPlanPage() {
                     <SelectItem value="tree">트리 뷰</SelectItem>
                     <SelectItem value="table">테이블 뷰</SelectItem>
                     <SelectItem value="visual">시각화</SelectItem>
+                    <SelectItem value="raw">원본 출력</SelectItem>
+                    <SelectItem value="analysis">분석</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            <Tabs value={planView} onValueChange={(value) => setPlanView(value as 'tree' | 'table' | 'visual')}>
+            <Tabs value={planView} onValueChange={(value) => setPlanView(value as 'tree' | 'table' | 'visual' | 'raw' | 'analysis')}>
               <TabsList>
                 <TabsTrigger value="tree">트리 뷰</TabsTrigger>
                 <TabsTrigger value="table">테이블 뷰</TabsTrigger>
                 <TabsTrigger value="visual">시각화</TabsTrigger>
+                <TabsTrigger value="raw">원본 출력</TabsTrigger>
                 <TabsTrigger value="analysis">분석</TabsTrigger>
               </TabsList>
 
@@ -651,10 +740,19 @@ export default function ExecutionPlanPage() {
               </TabsContent>
 
               <TabsContent value="visual" className="space-y-4">
-                <div className="text-center py-12 text-gray-500">
-                  <Layers className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                  <h3 className="text-lg font-medium mb-2">시각화 뷰</h3>
-                  <p>고급 실행 계획 시각화가 곧 제공될 예정입니다.</p>
+                <ExecutionPlanTree
+                  steps={executionPlan.steps}
+                  width={900}
+                  height={600}
+                  onNodeClick={(step) => console.log('Selected step:', step)}
+                />
+              </TabsContent>
+
+              <TabsContent value="raw" className="space-y-4">
+                <div className="bg-gray-900 dark:bg-gray-950 rounded-lg p-4 overflow-x-auto">
+                  <pre className="text-green-400 font-mono text-sm whitespace-pre">
+                    {executionPlan.planText || '실행 계획 원본 데이터가 없습니다.'}
+                  </pre>
                 </div>
               </TabsContent>
 
@@ -672,7 +770,7 @@ export default function ExecutionPlanPage() {
                       <CardContent>
                         <div className="space-y-2">
                           {executionPlan.analysis.performance_issues.map((issue, index) => (
-                            <div key={index} className="flex items-center space-x-2 text-sm">
+                            <div key={`perf-issue-${issue.substring(0, 20)}-${index}`} className="flex items-center space-x-2 text-sm">
                               <ArrowRight className="h-4 w-4 text-orange-500" />
                               <span>{issue}</span>
                             </div>
@@ -693,7 +791,7 @@ export default function ExecutionPlanPage() {
                     <CardContent>
                       <div className="space-y-2">
                         {executionPlan.analysis.recommendations.map((rec, index) => (
-                          <div key={index} className="flex items-center space-x-2 text-sm">
+                          <div key={`recommendation-${rec.substring(0, 20)}-${index}`} className="flex items-center space-x-2 text-sm">
                             <ArrowRight className="h-4 w-4 text-blue-500" />
                             <span>{rec}</span>
                           </div>
@@ -714,7 +812,7 @@ export default function ExecutionPlanPage() {
                       <CardContent>
                         <div className="space-y-2">
                           {executionPlan.analysis.expensive_operations.map((op, index) => (
-                            <Badge key={index} variant="outline" className="mr-2 mb-2">
+                            <Badge key={`expensive-op-${op}-${index}`} variant="outline" className="mr-2 mb-2">
                               {op}
                             </Badge>
                           ))}

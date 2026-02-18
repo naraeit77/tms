@@ -74,6 +74,7 @@ interface NewConnectionForm {
   username: string;
   password: string;
   connection_type: 'SERVICE_NAME' | 'SID';
+  privilege: 'NORMAL' | 'SYSDBA' | 'SYSOPER';
   is_active: boolean;
   is_default: boolean;
 }
@@ -95,6 +96,7 @@ export default function ConnectionsPage() {
     username: '',
     password: '',
     connection_type: 'SERVICE_NAME',
+    privilege: 'NORMAL',
     is_active: true,
     is_default: false,
   };
@@ -129,6 +131,7 @@ export default function ConnectionsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['oracle-connections'] });
+      queryClient.invalidateQueries({ queryKey: ['database-selector-connections'] });
       setIsAddDialogOpen(false);
       setFormData(initialFormState);
       toast({
@@ -187,6 +190,7 @@ export default function ConnectionsPage() {
     },
     onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['oracle-connections'] });
+      queryClient.invalidateQueries({ queryKey: ['database-selector-connections'] });
       const healthData = response.data;
       const statusText = healthData.isHealthy
         ? `정상 (${healthData.version || 'Unknown'}, ${healthData.responseTime}ms)`
@@ -261,6 +265,7 @@ export default function ConnectionsPage() {
     onSuccess: () => {
       console.log('[DELETE] Mutation success - invalidating queries');
       queryClient.invalidateQueries({ queryKey: ['oracle-connections'] });
+      queryClient.invalidateQueries({ queryKey: ['database-selector-connections'] });
       toast({
         title: '연결 삭제 완료',
         description: 'DB 연결이 성공적으로 삭제되었습니다.',
@@ -444,6 +449,29 @@ export default function ConnectionsPage() {
                   </div>
                 </div>
 
+                {/* 접속 권한 (SYS 계정용) */}
+                <div className="grid gap-2">
+                  <Label htmlFor="privilege">접속 권한</Label>
+                  <Select
+                    value={formData.privilege}
+                    onValueChange={(value: 'NORMAL' | 'SYSDBA' | 'SYSOPER') =>
+                      setFormData({ ...formData, privilege: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NORMAL">일반 (Normal)</SelectItem>
+                      <SelectItem value="SYSDBA">SYSDBA (SYS 계정용)</SelectItem>
+                      <SelectItem value="SYSOPER">SYSOPER</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    SYS 계정으로 접속할 경우 SYSDBA를 선택하세요.
+                  </p>
+                </div>
+
                 {/* 연결 테스트 */}
                 <div className="pt-4 border-t">
                   <Button
@@ -517,7 +545,7 @@ export default function ConnectionsPage() {
       {isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[...Array(6)].map((_, i) => (
-            <Skeleton key={i} className="h-48" />
+            <Skeleton key={`skeleton-connections-${i}`} className="h-48" />
           ))}
         </div>
       ) : connections && connections.length > 0 ? (
@@ -565,6 +593,9 @@ function ConnectionCard({ connection, onHealthCheck, onCollectData, onDelete }: 
     UNKNOWN: 'secondary',
   } as const;
 
+  // health_status를 대문자로 정규화
+  const normalizedHealthStatus = connection.health_status?.toUpperCase() as keyof typeof healthStatusColors | undefined;
+
   return (
     <Card>
       <CardHeader>
@@ -583,9 +614,9 @@ function ConnectionCard({ connection, onHealthCheck, onCollectData, onDelete }: 
               {connection.description || `${connection.host}:${connection.port}`}
             </CardDescription>
           </div>
-          {connection.health_status && (
-            <Badge variant={healthStatusColors[connection.health_status]}>
-              {connection.health_status}
+          {normalizedHealthStatus && (
+            <Badge variant={healthStatusColors[normalizedHealthStatus] || 'secondary'}>
+              {normalizedHealthStatus}
             </Badge>
           )}
         </div>

@@ -5,10 +5,12 @@
  * ASH 분석 페이지 - 세밀한 시간 단위 제어
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { Clock, Play, Download, AlertCircle, TrendingUp, Database, Activity, Info } from 'lucide-react';
+import { parseOracleEdition } from '@/lib/oracle/edition-guard';
+import { EnterpriseFeatureAlert } from '@/components/ui/enterprise-feature-alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -73,6 +75,12 @@ export default function ASHPage() {
   const { selectedConnectionId, selectedConnection } = useSelectedDatabase();
   const { toast } = useToast();
   const effectiveConnectionId = selectedConnectionId || 'all';
+
+  // 에디션 확인
+  const currentEdition = useMemo(() => {
+    return parseOracleEdition(selectedConnection?.oracleEdition);
+  }, [selectedConnection?.oracleEdition]);
+  const isNotEnterprise = currentEdition !== 'Enterprise' && currentEdition !== 'Unknown';
   const [selectedSqlId, setSelectedSqlId] = useState<string | null>(null);
 
   // 시간 범위 상태 (시작/종료 시간)
@@ -198,6 +206,7 @@ export default function ASHPage() {
 
   const samples: ASHSample[] = ashData?.data || [];
   const metrics: ASHMetrics | undefined = ashData?.metrics;
+  const dataSource: string | undefined = ashData?.source;
 
   // ASH 리포트 생성
   const handleGenerateReport = async () => {
@@ -264,6 +273,19 @@ export default function ASHPage() {
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
             ASH 분석을 실행하려면 상단에서 데이터베이스를 선택해주세요.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Standard Edition 안내 */}
+      {isNotEnterprise && (
+        <Alert className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30">
+          <Info className="h-4 w-4 text-blue-600" />
+          <AlertDescription className="text-blue-700 dark:text-blue-300">
+            <strong>V$SESSION 기반 커스텀 ASH 모드</strong>로 동작합니다.
+            Oracle {currentEdition} Edition에서는 V$ACTIVE_SESSION_HISTORY(Diagnostics Pack) 대신
+            V$SESSION 뷰를 사용하여 세션 활동을 분석합니다.
+            일부 세밀한 히스토리 데이터가 제한될 수 있습니다.
           </AlertDescription>
         </Alert>
       )}
@@ -360,7 +382,7 @@ export default function ASHPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {Array.from({ length: 24 }, (_, i) => (
-                        <SelectItem key={i} value={pad(i)}>
+                        <SelectItem key={`start-hour-${i}`} value={pad(i)}>
                           {pad(i)}
                         </SelectItem>
                       ))}
@@ -376,7 +398,7 @@ export default function ASHPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {Array.from({ length: 60 }, (_, i) => (
-                        <SelectItem key={i} value={pad(i)}>
+                        <SelectItem key={`start-minute-${i}`} value={pad(i)}>
                           {pad(i)}
                         </SelectItem>
                       ))}
@@ -392,7 +414,7 @@ export default function ASHPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {Array.from({ length: 60 }, (_, i) => (
-                        <SelectItem key={i} value={pad(i)}>
+                        <SelectItem key={`start-second-${i}`} value={pad(i)}>
                           {pad(i)}
                         </SelectItem>
                       ))}
@@ -429,7 +451,7 @@ export default function ASHPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {Array.from({ length: 24 }, (_, i) => (
-                        <SelectItem key={i} value={pad(i)}>
+                        <SelectItem key={`end-hour-${i}`} value={pad(i)}>
                           {pad(i)}
                         </SelectItem>
                       ))}
@@ -445,7 +467,7 @@ export default function ASHPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {Array.from({ length: 60 }, (_, i) => (
-                        <SelectItem key={i} value={pad(i)}>
+                        <SelectItem key={`end-minute-${i}`} value={pad(i)}>
                           {pad(i)}
                         </SelectItem>
                       ))}
@@ -461,7 +483,7 @@ export default function ASHPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {Array.from({ length: 60 }, (_, i) => (
-                        <SelectItem key={i} value={pad(i)}>
+                        <SelectItem key={`end-second-${i}`} value={pad(i)}>
                           {pad(i)}
                         </SelectItem>
                       ))}
@@ -561,6 +583,38 @@ export default function ASHPage() {
         </div>
       )}
 
+      {/* 데이터 소스 표시 */}
+      {dataSource && (
+        <Alert className={
+          dataSource === 'ash' ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30' :
+          dataSource === 'dba_hist_ash' ? 'border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950/30' :
+          'border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/30'
+        }>
+          <Database className="h-4 w-4" />
+          <AlertDescription>
+            {dataSource === 'ash' && (
+              <span className="text-green-700 dark:text-green-300">
+                <strong>V$ACTIVE_SESSION_HISTORY</strong> 데이터를 사용 중입니다 (Enterprise Edition + Diagnostics Pack).
+                선택한 시간 범위의 히스토리 데이터를 표시합니다.
+              </span>
+            )}
+            {dataSource === 'dba_hist_ash' && (
+              <span className="text-yellow-700 dark:text-yellow-300">
+                <strong>DBA_HIST_ACTIVE_SESS_HISTORY</strong> (AWR 저장 데이터)를 사용 중입니다.
+                AWR 스냅샷 간격에 따라 일부 데이터가 생략될 수 있습니다.
+              </span>
+            )}
+            {dataSource === 'v$session' && (
+              <span className="text-orange-700 dark:text-orange-300">
+                <strong>V$SESSION 스냅샷 모드</strong> - 현재 활성 세션만 표시됩니다.
+                V$ACTIVE_SESSION_HISTORY를 사용할 수 없어 시간 범위 필터링이 적용되지 않습니다.
+                Enterprise Edition + Diagnostics Pack이 필요합니다.
+              </span>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* ASH 분석 결과 탭 */}
       <Tabs defaultValue="samples" className="space-y-4">
         <TabsList>
@@ -583,7 +637,7 @@ export default function ASHPage() {
               {isLoading ? (
                 <div className="space-y-3">
                   {[...Array(10)].map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
+                    <Skeleton key={`skeleton-ash-${i}`} className="h-12 w-full" />
                   ))}
                 </div>
               ) : samples.length > 0 ? (
@@ -602,7 +656,7 @@ export default function ASHPage() {
                     </TableHeader>
                     <TableBody>
                       {samples.slice(0, 100).map((sample, idx) => (
-                        <TableRow key={idx}>
+                        <TableRow key={`sample-${sample.sample_time}-${sample.session_id}-${idx}`}>
                           <TableCell className="font-mono text-xs">
                             {new Date(sample.sample_time).toLocaleString('ko-KR')}
                           </TableCell>
@@ -657,7 +711,7 @@ export default function ASHPage() {
               {metrics && metrics.top_wait_events.length > 0 ? (
                 <div className="space-y-3">
                   {metrics.top_wait_events.map((event, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div key={`wait-event-${event.event}-${idx}`} className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="flex-1">
                         <div className="font-medium">{event.event}</div>
                         <div className="text-sm text-muted-foreground">
@@ -701,7 +755,7 @@ export default function ASHPage() {
               {metrics && metrics.top_sql.length > 0 ? (
                 <div className="space-y-3">
                   {metrics.top_sql.map((sql, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 border rounded-lg hover:shadow-md transition-shadow">
+                    <div key={`top-sql-${sql.sql_id}-${idx}`} className="flex items-center justify-between p-3 border rounded-lg hover:shadow-md transition-shadow">
                       <div className="flex-1">
                         <button
                           onClick={() => setSelectedSqlId(sql.sql_id)}
@@ -750,7 +804,7 @@ export default function ASHPage() {
               {metrics && metrics.session_states.length > 0 ? (
                 <div className="space-y-3">
                   {metrics.session_states.map((state, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div key={`session-state-${state.state}-${idx}`} className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="flex-1">
                         <Badge variant={state.state === 'ON CPU' ? 'default' : 'secondary'}>
                           {state.state}
@@ -794,7 +848,7 @@ export default function ASHPage() {
               <li>시/분/초 단위로 정확한 시간 범위 지정 가능</li>
               <li>짧은 시간 동안의 성능 문제 분석에 유용 (AWR보다 세밀)</li>
               <li>실시간에 가까운 성능 분석 가능</li>
-              <li className="font-medium text-red-700">Oracle Diagnostics Pack 라이센스 필요</li>
+              <li className="font-medium text-red-700">Oracle Enterprise Edition + Diagnostics Pack 필요 (Standard Edition은 V$SESSION 기반 제한적 지원)</li>
             </ul>
           </div>
         </CardContent>
@@ -1016,7 +1070,7 @@ function SQLDetailDialog({
                     </thead>
                     <tbody>
                       {detailData.bind_variables.map((bind: any, idx: number) => (
-                        <tr key={idx} className="border-b">
+                        <tr key={`bind-${bind.name}-${bind.position}-${idx}`} className="border-b">
                           <td className="py-2 px-2 font-mono">{bind.name}</td>
                           <td className="py-2 px-2">{bind.position}</td>
                           <td className="py-2 px-2">{bind.datatype}</td>

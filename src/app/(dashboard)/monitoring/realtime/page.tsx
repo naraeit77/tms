@@ -82,9 +82,9 @@ export default function RealtimeMonitoringPage() {
         </div>
       ) : sqlData && sqlData.length > 0 ? (
         <div className="space-y-3">
-          {sqlData.map((sql) => (
+          {sqlData.map((sql, index) => (
             <RealtimeSQLCard
-              key={sql.sql_id}
+              key={`realtime-${sql.sql_id}-${sql.session_id || ''}-${sql.sql_exec_id || ''}-${index}`}
               sql={sql}
               onSqlIdClick={() => setSelectedSqlId(sql.sql_id)}
             />
@@ -379,7 +379,7 @@ function SQLDetailDialog({
                     </thead>
                     <tbody>
                       {detailData.bind_variables.map((bind: any, idx: number) => (
-                        <tr key={idx} className="border-b">
+                        <tr key={`bind-var-realtime-${bind.name || ''}-${bind.position || idx}-${bind.datatype || ''}-${idx}`} className="border-b">
                           <td className="py-2 px-2 font-mono">{bind.name}</td>
                           <td className="py-2 px-2">{bind.position}</td>
                           <td className="py-2 px-2">{bind.datatype}</td>

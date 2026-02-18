@@ -117,7 +117,7 @@ fi
 
 # 9. 의존성 설치
 log_info "Installing dependencies..."
-npm ci --production=false
+npm ci
 
 if [ $? -eq 0 ]; then
     log_success "Dependencies installed"

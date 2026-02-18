@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createPureClient } from '@/lib/supabase/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { db } from '@/db';
+import { reports, reportActivities } from '@/db/schema';
+import { eq, and } from 'drizzle-orm';
 
 interface ExportOptions {
   format: 'pdf' | 'excel' | 'csv' | 'json' | 'html';
@@ -15,13 +19,8 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient();
-    const params = await context.params;
-    const reportId = params.id;
-
-    // Check authentication
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session?.user) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
@@ -29,27 +28,24 @@ export async function POST(
     }
 
     const userId = session.user.id;
+    const params = await context.params;
+    const reportId = params.id;
     const exportOptions: ExportOptions = await request.json();
 
-    // Use pure client to bypass RLS
-    const pureSupabase = await createPureClient();
-
     // Verify user has access to the report
-    const { data: report, error: reportError } = await pureSupabase
-      .from('reports')
-      .select('*')
-      .eq('id', reportId)
-      .eq('user_id', userId)
-      .single();
+    const [report] = await db
+      .select()
+      .from(reports)
+      .where(and(eq(reports.id, reportId), eq(reports.userId, userId)))
+      .limit(1);
 
-    if (reportError || !report) {
+    if (!report) {
       return NextResponse.json(
         { success: false, error: 'Report not found' },
         { status: 404 }
       );
     }
 
-    // Check if report is completed
     if (report.status !== 'completed') {
       return NextResponse.json(
         { success: false, error: 'Report is not ready for export' },
@@ -61,16 +57,16 @@ export async function POST(
     const exportData = await generateExport(report, exportOptions);
 
     // Log export activity
-    await pureSupabase.from('report_activities').insert({
-      report_id: reportId,
-      user_id: userId,
+    await db.insert(reportActivities).values({
+      reportId,
+      userId,
       action: 'downloaded',
       details: {
         format: exportOptions.format,
         filename: exportOptions.customFilename,
         includeCharts: exportOptions.includeCharts,
         includeRawData: exportOptions.includeRawData
-      }
+      },
     });
 
     return NextResponse.json({
@@ -93,16 +89,11 @@ export async function POST(
 }
 
 async function generateExport(report: any, options: ExportOptions) {
-  // In a real implementation, this would generate the actual file
-  // For now, we'll simulate the export process
-
   const filename = options.customFilename || `${report.name}_${new Date().toISOString().split('T')[0]}.${options.format}`;
 
-  // Simulate export processing time
   await new Promise(resolve => setTimeout(resolve, 1000));
 
-  // Calculate mock file size based on options
-  let baseSize = 2 * 1024 * 1024; // 2MB base
+  let baseSize = 2 * 1024 * 1024;
   if (options.includeCharts) baseSize += 1.5 * 1024 * 1024;
   if (options.includeRawData) baseSize += 3 * 1024 * 1024;
   if (options.format === 'excel') baseSize *= 1.2;

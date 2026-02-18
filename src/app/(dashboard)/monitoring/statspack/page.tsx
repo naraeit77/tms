@@ -21,6 +21,8 @@ import {
   AlertCircle,
   Download,
   Eye,
+  Terminal,
+  Shield,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -100,7 +102,9 @@ export default function StatspackPage() {
       return res.json();
     },
     enabled: effectiveConnectionId !== 'all',
-    refetchInterval: 30000,
+    refetchInterval: 60000, // 60초로 증가
+    staleTime: 30 * 1000, // 30초간 캐시 유지
+    refetchOnWindowFocus: false,
   });
 
   const snapshots: StatspackSnapshot[] = snapshotsData?.data || [];
@@ -178,11 +182,28 @@ export default function StatspackPage() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: '리포트 생성 완료',
         description: 'STATSPACK 리포트가 성공적으로 생성되었습니다.',
       });
+
+      // 리포트 내용을 다운로드
+      if (data?.data?.report_content) {
+        const reportContent = data.data.report_content;
+        const mimeType = reportType === 'HTML' ? 'text/html' : 'text/plain; charset=utf-8';
+        const fileExt = reportType === 'HTML' ? 'html' : 'txt';
+        const blob = new Blob([reportContent], { type: mimeType });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `statspack_${data.data.begin_snap_id}_${data.data.end_snap_id}.${fileExt}`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
+
       setReportDialogOpen(false);
       setSelectedSnapshots([]);
       refetchReports();
@@ -190,6 +211,34 @@ export default function StatspackPage() {
     onError: (error: Error) => {
       toast({
         title: '리포트 생성 실패',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // 리포트 삭제 Mutation
+  const deleteReportMutation = useMutation({
+    mutationFn: async (reportId: string) => {
+      const res = await fetch(`/api/monitoring/statspack/reports?id=${reportId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.details || '리포트 삭제 실패');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: '리포트 삭제 완료',
+        description: '리포트가 성공적으로 삭제되었습니다.',
+      });
+      refetchReports();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: '리포트 삭제 실패',
         description: error.message,
         variant: 'destructive',
       });
@@ -333,6 +382,69 @@ export default function StatspackPage() {
                 <li>리포트를 생성하여 성능을 분석합니다</li>
                 <li>TEXT 또는 HTML 형식으로 저장 가능</li>
               </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* DBA 설치 가이드 */}
+      <Card className="border-blue-200 bg-blue-50/50">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Terminal className="h-5 w-5 text-blue-600" />
+            <CardTitle className="text-blue-900">STATSPACK 설치 가이드 (DBA)</CardTitle>
+          </div>
+          <CardDescription>
+            STATSPACK이 설치되지 않았거나 권한이 없는 경우, 아래 절차를 따라 설정하세요.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-3">
+            <div className="flex items-start gap-2">
+              <Badge variant="outline" className="mt-0.5 bg-white">1</Badge>
+              <div className="flex-1">
+                <h4 className="font-semibold text-sm text-blue-900">STATSPACK 설치 (SYSDBA 권한 필요)</h4>
+                <pre className="mt-2 p-3 bg-gray-900 text-gray-100 rounded-md text-xs overflow-x-auto">
+{`-- SQL*Plus에서 SYSDBA로 접속
+sqlplus / as sysdba
+
+-- STATSPACK 설치 스크립트 실행
+@$ORACLE_HOME/rdbms/admin/spcreate.sql`}
+                </pre>
+                <p className="text-xs text-muted-foreground mt-1">
+                  설치 시 PERFSTAT 사용자와 테이블스페이스를 지정해야 합니다.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2">
+              <Badge variant="outline" className="mt-0.5 bg-white">2</Badge>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-blue-600" />
+                  <h4 className="font-semibold text-sm text-blue-900">사용자 권한 부여</h4>
+                </div>
+                <pre className="mt-2 p-3 bg-gray-900 text-gray-100 rounded-md text-xs overflow-x-auto">
+{`-- 애플리케이션 사용자에게 권한 부여
+GRANT EXECUTE ON PERFSTAT.STATSPACK TO <사용자명>;
+GRANT SELECT ANY DICTIONARY TO <사용자명>;
+
+-- 또는 PERFSTAT 스키마 접근 권한
+GRANT SELECT ON PERFSTAT.STATS$SNAPSHOT TO <사용자명>;`}
+                </pre>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2">
+              <Badge variant="outline" className="mt-0.5 bg-white">3</Badge>
+              <div className="flex-1">
+                <h4 className="font-semibold text-sm text-blue-900">설치 확인</h4>
+                <pre className="mt-2 p-3 bg-gray-900 text-gray-100 rounded-md text-xs overflow-x-auto">
+{`-- STATSPACK 설치 확인
+SELECT COUNT(*) FROM dba_objects
+WHERE owner = 'PERFSTAT' AND object_name = 'STATSPACK';`}
+                </pre>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -521,6 +633,20 @@ export default function StatspackPage() {
                           >
                             <Download className="h-4 w-4 mr-1" />
                             다운로드
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm('이 리포트를 삭제하시겠습니까?')) {
+                                deleteReportMutation.mutate(report.id);
+                              }
+                            }}
+                            disabled={deleteReportMutation.isPending}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            삭제
                           </Button>
                         </div>
                       </TableCell>

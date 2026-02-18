@@ -53,7 +53,7 @@ export default function ComparePage() {
       {/* Features Grid */}
       <div className="grid md:grid-cols-3 gap-4">
         {comparisonFeatures.map((feature, index) => (
-          <Card key={index} className="border-2">
+          <Card key={`compare-feature-${feature.title || ''}-${index}`} className="border-2">
             <CardContent className="p-6">
               <div className="flex flex-col items-center text-center">
                 <div className="p-3 bg-blue-100 dark:bg-blue-900 rounded-lg mb-4">
@@ -103,7 +103,7 @@ export default function ComparePage() {
               </div>
               <div className="flex flex-wrap gap-2">
                 {sqlIds.map((id, index) => (
-                  <Badge key={index} variant="outline" className="font-mono">
+                  <Badge key={`sql-id-badge-${id}-${index}`} variant="outline" className="font-mono">
                     {id}
                   </Badge>
                 ))}

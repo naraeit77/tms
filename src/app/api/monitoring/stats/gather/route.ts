@@ -4,7 +4,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+
+// Next.js 15: API 라우트 타임아웃 설정 (600초 = 10분)
+// 대형 테이블의 경우 통계 수집에 5분 이상 걸릴 수 있음
+export const maxDuration = 600;
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { db } from '@/db';
+import { oracleConnections, statsCollectionHistory } from '@/db/schema';
+import { eq, and } from 'drizzle-orm';
 import { decrypt } from '@/lib/crypto';
 import { executeQuery } from '@/lib/oracle';
 import type { OracleConnectionConfig } from '@/lib/oracle/types';
@@ -21,13 +29,9 @@ interface GatherStatsRequest {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    // 현재 사용자 확인 (Next-Auth 세션 사용)
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -42,47 +46,55 @@ export async function POST(request: NextRequest) {
     }
 
     // Get connection config
-    const { data: connection, error: connError } = await supabase
-      .from('oracle_connections')
-      .select('*')
-      .eq('id', connection_id)
-      .eq('is_active', true)
-      .single();
+    const connections = await db
+      .select()
+      .from(oracleConnections)
+      .where(
+        and(
+          eq(oracleConnections.id, connection_id),
+          eq(oracleConnections.isActive, true)
+        )
+      )
+      .limit(1);
 
-    if (connError || !connection) {
+    const connection = connections[0];
+    if (!connection) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 });
     }
 
-    const password = decrypt(connection.password_encrypted);
+    const password = decrypt(connection.passwordEncrypted);
 
     const oracleConfig: OracleConnectionConfig = {
       id: connection.id,
       name: connection.name,
       host: connection.host,
-      port: connection.port,
-      serviceName: connection.service_name || undefined,
+      port: connection.port!,
+      serviceName: connection.serviceName || undefined,
       sid: connection.sid || undefined,
       username: connection.username,
       password,
-      connectionType: connection.connection_type,
+      connectionType: connection.connectionType!,
+      privilege: connection.privilege || undefined,
     };
 
     // Create history record - IN_PROGRESS
     const startTime = new Date();
-    const { data: historyRecord, error: historyError } = await supabase
-      .from('stats_collection_history')
-      .insert({
-        oracle_connection_id: connection_id,
-        owner: owner.toUpperCase(),
-        table_name: table_name.toUpperCase(),
-        operation: 'GATHER_TABLE_STATS',
-        status: 'IN_PROGRESS',
-        start_time: startTime.toISOString(),
-      })
-      .select()
-      .single();
+    let historyRecord: { id: string } | null = null;
+    try {
+      const inserted = await db
+        .insert(statsCollectionHistory)
+        .values({
+          oracleConnectionId: connection_id,
+          owner: owner.toUpperCase(),
+          tableName: table_name.toUpperCase(),
+          operation: 'GATHER_TABLE_STATS',
+          status: 'IN_PROGRESS',
+          startTime: startTime,
+        })
+        .returning({ id: statsCollectionHistory.id });
 
-    if (historyError) {
+      historyRecord = inserted[0] || null;
+    } catch (historyError) {
       console.error('Failed to create history record:', historyError);
     }
 
@@ -101,6 +113,7 @@ export async function POST(request: NextRequest) {
         END;
       `;
 
+      // 통계 수집은 시간이 오래 걸릴 수 있으므로 타임아웃을 600초(10분)로 설정
       await executeQuery(oracleConfig, plsql, [
         owner.toUpperCase(),
         table_name.toUpperCase(),
@@ -108,21 +121,22 @@ export async function POST(request: NextRequest) {
         cascade,
         degree,
         method_opt,
-      ]);
+      ], { timeout: 600000 }); // 600초(10분) 타임아웃
 
       // Update history record - SUCCESS
       const endTime = new Date();
       const durationSeconds = Math.round((endTime.getTime() - startTime.getTime()) / 1000);
 
       if (historyRecord) {
-        await supabase
-          .from('stats_collection_history')
-          .update({
+        await db
+          .update(statsCollectionHistory)
+          .set({
             status: 'SUCCESS',
-            end_time: endTime.toISOString(),
-            duration_seconds: durationSeconds,
+            endTime: endTime,
+            durationSeconds: durationSeconds,
+            updatedAt: new Date(),
           })
-          .eq('id', historyRecord.id);
+          .where(eq(statsCollectionHistory.id, historyRecord.id));
       }
 
       return NextResponse.json({
@@ -136,15 +150,16 @@ export async function POST(request: NextRequest) {
       const durationSeconds = Math.round((endTime.getTime() - startTime.getTime()) / 1000);
 
       if (historyRecord) {
-        await supabase
-          .from('stats_collection_history')
-          .update({
+        await db
+          .update(statsCollectionHistory)
+          .set({
             status: 'FAILED',
-            end_time: endTime.toISOString(),
-            duration_seconds: durationSeconds,
-            error_message: error.message,
+            endTime: endTime,
+            durationSeconds: durationSeconds,
+            errorMessage: error.message,
+            updatedAt: new Date(),
           })
-          .eq('id', historyRecord.id);
+          .where(eq(statsCollectionHistory.id, historyRecord.id));
       }
 
       throw error;

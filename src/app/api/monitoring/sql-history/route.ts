@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
 
     // DBA_HIST_SQLSTAT에서 히스토리 데이터 조회
     const historyQuery = `
+      SELECT * FROM (
       SELECT
         TO_CHAR(s.end_interval_time, 'YYYY-MM-DD HH24:MI:SS') as snapshot_time,
         sql.executions_delta as executions,
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
       WHERE sql.sql_id = :sql_id
         AND s.end_interval_time >= SYSDATE - 7
       ORDER BY s.end_interval_time DESC
-      FETCH FIRST 100 ROWS ONLY
+      ) WHERE ROWNUM <= 100
     `
 
     let historyResult
@@ -68,6 +69,7 @@ export async function GET(request: NextRequest) {
 
       // AWR을 사용할 수 없는 경우 v$sql의 현재 데이터만 반환
       const currentQuery = `
+        SELECT * FROM (
         SELECT
           TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') as snapshot_time,
           executions,
@@ -80,7 +82,7 @@ export async function GET(request: NextRequest) {
           cpu_time / DECODE(executions, 0, 1, executions) / 1000 as avg_cpu_ms
         FROM v$sql
         WHERE sql_id = :sql_id
-        FETCH FIRST 1 ROWS ONLY
+        ) WHERE ROWNUM <= 1
       `
 
       historyResult = await executeQuery(config, currentQuery, [sqlId])

@@ -182,7 +182,7 @@ git clone https://github.com/your-repo/narae-tms.git .
 ### 5.3 의존성 설치
 ```bash
 # npm 패키지 설치 (프로덕션 모드)
-npm ci --only=production
+npm ci --omit=dev
 
 # 또는 모든 의존성 설치
 npm install

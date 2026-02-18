@@ -30,12 +30,20 @@ export async function POST(request: NextRequest) {
     // Segment Advisor 작업 생성 및 실행
     const taskName = `SEG_TASK_${Date.now()}`;
 
+    // 타임아웃을 120초로 설정 (Segment Advisor 분석은 시간이 오래 걸릴 수 있음)
+    const queryOpts = { timeout: 120000 };
+
+    // USER_SEGMENTS 뷰 사용 (일반 사용자 권한으로 자신의 스키마 분석)
     const analyzeSQL = `
       DECLARE
         l_task_name VARCHAR2(30) := :task_name;
         l_task_id NUMBER;
         l_obj_id NUMBER;
+        l_username VARCHAR2(128);
       BEGIN
+        -- 현재 사용자명 조회
+        SELECT USER INTO l_username FROM DUAL;
+
         -- 1. Segment Advisor 작업 생성
         DBMS_ADVISOR.CREATE_TASK(
           advisor_name => 'Segment Advisor',
@@ -43,14 +51,18 @@ export async function POST(request: NextRequest) {
           task_desc    => 'Segment space analysis task created via TMS'
         );
 
-        -- 2. 단편화 가능성이 있는 세그먼트들을 분석 대상으로 등록
+        -- 2. 단편화 가능성이 있는 대형 세그먼트들을 분석 대상으로 등록 (상위 20개로 제한)
+        -- USER_SEGMENTS 사용으로 현재 사용자 스키마의 세그먼트만 분석
         FOR seg_rec IN (
-          SELECT s.OWNER, s.SEGMENT_NAME
-          FROM DBA_SEGMENTS s
-          WHERE s.SEGMENT_TYPE = 'TABLE'
-            AND s.OWNER NOT IN ('SYS', 'SYSTEM', 'WMSYS', 'CTXSYS', 'MDSYS', 'OLAPSYS', 'XDB')
-            AND s.BYTES > 10485760
-            AND ROWNUM <= 50
+          SELECT l_username as OWNER, SEGMENT_NAME
+          FROM (
+            SELECT s.SEGMENT_NAME, s.BYTES
+            FROM USER_SEGMENTS s
+            WHERE s.SEGMENT_TYPE = 'TABLE'
+              AND s.BYTES > 10485760
+            ORDER BY s.BYTES DESC
+          )
+          WHERE ROWNUM <= 20
         ) LOOP
           BEGIN
             DBMS_ADVISOR.CREATE_OBJECT(
@@ -74,7 +86,7 @@ export async function POST(request: NextRequest) {
       END;
     `;
 
-    await executeQuery(config, analyzeSQL, { task_name: taskName });
+    await executeQuery(config, analyzeSQL, [taskName], queryOpts);
 
     return NextResponse.json({
       success: true,

@@ -18,6 +18,7 @@ export interface PerformanceMetrics {
 
 export interface PerformancePoint {
   sql_id: string;
+  sql_snippet?: string;
   x: number; // CPU Time or Elapsed Time
   y: number; // Logical Reads or Executions
   size: number; // Buffer Gets or Disk Reads

@@ -5,7 +5,6 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getOracleConfig } from '@/lib/oracle/utils'
 import { executeQuery } from '@/lib/oracle/client'
-import oracledb from 'oracledb'
 
 /**
  * GET /api/analysis/realtime-monitoring
@@ -32,39 +31,35 @@ export async function GET(request: NextRequest) {
 
     const config = await getOracleConfig(connectionId)
 
-    // 실시간 실행 중인 SQL 조회
+    // 실시간 실행 중인 SQL 조회 (Oracle 11g 호환: ROWNUM 사용)
     const query = `
-      SELECT
-        s.sql_id,
-        s.sql_text,
-        s.sql_fulltext,
-        ses.status,
-        s.elapsed_time / 1000 as elapsed_time_ms,
-        s.cpu_time / 1000 as cpu_time_ms,
-        ses.event as wait_event,
-        ses.sid as session_id,
-        ses.username,
-        ses.logon_time as start_time
-      FROM v$session ses
-      JOIN v$sql s ON ses.sql_id = s.sql_id
-      WHERE ses.type = 'USER'
-        AND ses.username IS NOT NULL
-        AND ses.status IN ('ACTIVE', 'WAITING')
-        AND s.sql_id IS NOT NULL
-      ORDER BY s.elapsed_time DESC
-      FETCH FIRST 50 ROWS ONLY
+      SELECT * FROM (
+        SELECT
+          s.sql_id,
+          SUBSTR(s.sql_text, 1, 500) as sql_text,
+          ses.status,
+          ROUND(s.elapsed_time / 1000) as elapsed_time_ms,
+          ROUND(s.cpu_time / 1000) as cpu_time_ms,
+          ses.event as wait_event,
+          ses.sid as session_id,
+          ses.username,
+          ses.logon_time as start_time
+        FROM v$session ses
+        JOIN v$sql s ON ses.sql_id = s.sql_id AND ses.sql_child_number = s.child_number
+        WHERE ses.type = 'USER'
+          AND ses.username IS NOT NULL
+          AND ses.status = 'ACTIVE'
+          AND s.sql_id IS NOT NULL
+        ORDER BY s.elapsed_time DESC
+      ) WHERE ROWNUM <= 30
     `
 
-    const result = await executeQuery(config, query, [], {
-      fetchInfo: {
-        SQL_FULLTEXT: { type: oracledb.STRING },
-        SQL_TEXT: { type: oracledb.STRING },
-      },
-    })
+    // 타임아웃 5초 설정
+    const result = await executeQuery(config, query, [], { timeout: 5000 })
 
     // 결과 변환
     const realtimeSQLs = result.rows.map((row: any) => {
-      const sqlText = (row.SQL_FULLTEXT || row.SQL_TEXT || '').toString()
+      const sqlText = (row.SQL_TEXT || '').toString()
 
       return {
         sql_id: row.SQL_ID,

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Database, AlertCircle, RefreshCw, Server, User } from 'lucide-react';
 import { useDatabaseStore } from '@/lib/stores/database-store';
 import { Button } from '@/components/ui/button';
@@ -15,83 +16,143 @@ import {
 import { Badge } from '@/components/ui/badge';
 
 function DatabaseSelectorInner() {
-  const { connections, selectedConnectionId, selectConnection, setConnections, isLoading, setLoading } =
+  const queryClient = useQueryClient();
+  const { connections, selectedConnectionId, selectConnection, setConnections, updateConnectionHealth } =
     useDatabaseStore();
-  const selectedConnection = connections?.find((conn) => conn.id === selectedConnectionId);
+  const healthCheckExecutedRef = useRef(false);
 
-  const fetchConnections = async () => {
-    try {
-      setLoading(true);
+  // React Query로 데이터베이스 연결 목록 조회 (전용 키 사용 - 다른 페이지의 queryFn과 형식 충돌 방지)
+  const { data: connectionsData, isLoading } = useQuery({
+    queryKey: ['database-selector-connections'],
+    queryFn: async ({ signal }) => {
+      try {
+        const response = await fetch('/api/oracle/connections', {
+          signal,
+          cache: 'no-store',
+        });
 
-      // Add timeout to prevent infinite loading
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        if (!response.ok) {
+          throw new Error('Failed to fetch connections');
+        }
+        const data = await response.json();
 
-      const response = await fetch('/api/oracle/connections', {
-        signal: controller.signal,
-      });
+        const formattedConnections = data.map((conn: any) => {
+          // Normalize health_status: convert to uppercase if exists, otherwise 'UNKNOWN'
+          const rawStatus = conn.health_status;
+          const normalizedHealthStatus = (rawStatus && typeof rawStatus === 'string')
+            ? rawStatus.toUpperCase()
+            : 'UNKNOWN';
 
-      clearTimeout(timeoutId);
+          return {
+            id: conn.id,
+            name: conn.name,
+            description: conn.description,
+            host: conn.host,
+            port: conn.port,
+            serviceName: conn.service_name,
+            sid: conn.sid,
+            username: conn.username,
+            connectionType: conn.connection_type,
+            oracleVersion: conn.oracle_version,
+            oracleEdition: conn.oracle_edition,
+            isActive: conn.is_active,
+            isDefault: conn.is_default,
+            healthStatus: normalizedHealthStatus,
+            lastConnectedAt: conn.last_connected_at,
+          };
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch connections');
+        // Deduplicate connections by ID
+        return Array.from(
+          new Map(formattedConnections.map((conn: any) => [conn.id, conn])).values()
+        );
+      } catch (error: any) {
+        // AbortError는 정상적인 취소이므로 로깅하지 않음
+        if (error?.name === 'AbortError') {
+          return [];
+        }
+        console.error('Failed to fetch connections:', error);
+        return [];
       }
-      const data = await response.json();
+    },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
 
-      const formattedConnections = data.map((conn: any) => ({
-        id: conn.id,
-        name: conn.name,
-        description: conn.description,
-        host: conn.host,
-        port: conn.port,
-        serviceName: conn.service_name,
-        sid: conn.sid,
-        username: conn.username,
-        connectionType: conn.connection_type,
-        oracleVersion: conn.oracle_version,
-        oracleEdition: conn.oracle_edition,
-        isActive: conn.is_active,
-        isDefault: conn.is_default,
-        healthStatus: conn.health_status,
-        lastConnectedAt: conn.last_connected_at,
-      }));
+  // React Query 데이터를 Zustand 스토어에 동기화
+  useEffect(() => {
+    if (connectionsData) {
+      setConnections(connectionsData as any);
 
-      // Deduplicate connections by ID
-      const uniqueConnections = Array.from(
-        new Map(formattedConnections.map((conn: any) => [conn.id, conn])).values()
-      );
+      // 저장된 선택 ID 복원 (stale ID 검증 포함)
+      const savedId = localStorage.getItem('selected-database-id');
+      const currentId = selectedConnectionId;
+      const isCurrentValid = currentId && connectionsData.some((c: any) => c.id === currentId);
 
-      setConnections(uniqueConnections as any);
-    } catch (error) {
-      console.error('Failed to fetch connections:', error);
-      // Set empty array on error to prevent infinite loading
-      setConnections([]);
-    } finally {
-      setLoading(false);
+      if (!isCurrentValid && connectionsData.length > 0) {
+        // 현재 선택이 유효하지 않으면 localStorage에서 복원 시도
+        const savedConnection = savedId ? connectionsData.find((c: any) => c.id === savedId) : null;
+        if (savedConnection) {
+          selectConnection(savedId!);
+        } else {
+          // 기본 연결 또는 첫 번째 연결 선택
+          const defaultConnection = connectionsData.find((c: any) => c.isDefault) || connectionsData[0];
+          if (defaultConnection) {
+            selectConnection(defaultConnection.id);
+          }
+        }
+      }
+
+      // health_status가 없거나 UNKNOWN인 연결들에 대해 자동 health check 실행
+      if (!healthCheckExecutedRef.current) {
+        const connectionsNeedingHealthCheck = (connectionsData as any[]).filter(
+          (c: any) => c.healthStatus === 'UNKNOWN'
+        );
+
+        if (connectionsNeedingHealthCheck.length > 0) {
+          healthCheckExecutedRef.current = true;
+
+          // 각 연결에 대해 health check 실행 (백그라운드에서)
+          Promise.all(
+            connectionsNeedingHealthCheck.map(async (conn: any) => {
+              try {
+                const response = await fetch(`/api/oracle/connections/${conn.id}/health`);
+                const result = await response.json();
+                if (result?.data) {
+                  const newStatus = result.data.isHealthy ? 'HEALTHY' : 'ERROR';
+                  updateConnectionHealth(conn.id, newStatus as any, result.data.version);
+                }
+                return result;
+              } catch (error) {
+                console.error(`[DatabaseSelector] Health check failed for ${conn.name}:`, error);
+                updateConnectionHealth(conn.id, 'ERROR');
+                return null;
+              }
+            })
+          ).then(() => {
+            setTimeout(() => {
+              queryClient.invalidateQueries({ queryKey: ['database-selector-connections'] });
+            }, 1000);
+          });
+        }
+      }
     }
+  }, [connectionsData, selectedConnectionId, setConnections, selectConnection, queryClient]);
+
+  // React Query 데이터를 직접 사용하여 렌더링 (Zustand 동기화 지연 방지)
+  const displayConnections = (connectionsData as any[] || connections || []) as any[];
+  const selectedConnection = displayConnections.find((conn: any) => conn.id === selectedConnectionId);
+
+  const fetchConnections = () => {
+    healthCheckExecutedRef.current = false;
+    queryClient.invalidateQueries({ queryKey: ['database-selector-connections'] });
   };
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        await fetchConnections();
-
-        const savedId = localStorage.getItem('selected-database-id');
-        if (savedId && !selectedConnectionId) {
-          selectConnection(savedId);
-        }
-      } catch (error) {
-        console.error('Error loading database connections:', error);
-      }
-    };
-
-    // Don't block rendering if this fails
-    loadData().catch(console.error);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const getHealthStatusBadge = (status?: string) => {
-    switch (status) {
+    const normalizedStatus = (status && typeof status === 'string') ? status.toUpperCase() : 'UNKNOWN';
+    switch (normalizedStatus) {
       case 'HEALTHY':
         return (
           <Badge variant="default" className="bg-green-500 hover:bg-green-600 text-white text-xs border-0">
@@ -104,10 +165,11 @@ function DatabaseSelectorInner() {
             ⚠ DEGRADED
           </Badge>
         );
+      case 'ERROR':
       case 'UNHEALTHY':
         return (
           <Badge variant="destructive" className="text-xs">
-            ✗ UNHEALTHY
+            ✗ ERROR
           </Badge>
         );
       default:
@@ -157,14 +219,19 @@ function DatabaseSelectorInner() {
         </div>
         <DropdownMenuSeparator />
 
-        {!connections || connections.length === 0 ? (
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <RefreshCw className="h-8 w-8 text-muted-foreground mb-2 animate-spin" />
+            <p className="text-sm text-muted-foreground">데이터베이스 목록을 불러오는 중...</p>
+          </div>
+        ) : !displayConnections || displayConnections.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <AlertCircle className="h-8 w-8 text-muted-foreground mb-2" />
             <p className="text-sm text-muted-foreground">연결된 데이터베이스가 없습니다</p>
           </div>
         ) : (
           <>
-            {connections.map((connection) => (
+            {displayConnections.map((connection: any) => (
                 <DropdownMenuItem
                   key={`conn-${connection.id}`}
                   onClick={() => selectConnection(connection.id)}

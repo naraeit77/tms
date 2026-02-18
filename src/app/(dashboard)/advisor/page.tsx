@@ -5,6 +5,7 @@
  * Oracle Advisor 기능 개요 및 각 어드바이저 소개
  */
 
+import { useMemo } from 'react';
 import Link from 'next/link';
 import {
   Lightbulb,
@@ -24,6 +25,9 @@ import {
   AlertDescription,
   AlertTitle,
 } from '@/components/ui/alert';
+import { useSelectedDatabase } from '@/hooks/use-selected-database';
+import { parseOracleEdition } from '@/lib/oracle/edition-guard';
+import { EnterpriseFeatureAlert } from '@/components/ui/enterprise-feature-alert';
 
 const advisors = [
   {
@@ -99,6 +103,13 @@ const advisors = [
 ];
 
 export default function OracleAdvisorPage() {
+  const { selectedConnection } = useSelectedDatabase();
+
+  const currentEdition = useMemo(() => {
+    return parseOracleEdition(selectedConnection?.oracleEdition);
+  }, [selectedConnection?.oracleEdition]);
+  const isNotEnterprise = currentEdition !== 'Enterprise' && currentEdition !== 'Unknown';
+
   return (
     <div className="space-y-6">
       {/* 페이지 헤더 */}
@@ -117,20 +128,33 @@ export default function OracleAdvisorPage() {
         </div>
       </div>
 
-      {/* Oracle Advisor 소개 */}
-      <Alert>
-        <Lightbulb className="h-4 w-4" />
-        <AlertTitle>Oracle Advisor란?</AlertTitle>
-        <AlertDescription className="space-y-2">
-          <p>
-            Oracle Advisor는 Oracle Enterprise Edition에서 제공하는 자동화된 성능 분석 및 최적화 도구 모음입니다.
-            데이터베이스의 다양한 영역을 자동으로 분석하고 구체적인 개선안을 제안합니다.
-          </p>
-          <p className="text-sm font-medium mt-2">
-            ⚠️ Oracle Advisor 기능은 Oracle Enterprise Edition과 Diagnostics Pack 및 Tuning Pack 라이센스가 필요합니다.
-          </p>
-        </AlertDescription>
-      </Alert>
+      {/* Enterprise Edition 전용 기능 안내 */}
+      {isNotEnterprise ? (
+        <EnterpriseFeatureAlert
+          featureName="Oracle Advisor"
+          requiredPack="Diagnostics Pack + Tuning Pack"
+          alternative={{
+            name: 'DBMS_XPLAN / 실행계획 분석',
+            description: '실행계획 조회 및 비교를 통한 수동 SQL 튜닝이 가능합니다.',
+            route: '/execution-plans',
+          }}
+          currentEdition={currentEdition}
+        />
+      ) : (
+        <Alert>
+          <Lightbulb className="h-4 w-4" />
+          <AlertTitle>Oracle Advisor란?</AlertTitle>
+          <AlertDescription className="space-y-2">
+            <p>
+              Oracle Advisor는 Oracle Enterprise Edition에서 제공하는 자동화된 성능 분석 및 최적화 도구 모음입니다.
+              데이터베이스의 다양한 영역을 자동으로 분석하고 구체적인 개선안을 제안합니다.
+            </p>
+            <p className="text-sm font-medium mt-2">
+              Oracle Advisor 기능은 Oracle Enterprise Edition과 Diagnostics Pack 및 Tuning Pack 라이센스가 필요합니다.
+            </p>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Advisor 카드 그리드 */}
       <div className="grid gap-6 md:grid-cols-2">
@@ -153,7 +177,7 @@ export default function OracleAdvisorPage() {
                   <h4 className="text-sm font-medium">주요 기능:</h4>
                   <ul className="space-y-1">
                     {advisor.features.map((feature, index) => (
-                      <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
+                      <li key={`feature-${advisor.name || ''}-${feature.substring(0, 20)}-${index}`} className="text-sm text-muted-foreground flex items-start gap-2">
                         <span className="text-green-500 mt-0.5">•</span>
                         <span>{feature}</span>
                       </li>

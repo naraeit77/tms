@@ -199,7 +199,7 @@ export default function RefactoringAssistantPage() {
                   <h4 className="text-sm font-semibold mb-3">🎯 개선 사항</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {suggestion.improvements.map((improvement, idx) => (
-                      <div key={idx} className={`p-3 rounded border ${getImpactColor(improvement.impact)}`}>
+                      <div key={`improvement-${improvement.type}-${improvement.impact}-${idx}`} className={`p-3 rounded border ${getImpactColor(improvement.impact)}`}>
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-semibold">{improvement.type}</span>
                           <Badge variant="outline" className="text-xs">

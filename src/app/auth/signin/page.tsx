@@ -21,7 +21,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
+  const callbackUrl = searchParams.get('callbackUrl') || '/monitoring';
   const error = searchParams.get('error');
   const registered = searchParams.get('registered');
 
@@ -34,7 +34,7 @@ function SignInContent() {
   // 회원가입 완료 후 리다이렉트된 경우 안내 메시지 표시
   useEffect(() => {
     if (registered === 'true') {
-      setInfoMessage('회원가입이 완료되었습니다. 이메일을 확인하고 로그인해주세요.');
+      setInfoMessage('회원가입이 완료되었습니다. 로그인해주세요.');
     }
   }, [registered]);
 
@@ -52,12 +52,7 @@ function SignInContent() {
       });
 
       if (result?.error) {
-        // 이메일 미확인 에러 체크
-        if (result.error.includes('Email not confirmed') || result.error.includes('이메일')) {
-          setInfoMessage('이메일 주소를 확인해주세요. 받은편지함에서 확인 메일을 확인하세요.');
-        } else {
-          setErrorMessage(result.error);
-        }
+        setErrorMessage(result.error);
       } else if (result?.ok) {
         router.push(callbackUrl);
         router.refresh();
@@ -81,7 +76,7 @@ function SignInContent() {
       EmailCreateAccount: '이메일 계정 생성에 실패했습니다.',
       Callback: '콜백 처리 중 오류가 발생했습니다.',
       OAuthAccountNotLinked: '이미 다른 방법으로 가입된 이메일입니다.',
-      EmailSignin: '이메일을 확인할 수 없습니다.',
+      EmailSignin: '이메일 로그인에 실패했습니다.',
       CredentialsSignup: '계정 생성에 실패했습니다.',
       SessionRequired: '로그인이 필요합니다.',
     };
@@ -115,7 +110,7 @@ function SignInContent() {
               </Alert>
             )}
 
-            {/* 정보 메시지 (이메일 확인 등) */}
+            {/* 정보 메시지 */}
             {infoMessage && (
               <Alert className="border-blue-500 bg-blue-50">
                 <Info className="h-4 w-4 text-blue-600" />
@@ -183,10 +178,7 @@ function SignInContent() {
           </div>
 
           <div className="text-xs text-center text-muted-foreground">
-            문제가 있으신가요?{' '}
-            <Link href="/auth/help" className="text-primary hover:underline">
-              도움말
-            </Link>
+            &copy; {new Date().getFullYear()} 주식회사 나래정보기술
           </div>
         </CardFooter>
       </Card>

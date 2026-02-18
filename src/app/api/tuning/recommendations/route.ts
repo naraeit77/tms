@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { createPureClient } from '@/lib/supabase/server';
 import { getOracleConfig } from '@/lib/oracle/utils';
 import { executeQuery } from '@/lib/oracle/client';
 
@@ -16,7 +15,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const supabase = await createPureClient();
     const searchParams = request.nextUrl.searchParams;
     const connectionId = searchParams.get('connection_id');
     const sqlId = searchParams.get('sql_id');
@@ -30,6 +28,7 @@ export async function GET(request: NextRequest) {
 
     // 성능이 낮은 SQL 조회
     const slowSqlQuery = `
+      SELECT * FROM (
       SELECT
         sql_id,
         sql_text,
@@ -54,7 +53,7 @@ export async function GET(request: NextRequest) {
         )
       ORDER BY
         elapsed_time DESC
-      FETCH FIRST 20 ROWS ONLY
+      ) WHERE ROWNUM <= 20
     `;
 
     const slowSqlResult = await executeQuery(config, slowSqlQuery);
@@ -235,6 +234,7 @@ export async function GET(request: NextRequest) {
 
     // 테이블 통계 확인
     const statsQuery = `
+      SELECT * FROM (
       SELECT
         owner,
         table_name,
@@ -247,7 +247,7 @@ export async function GET(request: NextRequest) {
         owner NOT IN ('SYS', 'SYSTEM')
         AND num_rows > 1000
         AND (last_analyzed IS NULL OR last_analyzed < SYSDATE - 30)
-      FETCH FIRST 10 ROWS ONLY
+      ) WHERE ROWNUM <= 10
     `;
 
     try {

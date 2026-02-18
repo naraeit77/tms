@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Narae TMS v2.0** - SQL Tuning Management System by 주식회사 나래정보기술
 
-Next.js 15 application using React 19, TypeScript, Tailwind CSS, and Shadcn UI. Built with EasyNext framework, integrating Supabase for backend services and NextAuth for authentication.
+Next.js 15 application using React 19, TypeScript, Tailwind CSS, and Shadcn UI. Built with EasyNext framework, using local PostgreSQL 17 with Drizzle ORM and NextAuth for authentication.
 
 This is a professional SQL tuning and performance management system for Oracle databases, providing comprehensive performance monitoring, SQL analysis, and automated tuning recommendations.
 
@@ -39,11 +39,12 @@ npm run lint
 - **React Hook Form** + **Zod** - form validation and schema validation
 
 ### Authentication & Backend
-- **NextAuth v4** - JWT strategy, session configured in `src/lib/auth.ts`
-- **Supabase** - BaaS with SSR support
-  - Client: `src/lib/supabase/client.ts` - browser client
-  - Server: `src/lib/supabase/server.ts` - server client with cookie handling
-  - MCP integration configured for Supabase operations
+- **NextAuth v4** - JWT strategy with bcrypt credentials provider, configured in `src/lib/auth.ts`
+- **PostgreSQL 17** - Local database (`tms` DB, `tms_app` user)
+- **Drizzle ORM** - Type-safe ORM with `pg` driver
+  - DB instance: `src/db/index.ts`
+  - Schema: `src/db/schema/` (7 files: users, connections, monitoring, tuning, awr, reports, performance)
+  - Config: `drizzle.config.ts`
 
 ### UI & Styling
 - **Tailwind CSS** - utility-first with custom theme (HSL color system)
@@ -72,10 +73,15 @@ src/
 ├── components/
 │   ├── ui/                # Shadcn UI components
 │   └── auth/              # Auth-related components (AuthProvider)
+├── db/
+│   ├── index.ts           # PostgreSQL pool + Drizzle instance
+│   ├── schema/            # Drizzle schema definitions (7 files)
+│   └── seed.ts            # Seed data script
 ├── lib/
 │   ├── utils.ts           # Utility functions (cn helper, etc.)
-│   ├── auth.ts            # NextAuth configuration
-│   └── supabase/          # Supabase clients
+│   ├── auth.ts            # NextAuth configuration (bcrypt + Drizzle)
+│   ├── crypto.ts          # Encryption utilities
+│   └── oracle/            # Oracle DB connection utilities
 ├── features/              # Feature-based modules (when needed)
 │   └── [featureName]/
 │       ├── components/    # Feature-specific components
@@ -87,8 +93,6 @@ src/
 ├── hooks/                 # Global hooks
 └── remote/                # HTTP client configuration
 
-supabase/
-└── migrations/            # SQL migration files (numbered, idempotent)
 ```
 
 ## Critical Coding Rules
@@ -105,7 +109,7 @@ supabase/
 ### Component Guidelines
 - Client components by default (use `use client`)
 - Server components only when explicitly needed (e.g., data fetching, server actions)
-- Use `server-only` package for server-specific code (see `src/lib/supabase/server.ts`)
+- Use `server-only` package for server-specific code
 
 ### Authentication
 - Use NextAuth session for all authentication
@@ -113,18 +117,17 @@ supabase/
 - Custom session user type includes `id` field
 - Auth provider wraps app in `src/app/layout.tsx`
 
-### Supabase Integration
-- **Client-side**: Use `createClient()` from `src/lib/supabase/client.ts`
-- **Server-side**: Use `createClient()` from `src/lib/supabase/server.ts` (with cookie handling)
-- **Pure server**: Use `createPureClient()` for operations without user context
-- **Migrations**:
-  - Store in `supabase/migrations/` as `.sql` files
-  - Use numbered prefixes (e.g., `0001_create_users_table.sql`)
-  - Must be idempotent (use `IF NOT EXISTS`)
-  - Include `updated_at` column with trigger on all tables
-  - Check existing migrations to avoid conflicts
-  - Use RLS policies for access control
-  - Do not run Supabase locally
+### Database (PostgreSQL + Drizzle ORM)
+- **DB instance**: Use `db` from `@/db` for all database operations
+- **Schema**: Define tables in `src/db/schema/` using Drizzle's `pgTable()`
+- **Queries**: Use Drizzle query builder (`db.select()`, `db.insert()`, `db.update()`, `db.delete()`)
+- **Operators**: Import from `drizzle-orm` (`eq`, `and`, `or`, `desc`, `gte`, `lte`, `inArray`, `sql`, etc.)
+- **Schema conventions**:
+  - Column names: camelCase in schema, snake_case in DB
+  - All tables include `created_at` and `updated_at` with timezone
+  - UUID primary keys with `gen_random_uuid()`
+  - `updated_at` triggers on all tables
+- **Connection**: `DATABASE_URL=postgresql://tms_app:song7409@localhost:5432/tms`
 
 ### UI Components (Shadcn)
 - When adding new Shadcn components, provide installation command:
@@ -182,9 +185,4 @@ QueryClient configuration:
 
 ## MCP Integration
 
-Project uses Supabase MCP server for database operations. Connection configured in `.mcp.json` with project reference `fhnphmjpvawmljdvhptj`.
-
-When working with Supabase:
-- Use MCP tools for migrations, queries, and table operations
-- Migration files follow strict naming/structure requirements
-- Always check for advisor notices after DDL changes
+Project uses Context7 and Sequential Thinking MCP servers for documentation lookup and complex analysis. Configured in `.mcp.json`.

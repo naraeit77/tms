@@ -20,10 +20,10 @@ export default function Home() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
-  // 이미 로그인한 사용자는 대시보드로 리다이렉트
+  // 이미 로그인한 사용자는 실시간 모니터링으로 리다이렉트
   useEffect(() => {
     if (status === 'authenticated') {
-      router.push('/dashboard');
+      router.push('/monitoring');
     }
   }, [status, router]);
 

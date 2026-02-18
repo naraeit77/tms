@@ -369,7 +369,7 @@ export default function PlanBaselinesPage() {
           {isLoading ? (
             <div className="space-y-3">
               {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-16 w-full" />
+                <Skeleton key={`skeleton-baselines-${i}`} className="h-16 w-full" />
               ))}
             </div>
           ) : filteredBaselines && filteredBaselines.length > 0 ? (

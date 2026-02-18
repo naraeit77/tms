@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPureClient } from '@/lib/supabase/server';
+import { db } from '@/db';
+import { sqlTuningTasks } from '@/db/schema';
+import { eq, desc, and, sql, count } from 'drizzle-orm';
 
 /**
  * GET /api/tuning/tasks
@@ -13,36 +15,96 @@ export async function GET(request: NextRequest) {
     const assignedTo = searchParams.get('assigned_to');
     const limit = parseInt(searchParams.get('limit') || '100');
     const offset = parseInt(searchParams.get('offset') || '0');
+    const connectionId = searchParams.get('connection_id');
 
-    const supabase = await createPureClient();
+    // Build filter conditions
+    const conditions = [];
 
-    let query = supabase
-      .from('sql_tuning_tasks')
-      .select('*')
-      .order('identified_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    // 필터 적용
     if (status && status !== 'all') {
-      query = query.eq('status', status);
+      conditions.push(eq(sqlTuningTasks.status, status));
     }
 
     if (priority && priority !== 'all') {
-      query = query.eq('priority', priority);
+      conditions.push(eq(sqlTuningTasks.priority, priority));
     }
 
     if (assignedTo) {
-      query = query.eq('assigned_to', assignedTo);
+      conditions.push(eq(sqlTuningTasks.assignedTo, assignedTo));
     }
 
-    const { data, error, count } = await query;
+    if (connectionId && connectionId !== 'all') {
+      conditions.push(eq(sqlTuningTasks.oracleConnectionId, connectionId));
+    }
 
-    if (error) throw error;
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get total count
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(sqlTuningTasks)
+      .where(whereClause);
+
+    // Get paginated data
+    const data = await db
+      .select({
+        id: sqlTuningTasks.id,
+        oracle_connection_id: sqlTuningTasks.oracleConnectionId,
+        sql_statistics_id: sqlTuningTasks.sqlStatisticsId,
+        sql_id: sqlTuningTasks.sqlId,
+        sql_text: sqlTuningTasks.sqlText,
+        title: sqlTuningTasks.title,
+        description: sqlTuningTasks.description,
+        priority: sqlTuningTasks.priority,
+        status: sqlTuningTasks.status,
+        assigned_to: sqlTuningTasks.assignedTo,
+        assigned_at: sqlTuningTasks.assignedAt,
+        assigned_by: sqlTuningTasks.assignedBy,
+        before_elapsed_time_ms: sqlTuningTasks.beforeElapsedTimeMs,
+        before_cpu_time_ms: sqlTuningTasks.beforeCpuTimeMs,
+        before_buffer_gets: sqlTuningTasks.beforeBufferGets,
+        before_disk_reads: sqlTuningTasks.beforeDiskReads,
+        before_executions: sqlTuningTasks.beforeExecutions,
+        before_plan_hash_value: sqlTuningTasks.beforePlanHashValue,
+        after_elapsed_time_ms: sqlTuningTasks.afterElapsedTimeMs,
+        after_cpu_time_ms: sqlTuningTasks.afterCpuTimeMs,
+        after_buffer_gets: sqlTuningTasks.afterBufferGets,
+        after_disk_reads: sqlTuningTasks.afterDiskReads,
+        after_executions: sqlTuningTasks.afterExecutions,
+        after_plan_hash_value: sqlTuningTasks.afterPlanHashValue,
+        improvement_rate: sqlTuningTasks.improvementRate,
+        elapsed_time_improved_pct: sqlTuningTasks.elapsedTimeImprovedPct,
+        buffer_gets_improved_pct: sqlTuningTasks.bufferGetsImprovedPct,
+        cpu_time_improved_pct: sqlTuningTasks.cpuTimeImprovedPct,
+        tuning_method: sqlTuningTasks.tuningMethod,
+        tuning_details: sqlTuningTasks.tuningDetails,
+        implemented_changes: sqlTuningTasks.implementedChanges,
+        identified_at: sqlTuningTasks.identifiedAt,
+        started_at: sqlTuningTasks.startedAt,
+        completed_at: sqlTuningTasks.completedAt,
+        cancelled_at: sqlTuningTasks.cancelledAt,
+        estimated_completion_date: sqlTuningTasks.estimatedCompletionDate,
+        reviewed_by: sqlTuningTasks.reviewedBy,
+        reviewed_at: sqlTuningTasks.reviewedAt,
+        review_comments: sqlTuningTasks.reviewComments,
+        approved_by: sqlTuningTasks.approvedBy,
+        approved_at: sqlTuningTasks.approvedAt,
+        tags: sqlTuningTasks.tags,
+        labels: sqlTuningTasks.labels,
+        metadata: sqlTuningTasks.metadata,
+        created_by: sqlTuningTasks.createdBy,
+        created_at: sqlTuningTasks.createdAt,
+        updated_at: sqlTuningTasks.updatedAt,
+      })
+      .from(sqlTuningTasks)
+      .where(whereClause)
+      .orderBy(desc(sqlTuningTasks.identifiedAt))
+      .limit(limit)
+      .offset(offset);
 
     return NextResponse.json({
       data,
       pagination: {
-        total: count || data?.length || 0,
+        total,
         limit,
         offset,
       },
@@ -80,29 +142,56 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = await createPureClient();
-
-    // 튜닝 태스크 생성
-    const { data: task, error } = await supabase
-      .from('sql_tuning_tasks')
-      .insert({
-        oracle_connection_id,
-        sql_id,
-        sql_text,
+    const [task] = await db
+      .insert(sqlTuningTasks)
+      .values({
+        oracleConnectionId: oracle_connection_id,
+        sqlId: sql_id,
+        sqlText: sql_text,
         title,
         description,
         priority,
         status: 'IDENTIFIED',
-        identified_at: new Date().toISOString(),
+        identifiedAt: new Date(),
         metadata: {},
         labels: {},
       })
-      .select()
-      .single();
+      .returning();
 
-    if (error) throw error;
+    // Map to snake_case for frontend compatibility
+    const response = {
+      id: task.id,
+      oracle_connection_id: task.oracleConnectionId,
+      sql_statistics_id: task.sqlStatisticsId,
+      sql_id: task.sqlId,
+      sql_text: task.sqlText,
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      status: task.status,
+      assigned_to: task.assignedTo,
+      assigned_at: task.assignedAt,
+      assigned_by: task.assignedBy,
+      before_elapsed_time_ms: task.beforeElapsedTimeMs,
+      after_elapsed_time_ms: task.afterElapsedTimeMs,
+      improvement_rate: task.improvementRate,
+      tuning_method: task.tuningMethod,
+      tuning_details: task.tuningDetails,
+      implemented_changes: task.implementedChanges,
+      identified_at: task.identifiedAt,
+      started_at: task.startedAt,
+      completed_at: task.completedAt,
+      cancelled_at: task.cancelledAt,
+      estimated_completion_date: task.estimatedCompletionDate,
+      tags: task.tags,
+      labels: task.labels,
+      metadata: task.metadata,
+      created_by: task.createdBy,
+      created_at: task.createdAt,
+      updated_at: task.updatedAt,
+    };
 
-    return NextResponse.json(task, { status: 201 });
+    return NextResponse.json(response, { status: 201 });
   } catch (error) {
     console.error('Create tuning task error:', error);
     return NextResponse.json(

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useSelectedDatabase } from '@/hooks/use-selected-database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,7 +19,9 @@ import {
   CheckCircle,
   XCircle,
   ArrowUpDown,
-  GitCompare
+  GitCompare,
+  Sparkles,
+  X
 } from 'lucide-react'
 import { debounce } from 'es-toolkit'
 
@@ -38,11 +40,86 @@ interface SQLResult {
   oracle_connection_id: string
 }
 
+// AI 검색 필터 파라미터 파싱
+interface AISearchFilters {
+  pattern?: string
+  schema?: string
+  minElapsed?: number
+  maxElapsed?: number
+  minBuffer?: number
+  maxBuffer?: number
+  timeRange?: string
+  orderBy?: string
+  order?: 'asc' | 'desc'
+  limit?: number
+  isAISearch: boolean
+}
+
+function parseAISearchParams(searchParams: URLSearchParams): AISearchFilters {
+  return {
+    pattern: searchParams.get('pattern') || undefined,
+    schema: searchParams.get('schema') || undefined,
+    minElapsed: searchParams.get('min_elapsed') ? parseInt(searchParams.get('min_elapsed')!) : undefined,
+    maxElapsed: searchParams.get('max_elapsed') ? parseInt(searchParams.get('max_elapsed')!) : undefined,
+    minBuffer: searchParams.get('min_buffer') ? parseInt(searchParams.get('min_buffer')!) : undefined,
+    maxBuffer: searchParams.get('max_buffer') ? parseInt(searchParams.get('max_buffer')!) : undefined,
+    timeRange: searchParams.get('time_range') || undefined,
+    orderBy: searchParams.get('order_by') || undefined,
+    order: (searchParams.get('order') as 'asc' | 'desc') || undefined,
+    limit: searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : undefined,
+    isAISearch: searchParams.get('ai_search') === 'true'
+  }
+}
+
+// 시간 범위를 시간 단위로 변환
+function getTimeRangeHours(timeRange: string): number {
+  switch (timeRange) {
+    case '1h': return 1
+    case '6h': return 6
+    case '12h': return 12
+    case '24h': return 24
+    case '7d': return 24 * 7
+    case '30d': return 24 * 30
+    case '90d': return 24 * 90
+    default: return 24 * 365 // 'all' or unknown
+  }
+}
+
+// 시간 범위 레이블
+function getTimeRangeLabel(timeRange: string): string {
+  switch (timeRange) {
+    case '1h': return '최근 1시간'
+    case '6h': return '최근 6시간'
+    case '12h': return '최근 12시간'
+    case '24h': return '최근 24시간'
+    case '7d': return '최근 7일'
+    case '30d': return '최근 30일'
+    case '90d': return '최근 90일'
+    default: return '전체'
+  }
+}
+
 export default function SQLSearchPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { selectedConnectionId } = useSelectedDatabase()
   const initialQuery = searchParams.get('q') || ''
+
+  // AI 검색 필터 파싱
+  const aiFilters = useMemo(() => parseAISearchParams(searchParams), [searchParams])
+
+  // AI 검색 필터에서 정렬 기준 변환
+  const mapOrderByToSortBy = (orderBy?: string): string => {
+    if (!orderBy) return 'cpu_time_ms'
+    switch (orderBy) {
+      case 'elapsed_time': return 'elapsed_time_ms'
+      case 'cpu_time': return 'cpu_time_ms'
+      case 'executions': return 'executions'
+      case 'buffer_gets': return 'buffer_gets'
+      case 'disk_reads': return 'disk_reads'
+      default: return 'cpu_time_ms'
+    }
+  }
 
   const [searchQuery, setSearchQuery] = useState(initialQuery)
   const [results, setResults] = useState<SQLResult[]>([])
@@ -50,17 +127,32 @@ export default function SQLSearchPage() {
   const [selectedSQLs, setSelectedSQLs] = useState<Set<string>>(new Set())
   const [currentPage, setCurrentPage] = useState(1)
   const [totalResults, setTotalResults] = useState(0)
-  const [sortBy, setSortBy] = useState('cpu_time_ms')
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  // AI 필터에서 정렬 기준 초기화
+  const [sortBy, setSortBy] = useState(mapOrderByToSortBy(aiFilters.orderBy))
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(aiFilters.order || 'desc')
   const [filters, setFilters] = useState({
-    schema: 'all',
+    schema: aiFilters.schema || 'all',
     minExecutions: 0,
     maxCpuTime: Infinity,
-    performanceGrade: 'all'
+    performanceGrade: 'all',
+    // AI 검색 필터 추가
+    minElapsedTime: aiFilters.minElapsed || 0,
+    maxElapsedTime: aiFilters.maxElapsed || Infinity,
+    minBufferGets: aiFilters.minBuffer || 0,
+    maxBufferGets: aiFilters.maxBuffer || Infinity,
+    sqlPattern: aiFilters.pattern || '',
+    timeRange: aiFilters.timeRange || 'all'
   })
   const [availableSchemas, setAvailableSchemas] = useState<string[]>([])
 
-  const resultsPerPage = 20
+  const resultsPerPage = aiFilters.limit || 20
+
+  // SQL_ID 형식 감지 (13자리 영숫자)
+  const isSQLIdFormat = (query: string): boolean => {
+    const trimmed = query.trim()
+    // SQL_ID는 보통 13자리 영숫자 문자열
+    return /^[a-zA-Z0-9]{13}$/.test(trimmed)
+  }
 
   // Debounced search function
   const debouncedSearch = useCallback(
@@ -70,12 +162,57 @@ export default function SQLSearchPage() {
     []
   )
 
+  // AI 검색 필터 초기화
+  const clearAIFilters = useCallback(() => {
+    router.push('/analysis/search')
+  }, [router])
+
+  // 활성 AI 필터 배지 생성
+  const activeAIFilterBadges = useMemo(() => {
+    const badges: { label: string; value: string }[] = []
+
+    if (aiFilters.minElapsed) {
+      badges.push({ label: '최소 실행시간', value: `${aiFilters.minElapsed}ms` })
+    }
+    if (aiFilters.maxElapsed) {
+      badges.push({ label: '최대 실행시간', value: `${aiFilters.maxElapsed}ms` })
+    }
+    if (aiFilters.minBuffer) {
+      badges.push({ label: '최소 Buffer Gets', value: aiFilters.minBuffer.toLocaleString() })
+    }
+    if (aiFilters.maxBuffer) {
+      badges.push({ label: '최대 Buffer Gets', value: aiFilters.maxBuffer.toLocaleString() })
+    }
+    if (aiFilters.timeRange) {
+      badges.push({ label: '기간', value: getTimeRangeLabel(aiFilters.timeRange) })
+    }
+    if (aiFilters.schema) {
+      badges.push({ label: '스키마', value: aiFilters.schema })
+    }
+    if (aiFilters.pattern) {
+      badges.push({ label: 'SQL 패턴', value: aiFilters.pattern })
+    }
+    if (aiFilters.orderBy) {
+      const orderLabel = aiFilters.orderBy === 'elapsed_time' ? '실행시간' :
+                         aiFilters.orderBy === 'cpu_time' ? 'CPU 시간' :
+                         aiFilters.orderBy === 'buffer_gets' ? 'Buffer Gets' :
+                         aiFilters.orderBy === 'disk_reads' ? 'Disk Reads' :
+                         aiFilters.orderBy === 'executions' ? '실행횟수' : aiFilters.orderBy
+      badges.push({ label: '정렬', value: `${orderLabel} ${aiFilters.order === 'asc' ? '↑' : '↓'}` })
+    }
+
+    return badges
+  }, [aiFilters])
+
   useEffect(() => {
     if (selectedConnectionId && selectedConnectionId !== 'all') {
       // Load schemas when connection changes
       loadSchemas()
 
-      if (searchQuery) {
+      // AI 검색이면 필터 기반 검색 실행
+      if (aiFilters.isAISearch) {
+        loadAllSQLs()
+      } else if (searchQuery) {
         debouncedSearch(searchQuery)
       } else {
         loadAllSQLs()
@@ -85,7 +222,7 @@ export default function SQLSearchPage() {
       setTotalResults(0)
       setAvailableSchemas([])
     }
-  }, [searchQuery, filters, sortBy, sortOrder, currentPage, selectedConnectionId])
+  }, [searchQuery, filters, sortBy, sortOrder, currentPage, selectedConnectionId, aiFilters.isAISearch])
 
   const loadSchemas = async () => {
     if (!selectedConnectionId || selectedConnectionId === 'all') {
@@ -118,33 +255,35 @@ export default function SQLSearchPage() {
         order_by: sortBy
       })
 
+      // SQL_ID 형식이면 API에 sql_id 파라미터 전달
+      if (isSQLIdFormat(query)) {
+        params.append('sql_id', query.trim())
+      }
+
       const response = await fetch(`/api/monitoring/sql-statistics?${params}`)
       const data = await response.json()
 
       if (Array.isArray(data.data)) {
-        // Apply client-side search filtering
-        let filtered = data.data.filter((sql: SQLResult) => {
-          const searchLower = query.toLowerCase()
-          return (
-            sql.sql_id.toLowerCase().includes(searchLower) ||
-            (sql.sql_text && sql.sql_text.toLowerCase().includes(searchLower)) ||
-            (sql.schema_name && sql.schema_name.toLowerCase().includes(searchLower))
-          )
-        })
+        // SQL_ID로 직접 조회한 경우 필터링 불필요
+        let filtered = data.data
 
-        // Apply filters
-        if (filters.schema !== 'all') {
-          filtered = filtered.filter((sql: SQLResult) => sql.schema_name === filters.schema)
+        // SQL_ID 형식이 아니거나 API에서 필터링되지 않은 경우 클라이언트 사이드 필터링
+        if (!isSQLIdFormat(query)) {
+          filtered = data.data.filter((sql: SQLResult) => {
+            const searchLower = query.toLowerCase().trim()
+            return (
+              sql.sql_id.toLowerCase().includes(searchLower) ||
+              (sql.sql_text && sql.sql_text.toLowerCase().includes(searchLower)) ||
+              (sql.schema_name && sql.schema_name.toLowerCase().includes(searchLower))
+            )
+          })
         }
-        if (filters.minExecutions > 0) {
-          filtered = filtered.filter((sql: SQLResult) => (sql.executions || 0) >= filters.minExecutions)
-        }
-        if (filters.maxCpuTime < Infinity) {
-          filtered = filtered.filter((sql: SQLResult) => (sql.cpu_time_ms || 0) <= filters.maxCpuTime)
-        }
+
+        // Apply all filters
+        filtered = applyFilters(filtered)
 
         // Sort
-        filtered.sort((a, b) => {
+        filtered.sort((a: SQLResult, b: SQLResult) => {
           const aVal = (a[sortBy as keyof SQLResult] as number) || 0
           const bVal = (b[sortBy as keyof SQLResult] as number) || 0
           return sortOrder === 'desc' ? bVal - aVal : aVal - bVal
@@ -170,6 +309,69 @@ export default function SQLSearchPage() {
     }
   }
 
+  // 모든 필터 적용 함수
+  const applyFilters = (data: SQLResult[]): SQLResult[] => {
+    let filtered = data
+
+    // 스키마 필터
+    if (filters.schema !== 'all') {
+      filtered = filtered.filter((sql: SQLResult) => sql.schema_name === filters.schema)
+    }
+
+    // 최소 실행 횟수
+    if (filters.minExecutions > 0) {
+      filtered = filtered.filter((sql: SQLResult) => (sql.executions || 0) >= filters.minExecutions)
+    }
+
+    // 최대 CPU 시간
+    if (filters.maxCpuTime < Infinity) {
+      filtered = filtered.filter((sql: SQLResult) => (sql.cpu_time_ms || 0) <= filters.maxCpuTime)
+    }
+
+    // AI 검색 필터 적용
+    // 최소 실행 시간 (elapsed_time)
+    if (filters.minElapsedTime > 0) {
+      filtered = filtered.filter((sql: SQLResult) => (sql.elapsed_time_ms || 0) >= filters.minElapsedTime)
+    }
+
+    // 최대 실행 시간
+    if (filters.maxElapsedTime < Infinity) {
+      filtered = filtered.filter((sql: SQLResult) => (sql.elapsed_time_ms || 0) <= filters.maxElapsedTime)
+    }
+
+    // 최소 Buffer Gets
+    if (filters.minBufferGets > 0) {
+      filtered = filtered.filter((sql: SQLResult) => (sql.buffer_gets || 0) >= filters.minBufferGets)
+    }
+
+    // 최대 Buffer Gets
+    if (filters.maxBufferGets < Infinity) {
+      filtered = filtered.filter((sql: SQLResult) => (sql.buffer_gets || 0) <= filters.maxBufferGets)
+    }
+
+    // SQL 패턴 필터 (LIKE 검색)
+    if (filters.sqlPattern) {
+      const pattern = filters.sqlPattern.replace(/%/g, '.*').toLowerCase()
+      const regex = new RegExp(pattern, 'i')
+      filtered = filtered.filter((sql: SQLResult) =>
+        sql.sql_text && regex.test(sql.sql_text)
+      )
+    }
+
+    // 시간 범위 필터
+    if (filters.timeRange && filters.timeRange !== 'all') {
+      const hoursAgo = getTimeRangeHours(filters.timeRange)
+      const cutoffTime = new Date(Date.now() - hoursAgo * 60 * 60 * 1000)
+      filtered = filtered.filter((sql: SQLResult) => {
+        if (!sql.collected_at) return true
+        const collectedAt = new Date(sql.collected_at)
+        return collectedAt >= cutoffTime
+      })
+    }
+
+    return filtered
+  }
+
   const loadAllSQLs = async () => {
     if (!selectedConnectionId || selectedConnectionId === 'all') {
       setResults([])
@@ -189,21 +391,10 @@ export default function SQLSearchPage() {
       const data = await response.json()
 
       if (Array.isArray(data.data)) {
-        let filtered = data.data
-
-        // Apply filters
-        if (filters.schema !== 'all') {
-          filtered = filtered.filter((sql: SQLResult) => sql.schema_name === filters.schema)
-        }
-        if (filters.minExecutions > 0) {
-          filtered = filtered.filter((sql: SQLResult) => (sql.executions || 0) >= filters.minExecutions)
-        }
-        if (filters.maxCpuTime < Infinity) {
-          filtered = filtered.filter((sql: SQLResult) => (sql.cpu_time_ms || 0) <= filters.maxCpuTime)
-        }
+        let filtered = applyFilters(data.data)
 
         // Sort
-        filtered.sort((a, b) => {
+        filtered.sort((a: SQLResult, b: SQLResult) => {
           const aVal = (a[sortBy as keyof SQLResult] as number) || 0
           const bVal = (b[sortBy as keyof SQLResult] as number) || 0
           return sortOrder === 'desc' ? bVal - aVal : aVal - bVal
@@ -262,11 +453,12 @@ export default function SQLSearchPage() {
       : results
 
     const csv = [
-      ['SQL ID', 'Schema', 'Executions', 'CPU Time', 'Buffer Gets', 'Disk Reads'].join(','),
+      ['SQL ID', 'Schema', 'Executions', 'Elapsed Time', 'CPU Time', 'Buffer Gets', 'Disk Reads'].join(','),
       ...dataToExport.map(r => [
         r.sql_id,
         r.schema_name,
         r.executions,
+        r.elapsed_time_ms,
         r.cpu_time_ms,
         r.buffer_gets,
         r.disk_reads
@@ -335,6 +527,40 @@ export default function SQLSearchPage() {
         </div>
       </div>
 
+      {/* AI Search Active Filters Banner */}
+      {aiFilters.isAISearch && activeAIFilterBadges.length > 0 && (
+        <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-purple-600" />
+                  <span className="font-medium text-purple-900 dark:text-purple-300">
+                    AI 검색 필터 적용됨
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {activeAIFilterBadges.map((badge, idx) => (
+                    <Badge key={idx} variant="secondary" className="text-xs bg-white/80 dark:bg-gray-800/80">
+                      {badge.label}: {badge.value}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearAIFilters}
+                className="text-purple-600 hover:text-purple-700 hover:bg-purple-100"
+              >
+                <X className="h-4 w-4 mr-1" />
+                필터 초기화
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Search and Filters */}
       <Card>
         <CardContent className="p-6">
@@ -344,10 +570,20 @@ export default function SQLSearchPage() {
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <Input
-                  placeholder="SQL ID, SQL 텍스트, 테이블명으로 검색..."
+                  placeholder="SQL ID (13자리), SQL 텍스트, 테이블명으로 검색..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      if (searchQuery.trim()) {
+                        performSearch(searchQuery)
+                      } else {
+                        loadAllSQLs()
+                      }
+                    }
+                  }}
                 />
               </div>
               <Button
@@ -417,6 +653,27 @@ export default function SQLSearchPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* 시간 범위 필터 추가 */}
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">기간</label>
+                <Select
+                  value={filters.timeRange}
+                  onValueChange={(value) => setFilters({ ...filters, timeRange: value })}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체</SelectItem>
+                    <SelectItem value="1h">최근 1시간</SelectItem>
+                    <SelectItem value="6h">최근 6시간</SelectItem>
+                    <SelectItem value="24h">최근 24시간</SelectItem>
+                    <SelectItem value="7d">최근 7일</SelectItem>
+                    <SelectItem value="30d">최근 30일</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -425,8 +682,14 @@ export default function SQLSearchPage() {
       {/* Results Table */}
       <Card>
         <CardHeader>
-          <CardTitle>
+          <CardTitle className="flex items-center gap-2">
             검색 결과 ({totalResults.toLocaleString()}개)
+            {aiFilters.isAISearch && (
+              <Badge variant="outline" className="text-purple-600 border-purple-300">
+                <Sparkles className="h-3 w-3 mr-1" />
+                AI 검색
+              </Badge>
+            )}
           </CardTitle>
           <CardDescription>
             클릭하여 상세 분석을 보거나 여러 개를 선택하여 비교할 수 있습니다
@@ -451,31 +714,40 @@ export default function SQLSearchPage() {
                   </th>
                   <th className="p-2 text-left">SQL ID</th>
                   <th className="p-2 text-left">스키마</th>
-                  <th 
-                    className="p-2 text-left cursor-pointer hover:bg-gray-50"
+                  <th
+                    className="p-2 text-left cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
                     onClick={() => handleSort('executions')}
                   >
                     <div className="flex items-center">
                       실행 횟수
-                      <ArrowUpDown className="h-4 w-4 ml-1" />
+                      <ArrowUpDown className={`h-4 w-4 ml-1 ${sortBy === 'executions' ? 'text-blue-600' : ''}`} />
                     </div>
                   </th>
                   <th
-                    className="p-2 text-left cursor-pointer hover:bg-gray-50"
+                    className="p-2 text-left cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                    onClick={() => handleSort('elapsed_time_ms')}
+                  >
+                    <div className="flex items-center">
+                      실행시간
+                      <ArrowUpDown className={`h-4 w-4 ml-1 ${sortBy === 'elapsed_time_ms' ? 'text-blue-600' : ''}`} />
+                    </div>
+                  </th>
+                  <th
+                    className="p-2 text-left cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
                     onClick={() => handleSort('cpu_time_ms')}
                   >
                     <div className="flex items-center">
                       CPU Time
-                      <ArrowUpDown className="h-4 w-4 ml-1" />
+                      <ArrowUpDown className={`h-4 w-4 ml-1 ${sortBy === 'cpu_time_ms' ? 'text-blue-600' : ''}`} />
                     </div>
                   </th>
-                  <th 
-                    className="p-2 text-left cursor-pointer hover:bg-gray-50"
+                  <th
+                    className="p-2 text-left cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
                     onClick={() => handleSort('buffer_gets')}
                   >
                     <div className="flex items-center">
                       Buffer Gets
-                      <ArrowUpDown className="h-4 w-4 ml-1" />
+                      <ArrowUpDown className={`h-4 w-4 ml-1 ${sortBy === 'buffer_gets' ? 'text-blue-600' : ''}`} />
                     </div>
                   </th>
                   <th className="p-2 text-left">상태</th>
@@ -485,21 +757,23 @@ export default function SQLSearchPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-gray-500">
+                    <td colSpan={9} className="p-8 text-center text-gray-500">
                       <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
                       검색 중...
                     </td>
                   </tr>
                 ) : results.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-gray-500">
-                      검색 결과가 없습니다
+                    <td colSpan={9} className="p-8 text-center text-gray-500">
+                      {aiFilters.isAISearch
+                        ? 'AI 검색 조건에 맞는 결과가 없습니다. 필터를 초기화하거나 조건을 변경해보세요.'
+                        : '검색 결과가 없습니다'}
                     </td>
                   </tr>
                 ) : (
                   results.map((sql) => (
-                    <tr 
-                      key={sql.id} 
+                    <tr
+                      key={sql.id}
                       className="border-b hover:bg-gray-50 dark:hover:bg-gray-800"
                     >
                       <td className="p-2">
@@ -521,20 +795,25 @@ export default function SQLSearchPage() {
                         </Badge>
                       </td>
                       <td className="p-2 text-sm">
-                        {sql.executions.toLocaleString()}
+                        {(sql.executions || 0).toLocaleString()}
                       </td>
                       <td className="p-2">
-                        <Badge className={getPerformanceColor(sql.cpu_time_ms)}>
-                          {sql.cpu_time_ms.toFixed(0)}ms
+                        <Badge className={getPerformanceColor(sql.elapsed_time_ms || 0)}>
+                          {(sql.elapsed_time_ms || 0).toFixed(0)}ms
+                        </Badge>
+                      </td>
+                      <td className="p-2">
+                        <Badge className={getPerformanceColor(sql.cpu_time_ms || 0)}>
+                          {(sql.cpu_time_ms || 0).toFixed(0)}ms
                         </Badge>
                       </td>
                       <td className="p-2 text-sm">
-                        {sql.buffer_gets.toLocaleString()}
+                        {(sql.buffer_gets || 0).toLocaleString()}
                       </td>
                       <td className="p-2">
-                        {sql.cpu_time_ms > 1000 ? (
+                        {(sql.elapsed_time_ms || 0) > 1000 ? (
                           <XCircle className="h-5 w-5 text-red-500" />
-                        ) : sql.cpu_time_ms > 500 ? (
+                        ) : (sql.elapsed_time_ms || 0) > 500 ? (
                           <AlertTriangle className="h-5 w-5 text-orange-500" />
                         ) : (
                           <CheckCircle className="h-5 w-5 text-green-500" />

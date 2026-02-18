@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createPureClient } from '@/lib/supabase/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { db } from '@/db';
+import { reports, reportActivities, sqlStatistics } from '@/db/schema';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 
 export async function GET(
@@ -7,17 +11,8 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient();
-    const params = await context.params;
-    const reportId = params.id;
-
-    // Get format from query params
-    const { searchParams } = new URL(request.url);
-    const format = searchParams.get('format') || 'pdf';
-
-    // Check authentication
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session?.user) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
@@ -25,26 +20,26 @@ export async function GET(
     }
 
     const userId = session.user.id;
+    const params = await context.params;
+    const reportId = params.id;
 
-    // Use pure client to bypass RLS
-    const pureSupabase = await createPureClient();
+    const { searchParams } = new URL(request.url);
+    const format = searchParams.get('format') || 'pdf';
 
     // Verify user has access to the report
-    const { data: report, error: reportError } = await pureSupabase
-      .from('reports')
-      .select('*')
-      .eq('id', reportId)
-      .eq('user_id', userId)
-      .single();
+    const [report] = await db
+      .select()
+      .from(reports)
+      .where(and(eq(reports.id, reportId), eq(reports.userId, userId)))
+      .limit(1);
 
-    if (reportError || !report) {
+    if (!report) {
       return NextResponse.json(
         { success: false, error: 'Report not found' },
         { status: 404 }
       );
     }
 
-    // Check if report is completed
     if (report.status !== 'completed') {
       return NextResponse.json(
         { success: false, error: 'Report is not ready for download' },
@@ -53,28 +48,35 @@ export async function GET(
     }
 
     // Fetch related data based on report config
-    const databaseIds = report.config?.databases || [];
+    const databaseIds = (report.config as any)?.databases || [];
     let sqlStats: any[] = [];
     let topQueries: any[] = [];
     let performanceSummary: any = null;
 
     if (databaseIds.length > 0) {
       // Get SQL statistics for the report period
-      const { data: stats } = await pureSupabase
-        .from('sql_statistics')
-        .select('*')
-        .in('oracle_connection_id', databaseIds)
-        .order('elapsed_time_ms', { ascending: false })
+      const stats = await db
+        .select()
+        .from(sqlStatistics)
+        .where(inArray(sqlStatistics.oracleConnectionId, databaseIds))
+        .orderBy(desc(sqlStatistics.elapsedTimeMs))
         .limit(100);
 
       sqlStats = stats || [];
 
       // Get top slow queries
-      const { data: slowQueries } = await pureSupabase
-        .from('sql_statistics')
-        .select('sql_id, sql_text, avg_elapsed_time_ms, executions, buffer_gets, cpu_time_ms')
-        .in('oracle_connection_id', databaseIds)
-        .order('avg_elapsed_time_ms', { ascending: false })
+      const slowQueries = await db
+        .select({
+          sqlId: sqlStatistics.sqlId,
+          sqlText: sqlStatistics.sqlText,
+          avgElapsedTimeMs: sqlStatistics.avgElapsedTimeMs,
+          executions: sqlStatistics.executions,
+          bufferGets: sqlStatistics.bufferGets,
+          cpuTimeMs: sqlStatistics.cpuTimeMs,
+        })
+        .from(sqlStatistics)
+        .where(inArray(sqlStatistics.oracleConnectionId, databaseIds))
+        .orderBy(desc(sqlStatistics.avgElapsedTimeMs))
         .limit(10);
 
       topQueries = slowQueries || [];
@@ -82,9 +84,9 @@ export async function GET(
       // Calculate performance summary
       if (sqlStats.length > 0) {
         const totalExecutions = sqlStats.reduce((sum, s) => sum + (s.executions || 0), 0);
-        const avgResponseTime = sqlStats.reduce((sum, s) => sum + (s.avg_elapsed_time_ms || 0), 0) / sqlStats.length;
-        const totalCpuTime = sqlStats.reduce((sum, s) => sum + (s.cpu_time_ms || 0), 0);
-        const totalBufferGets = sqlStats.reduce((sum, s) => sum + (s.buffer_gets || 0), 0);
+        const avgResponseTime = sqlStats.reduce((sum, s) => sum + (Number(s.avgElapsedTimeMs) || 0), 0) / sqlStats.length;
+        const totalCpuTime = sqlStats.reduce((sum, s) => sum + (s.cpuTimeMs || 0), 0);
+        const totalBufferGets = sqlStats.reduce((sum, s) => sum + (s.bufferGets || 0), 0);
 
         performanceSummary = {
           totalQueries: sqlStats.length,
@@ -98,14 +100,14 @@ export async function GET(
     }
 
     // Log download activity
-    await pureSupabase.from('report_activities').insert({
-      report_id: reportId,
-      user_id: userId,
+    await db.insert(reportActivities).values({
+      reportId,
+      userId,
       action: 'downloaded',
       details: {
         format: format,
         timestamp: new Date().toISOString()
-      }
+      },
     });
 
     // Prepare report data for generation
@@ -172,25 +174,19 @@ export async function GET(
 }
 
 function generateSimplePDF(data: any): Buffer {
-  // This creates a minimal valid PDF document
-  // In production, use pdfkit, puppeteer, or jsPDF for proper PDF generation with Korean support
-
   const { report, performanceSummary, topQueries } = data;
-  const date = new Date(report.generated_at || report.created_at).toISOString();
+  const date = new Date(report.generatedAt || report.createdAt).toISOString();
 
-  // Create PDF content lines
   const lines: string[] = [];
   let yPos = 750;
   const lineHeight = 20;
 
-  // Add header
   lines.push(`BT`);
   lines.push(`/F1 16 Tf`);
   lines.push(`50 ${yPos} Td`);
   lines.push(`(SQL Performance Analysis Report) Tj`);
   yPos -= 30;
 
-  // Add report info
   lines.push(`0 -30 Td`);
   lines.push(`/F1 12 Tf`);
   lines.push(`(Report ID: ${report.id}) Tj`);
@@ -202,19 +198,17 @@ function generateSimplePDF(data: any): Buffer {
   lines.push(`(Generated: ${date}) Tj`);
   lines.push(`0 -40 Td`);
 
-  // Add configuration
   lines.push(`(Configuration:) Tj`);
   lines.push(`0 -${lineHeight} Td`);
-  lines.push(`(  Period: ${report.config?.period || '24h'}) Tj`);
+  lines.push(`(  Period: ${(report.config as any)?.period || '24h'}) Tj`);
   lines.push(`0 -${lineHeight} Td`);
-  lines.push(`(  Databases: ${report.config?.databases?.length || 0}) Tj`);
+  lines.push(`(  Databases: ${(report.config as any)?.databases?.length || 0}) Tj`);
   lines.push(`0 -${lineHeight} Td`);
-  lines.push(`(  Include Charts: ${report.config?.include_charts ? 'Yes' : 'No'}) Tj`);
+  lines.push(`(  Include Charts: ${(report.config as any)?.include_charts ? 'Yes' : 'No'}) Tj`);
   lines.push(`0 -${lineHeight} Td`);
-  lines.push(`(  Include Recommendations: ${report.config?.include_recommendations ? 'Yes' : 'No'}) Tj`);
+  lines.push(`(  Include Recommendations: ${(report.config as any)?.include_recommendations ? 'Yes' : 'No'}) Tj`);
   lines.push(`0 -40 Td`);
 
-  // Add performance summary if available
   if (performanceSummary) {
     lines.push(`(Performance Summary:) Tj`);
     lines.push(`0 -${lineHeight} Td`);
@@ -230,19 +224,17 @@ function generateSimplePDF(data: any): Buffer {
     lines.push(`0 -40 Td`);
   }
 
-  // Add top slow queries
   if (topQueries && topQueries.length > 0) {
     lines.push(`(Top Slow Queries:) Tj`);
     topQueries.slice(0, 5).forEach((query: any, index: number) => {
       lines.push(`0 -${lineHeight} Td`);
-      lines.push(`(  ${index + 1}. SQL_ID: ${query.sql_id || 'N/A'}) Tj`);
+      lines.push(`(  ${index + 1}. SQL_ID: ${query.sqlId || 'N/A'}) Tj`);
       lines.push(`0 -${lineHeight} Td`);
-      lines.push(`(     Avg Time: ${query.avg_elapsed_time_ms || 0}ms, Executions: ${query.executions || 0}) Tj`);
+      lines.push(`(     Avg Time: ${query.avgElapsedTimeMs || 0}ms, Executions: ${query.executions || 0}) Tj`);
     });
     lines.push(`0 -40 Td`);
   }
 
-  // Add note about data source
   if (performanceSummary) {
     lines.push(`(Data Source: Real database statistics) Tj`);
   } else {
@@ -252,10 +244,8 @@ function generateSimplePDF(data: any): Buffer {
   lines.push(`ET`);
 
   const content = lines.join('\n');
-
   const contentLength = content.length;
 
-  // Minimal valid PDF structure
   const pdf = `%PDF-1.4
 1 0 obj
 << /Type /Catalog /Pages 2 0 R >>
@@ -290,19 +280,16 @@ ${400 + contentLength}
 
 async function generateExcelFile(data: any): Promise<Buffer> {
   const { report, performanceSummary, topQueries } = data;
-  const date = new Date(report.generated_at || report.created_at).toISOString();
+  const date = new Date(report.generatedAt || report.createdAt).toISOString();
 
-  // Create a new workbook
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Narae TMS';
   workbook.created = new Date();
 
-  // Add Report Information worksheet
   const infoSheet = workbook.addWorksheet('보고서 정보', {
     properties: { tabColor: { argb: '2563EB' } }
   });
 
-  // Header styling
   const headerStyle = {
     font: { bold: true, size: 14, color: { argb: 'FFFFFF' } },
     fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: '2563EB' } },
@@ -314,7 +301,6 @@ async function generateExcelFile(data: any): Promise<Buffer> {
     fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'F3F4F6' } }
   };
 
-  // Report Information
   infoSheet.columns = [
     { key: 'label', width: 25 },
     { key: 'value', width: 50 }
@@ -329,18 +315,16 @@ async function generateExcelFile(data: any): Promise<Buffer> {
   infoSheet.addRow({ label: '보고서 유형', value: report.type });
   infoSheet.addRow({ label: '상태', value: report.status });
   infoSheet.addRow({ label: '생성 일시', value: date });
-  infoSheet.addRow({ label: '분석 기간', value: report.config?.period || '24h' });
-  infoSheet.addRow({ label: '데이터베이스 수', value: report.config?.databases?.length || 0 });
-  infoSheet.addRow({ label: '차트 포함', value: report.config?.include_charts ? '예' : '아니오' });
-  infoSheet.addRow({ label: '권장사항 포함', value: report.config?.include_recommendations ? '예' : '아니오' });
+  infoSheet.addRow({ label: '분석 기간', value: (report.config as any)?.period || '24h' });
+  infoSheet.addRow({ label: '데이터베이스 수', value: (report.config as any)?.databases?.length || 0 });
+  infoSheet.addRow({ label: '차트 포함', value: (report.config as any)?.include_charts ? '예' : '아니오' });
+  infoSheet.addRow({ label: '권장사항 포함', value: (report.config as any)?.include_recommendations ? '예' : '아니오' });
 
-  // Style the labels
   for (let i = 2; i <= 9; i++) {
     infoSheet.getRow(i).getCell(1).fill = labelStyle.fill;
     infoSheet.getRow(i).getCell(1).font = labelStyle.font;
   }
 
-  // Add Performance Summary if available
   if (performanceSummary) {
     infoSheet.addRow({});
     infoSheet.addRow({ label: '성능 요약', value: '' });
@@ -360,7 +344,6 @@ async function generateExcelFile(data: any): Promise<Buffer> {
     }
   }
 
-  // Add Top Slow Queries worksheet if available
   if (topQueries && topQueries.length > 0) {
     const queriesSheet = workbook.addWorksheet('느린 쿼리', {
       properties: { tabColor: { argb: 'F59E0B' } }
@@ -376,28 +359,25 @@ async function generateExcelFile(data: any): Promise<Buffer> {
       { key: 'sql_text', header: 'SQL 미리보기', width: 60 }
     ];
 
-    // Style header row
     const headerRow = queriesSheet.getRow(1);
     headerRow.font = { bold: true, color: { argb: 'FFFFFF' } };
     headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F59E0B' } };
     headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
     headerRow.height = 25;
 
-    // Add data rows
     topQueries.forEach((query: any, index: number) => {
-      const sqlTextPreview = (query.sql_text || '').substring(0, 200);
+      const sqlTextPreview = (query.sqlText || '').substring(0, 200);
       const row = queriesSheet.addRow({
         rank: index + 1,
-        sql_id: query.sql_id || 'N/A',
-        avg_time: query.avg_elapsed_time_ms || 0,
+        sql_id: query.sqlId || 'N/A',
+        avg_time: Number(query.avgElapsedTimeMs) || 0,
         executions: query.executions || 0,
-        buffer_gets: query.buffer_gets || 0,
-        cpu_time: query.cpu_time_ms || 0,
+        buffer_gets: query.bufferGets || 0,
+        cpu_time: query.cpuTimeMs || 0,
         sql_text: sqlTextPreview
       });
 
-      // Color code based on response time
-      const avgTime = query.avg_elapsed_time_ms || 0;
+      const avgTime = Number(query.avgElapsedTimeMs) || 0;
       if (avgTime > 1000) {
         row.getCell('avg_time').font = { color: { argb: 'EF4444' }, bold: true };
       } else if (avgTime > 500) {
@@ -406,20 +386,17 @@ async function generateExcelFile(data: any): Promise<Buffer> {
         row.getCell('avg_time').font = { color: { argb: '10B981' } };
       }
 
-      // Format numbers with thousand separators
       row.getCell('executions').numFmt = '#,##0';
       row.getCell('buffer_gets').numFmt = '#,##0';
       row.getCell('avg_time').numFmt = '#,##0.00';
       row.getCell('cpu_time').numFmt = '#,##0.00';
 
-      // Align numbers to right
       row.getCell('avg_time').alignment = { horizontal: 'right' };
       row.getCell('executions').alignment = { horizontal: 'right' };
       row.getCell('buffer_gets').alignment = { horizontal: 'right' };
       row.getCell('cpu_time').alignment = { horizontal: 'right' };
     });
 
-    // Add borders to all cells
     queriesSheet.eachRow((row, rowNumber) => {
       row.eachCell((cell) => {
         cell.border = {
@@ -432,7 +409,6 @@ async function generateExcelFile(data: any): Promise<Buffer> {
     });
   }
 
-  // Generate buffer
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
 }
@@ -444,9 +420,8 @@ function generateCSVFile(data: any): Buffer {
 
 function generateCSVContent(data: any): string {
   const { report, performanceSummary, topQueries } = data;
-  const date = new Date(report.generated_at || report.created_at).toISOString();
+  const date = new Date(report.generatedAt || report.createdAt).toISOString();
 
-  // Create CSV with report summary
   const lines = [
     'Report Information',
     '',
@@ -455,14 +430,13 @@ function generateCSVContent(data: any): string {
     `Report Type,${report.type}`,
     `Status,${report.status}`,
     `Generated Date,${date}`,
-    `Period,${report.config?.period || '24h'}`,
-    `Databases,${report.config?.databases?.length || 0}`,
-    `Include Charts,${report.config?.include_charts ? 'Yes' : 'No'}`,
-    `Include Recommendations,${report.config?.include_recommendations ? 'Yes' : 'No'}`,
+    `Period,${(report.config as any)?.period || '24h'}`,
+    `Databases,${(report.config as any)?.databases?.length || 0}`,
+    `Include Charts,${(report.config as any)?.include_charts ? 'Yes' : 'No'}`,
+    `Include Recommendations,${(report.config as any)?.include_recommendations ? 'Yes' : 'No'}`,
     ''
   ];
 
-  // Add performance summary if available
   if (performanceSummary) {
     lines.push('Performance Summary');
     lines.push('Metric,Value');
@@ -474,18 +448,16 @@ function generateCSVContent(data: any): string {
     lines.push('');
   }
 
-  // Add top slow queries if available
   if (topQueries && topQueries.length > 0) {
     lines.push('Top Slow Queries');
     lines.push('Rank,SQL ID,Avg Time (ms),Executions,Buffer Gets,SQL Text Preview');
     topQueries.slice(0, 10).forEach((query: any, index: number) => {
-      const sqlText = (query.sql_text || '').replace(/,/g, ';').replace(/\n/g, ' ').substring(0, 100);
-      lines.push(`${index + 1},${query.sql_id || 'N/A'},${query.avg_elapsed_time_ms || 0},${query.executions || 0},${query.buffer_gets || 0},"${sqlText}"`);
+      const sqlText = (query.sqlText || '').replace(/,/g, ';').replace(/\n/g, ' ').substring(0, 100);
+      lines.push(`${index + 1},${query.sqlId || 'N/A'},${query.avgElapsedTimeMs || 0},${query.executions || 0},${query.bufferGets || 0},"${sqlText}"`);
     });
     lines.push('');
   }
 
-  // Add data source note
   if (performanceSummary) {
     lines.push('Data Source: Real database statistics');
   } else {
@@ -496,30 +468,29 @@ function generateCSVContent(data: any): string {
 }
 
 function generateJSONFile(data: any): Buffer {
-  // Create structured JSON with report data
   const { report, performanceSummary, topQueries, sqlStats } = data;
 
   const reportData = {
     id: report.id,
     type: report.type,
     status: report.status,
-    generatedAt: new Date(report.generated_at || report.created_at).toISOString(),
+    generatedAt: new Date(report.generatedAt || report.createdAt).toISOString(),
     configuration: {
-      period: report.config?.period || '24h',
-      databases: report.config?.databases || [],
-      includeCharts: report.config?.include_charts || false,
-      includeRecommendations: report.config?.include_recommendations || false
+      period: (report.config as any)?.period || '24h',
+      databases: (report.config as any)?.databases || [],
+      includeCharts: (report.config as any)?.include_charts || false,
+      includeRecommendations: (report.config as any)?.include_recommendations || false
     },
     performanceSummary: performanceSummary || {
       note: 'No performance data available for this report period'
     },
     topSlowQueries: (topQueries || []).slice(0, 10).map((query: any) => ({
-      sqlId: query.sql_id,
-      avgElapsedTimeMs: query.avg_elapsed_time_ms,
+      sqlId: query.sqlId,
+      avgElapsedTimeMs: query.avgElapsedTimeMs,
       executions: query.executions,
-      bufferGets: query.buffer_gets,
-      cpuTimeMs: query.cpu_time_ms,
-      sqlTextPreview: (query.sql_text || '').substring(0, 200)
+      bufferGets: query.bufferGets,
+      cpuTimeMs: query.cpuTimeMs,
+      sqlTextPreview: (query.sqlText || '').substring(0, 200)
     })),
     statistics: {
       totalQueriesAnalyzed: sqlStats?.length || 0,
@@ -536,7 +507,7 @@ function generateJSONFile(data: any): Buffer {
 
 function generateHTMLFile(data: any): Buffer {
   const { report, performanceSummary, topQueries } = data;
-  const date = new Date(report.generated_at || report.created_at).toISOString();
+  const date = new Date(report.generatedAt || report.createdAt).toISOString();
 
   const html = `<!DOCTYPE html>
 <html lang="ko">
@@ -623,16 +594,16 @@ function generateHTMLFile(data: any): Buffer {
       <div class="info-value">${date}</div>
 
       <div class="info-label">분석 기간:</div>
-      <div class="info-value">${report.config?.period || '24h'}</div>
+      <div class="info-value">${(report.config as any)?.period || '24h'}</div>
 
       <div class="info-label">데이터베이스 수:</div>
-      <div class="info-value">${report.config?.databases?.length || 0}</div>
+      <div class="info-value">${(report.config as any)?.databases?.length || 0}</div>
 
       <div class="info-label">차트 포함:</div>
-      <div class="info-value">${report.config?.include_charts ? '예' : '아니오'}</div>
+      <div class="info-value">${(report.config as any)?.include_charts ? '예' : '아니오'}</div>
 
       <div class="info-label">권장사항 포함:</div>
-      <div class="info-value">${report.config?.include_recommendations ? '예' : '아니오'}</div>
+      <div class="info-value">${(report.config as any)?.include_recommendations ? '예' : '아니오'}</div>
     </div>
 
     ${performanceSummary ? `
@@ -670,12 +641,12 @@ function generateHTMLFile(data: any): Buffer {
         ${topQueries.slice(0, 10).map((query: any, index: number) => `
         <tr style="border-bottom: 1px solid #e5e7eb;">
           <td style="padding: 12px;">${index + 1}</td>
-          <td style="padding: 12px; font-family: monospace; font-size: 12px;">${query.sql_id || 'N/A'}</td>
-          <td style="padding: 12px; text-align: right; color: ${query.avg_elapsed_time_ms > 1000 ? '#ef4444' : query.avg_elapsed_time_ms > 500 ? '#f59e0b' : '#10b981'};">
-            ${query.avg_elapsed_time_ms || 0}ms
+          <td style="padding: 12px; font-family: monospace; font-size: 12px;">${query.sqlId || 'N/A'}</td>
+          <td style="padding: 12px; text-align: right; color: ${Number(query.avgElapsedTimeMs) > 1000 ? '#ef4444' : Number(query.avgElapsedTimeMs) > 500 ? '#f59e0b' : '#10b981'};">
+            ${query.avgElapsedTimeMs || 0}ms
           </td>
           <td style="padding: 12px; text-align: right;">${(query.executions || 0).toLocaleString()}</td>
-          <td style="padding: 12px; text-align: right;">${(query.buffer_gets || 0).toLocaleString()}</td>
+          <td style="padding: 12px; text-align: right;">${(query.bufferGets || 0).toLocaleString()}</td>
         </tr>
         `).join('')}
       </tbody>
@@ -683,14 +654,14 @@ function generateHTMLFile(data: any): Buffer {
 
     <h2>쿼리 상세 정보</h2>
     ${topQueries.slice(0, 5).map((query: any, index: number) => `
-    <div class="finding ${query.avg_elapsed_time_ms > 1000 ? 'high' : query.avg_elapsed_time_ms > 500 ? 'medium' : ''}">
-      <h3>${index + 1}. SQL ID: ${query.sql_id || 'N/A'}</h3>
-      <p><strong>평균 실행 시간:</strong> ${query.avg_elapsed_time_ms || 0}ms</p>
+    <div class="finding ${Number(query.avgElapsedTimeMs) > 1000 ? 'high' : Number(query.avgElapsedTimeMs) > 500 ? 'medium' : ''}">
+      <h3>${index + 1}. SQL ID: ${query.sqlId || 'N/A'}</h3>
+      <p><strong>평균 실행 시간:</strong> ${query.avgElapsedTimeMs || 0}ms</p>
       <p><strong>실행 횟수:</strong> ${(query.executions || 0).toLocaleString()}</p>
-      <p><strong>CPU 시간:</strong> ${query.cpu_time_ms || 0}ms</p>
-      <p><strong>버퍼 읽기:</strong> ${(query.buffer_gets || 0).toLocaleString()}</p>
-      ${query.sql_text ? `<p><strong>SQL 미리보기:</strong></p>
-      <pre style="background: #f9fafb; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 11px;">${query.sql_text.substring(0, 300)}${query.sql_text.length > 300 ? '...' : ''}</pre>` : ''}
+      <p><strong>CPU 시간:</strong> ${query.cpuTimeMs || 0}ms</p>
+      <p><strong>버퍼 읽기:</strong> ${(query.bufferGets || 0).toLocaleString()}</p>
+      ${query.sqlText ? `<p><strong>SQL 미리보기:</strong></p>
+      <pre style="background: #f9fafb; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 11px;">${query.sqlText.substring(0, 300)}${query.sqlText.length > 300 ? '...' : ''}</pre>` : ''}
     </div>
     `).join('')}
     ` : ''}

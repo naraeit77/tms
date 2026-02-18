@@ -66,7 +66,7 @@ export default function ExecutionPlanPage() {
         <CardContent>
           <div className="grid md:grid-cols-2 gap-4">
             {features.map((feature, index) => (
-              <Card key={index} className="border-2">
+              <Card key={`exec-plan-feature-${feature.title || ''}-${index}`} className="border-2">
                 <CardContent className="p-6">
                   <div className="flex items-start gap-4">
                     <div className="p-3 bg-blue-100 dark:bg-blue-900 rounded-lg">

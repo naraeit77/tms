@@ -700,6 +700,7 @@ function SQLEditorContent() {
         body: JSON.stringify({
           connectionId: selectedConnectionId,
           query: sqlQuery,
+          schema: selectedSchema || undefined,
           options: {
             maxRows: pageSize,
             offset: 0,
@@ -1115,6 +1116,7 @@ function SQLEditorContent() {
         body: JSON.stringify({
           connectionId: selectedConnectionId,
           query: sqlQuery,
+          schema: selectedSchema || undefined,
           options: {
             maxRows: pageSize,
             offset: currentPage * pageSize,
@@ -1182,6 +1184,17 @@ function SQLEditorContent() {
         </select>
 
         <div className="h-6 w-px bg-slate-300 mx-1" />
+
+        {/* Current Schema indicator */}
+        {selectedSchema && (
+          <>
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs">
+              <Database className="h-3 w-3 text-blue-600" />
+              <span className="text-blue-700 font-medium">{selectedSchema}</span>
+            </div>
+            <div className="h-6 w-px bg-slate-300 mx-1" />
+          </>
+        )}
 
         {/* Primary actions */}
         <Button

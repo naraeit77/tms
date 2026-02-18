@@ -198,7 +198,7 @@ TNS_ADMIN=/usr/lib/oracle/21/client64/network/admin
 
 ### 4. 의존성 설치
 ```bash
-npm ci --production=false
+npm ci
 ```
 
 ### 5. 프로덕션 빌드 (Next.js 14 사용 시)

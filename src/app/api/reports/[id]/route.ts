@@ -1,18 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createPureClient } from '@/lib/supabase/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { db } from '@/db';
+import { reports, reportActivities, reportSchedules } from '@/db/schema';
+import { eq, and } from 'drizzle-orm';
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient();
-    const params = await context.params;
-    const reportId = params.id;
-
-    // Check authentication
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session?.user) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
@@ -20,35 +19,17 @@ export async function GET(
     }
 
     const userId = session.user.id;
-
-    // Use pure client to bypass RLS
-    const pureSupabase = await createPureClient();
+    const params = await context.params;
+    const reportId = params.id;
 
     // Get report details
-    const { data: report, error } = await pureSupabase
-      .from('reports')
-      .select(`
-        id,
-        user_id,
-        template_id,
-        name,
-        description,
-        type,
-        config,
-        status,
-        file_path,
-        file_size,
-        generated_at,
-        error_message,
-        tags,
-        created_at,
-        updated_at
-      `)
-      .eq('id', reportId)
-      .eq('user_id', userId)
-      .single();
+    const [report] = await db
+      .select()
+      .from(reports)
+      .where(and(eq(reports.id, reportId), eq(reports.userId, userId)))
+      .limit(1);
 
-    if (error || !report) {
+    if (!report) {
       return NextResponse.json(
         { success: false, error: 'Report not found' },
         { status: 404 }
@@ -56,10 +37,10 @@ export async function GET(
     }
 
     // Log view activity
-    await pureSupabase.from('report_activities').insert({
-      report_id: reportId,
-      user_id: userId,
-      action: 'viewed'
+    await db.insert(reportActivities).values({
+      reportId,
+      userId,
+      action: 'viewed',
     });
 
     return NextResponse.json({
@@ -81,13 +62,8 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient();
-    const params = await context.params;
-    const reportId = params.id;
-
-    // Check authentication
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session?.user) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
@@ -95,20 +71,18 @@ export async function PUT(
     }
 
     const userId = session.user.id;
+    const params = await context.params;
+    const reportId = params.id;
     const body = await request.json();
 
-    // Use pure client to bypass RLS
-    const pureSupabase = await createPureClient();
-
     // Verify report ownership
-    const { data: existingReport, error: fetchError } = await pureSupabase
-      .from('reports')
-      .select('id, user_id')
-      .eq('id', reportId)
-      .eq('user_id', userId)
-      .single();
+    const [existingReport] = await db
+      .select({ id: reports.id, userId: reports.userId })
+      .from(reports)
+      .where(and(eq(reports.id, reportId), eq(reports.userId, userId)))
+      .limit(1);
 
-    if (fetchError || !existingReport) {
+    if (!existingReport) {
       return NextResponse.json(
         { success: false, error: 'Report not found' },
         { status: 404 }
@@ -116,22 +90,19 @@ export async function PUT(
     }
 
     // Update report
-    const { data: updatedReport, error: updateError } = await pureSupabase
-      .from('reports')
-      .update({
+    const [updatedReport] = await db
+      .update(reports)
+      .set({
         name: body.name,
         description: body.description,
         config: body.config,
         tags: body.tags,
-        updated_at: new Date().toISOString()
+        updatedAt: new Date(),
       })
-      .eq('id', reportId)
-      .eq('user_id', userId)
-      .select()
-      .single();
+      .where(and(eq(reports.id, reportId), eq(reports.userId, userId)))
+      .returning();
 
-    if (updateError) {
-      console.error('Failed to update report:', updateError);
+    if (!updatedReport) {
       return NextResponse.json(
         { success: false, error: 'Failed to update report' },
         { status: 500 }
@@ -157,13 +128,8 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient();
-    const params = await context.params;
-    const reportId = params.id;
-
-    // Check authentication
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session?.user) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
@@ -171,19 +137,17 @@ export async function DELETE(
     }
 
     const userId = session.user.id;
-
-    // Use pure client to bypass RLS
-    const pureSupabase = await createPureClient();
+    const params = await context.params;
+    const reportId = params.id;
 
     // Verify report ownership
-    const { data: existingReport, error: fetchError } = await pureSupabase
-      .from('reports')
-      .select('id, user_id, file_path')
-      .eq('id', reportId)
-      .eq('user_id', userId)
-      .single();
+    const [existingReport] = await db
+      .select({ id: reports.id, userId: reports.userId, filePath: reports.filePath })
+      .from(reports)
+      .where(and(eq(reports.id, reportId), eq(reports.userId, userId)))
+      .limit(1);
 
-    if (fetchError || !existingReport) {
+    if (!existingReport) {
       return NextResponse.json(
         { success: false, error: 'Report not found' },
         { status: 404 }
@@ -191,39 +155,31 @@ export async function DELETE(
     }
 
     // Delete related activities first
-    await pureSupabase
-      .from('report_activities')
-      .delete()
-      .eq('report_id', reportId);
+    await db
+      .delete(reportActivities)
+      .where(eq(reportActivities.reportId, reportId));
 
     // Delete report schedules if any
-    await pureSupabase
-      .from('report_schedules')
-      .delete()
-      .eq('report_id', reportId);
+    await db
+      .delete(reportSchedules)
+      .where(eq(reportSchedules.reportId, reportId));
 
     // Delete the report
-    const { error: deleteError } = await pureSupabase
-      .from('reports')
-      .delete()
-      .eq('id', reportId)
-      .eq('user_id', userId);
-
-    if (deleteError) {
-      console.error('Failed to delete report:', deleteError);
-      return NextResponse.json(
-        { success: false, error: 'Failed to delete report' },
-        { status: 500 }
-      );
-    }
+    await db
+      .delete(reports)
+      .where(and(eq(reports.id, reportId), eq(reports.userId, userId)));
 
     // Log deletion activity
-    await pureSupabase.from('report_activities').insert({
-      report_id: reportId,
-      user_id: userId,
-      action: 'deleted',
-      details: { report_name: existingReport.file_path }
-    });
+    try {
+      await db.insert(reportActivities).values({
+        reportId,
+        userId,
+        action: 'deleted',
+        details: { report_name: existingReport.filePath },
+      });
+    } catch {
+      // Ignore if FK constraint prevents logging after deletion
+    }
 
     return NextResponse.json({
       success: true,

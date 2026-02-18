@@ -61,7 +61,7 @@ export default function AIDiagnosisPage() {
       {/* AI Features Grid */}
       <div className="grid md:grid-cols-2 gap-4">
         {aiFeatures.map((feature, index) => (
-          <Card key={index} className="border-2 hover:shadow-lg transition-shadow">
+          <Card key={`ai-feature-${feature.title || ''}-${index}`} className="border-2 hover:shadow-lg transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start gap-4">
                 <div className={`p-3 bg-${feature.color}-100 dark:bg-${feature.color}-900 rounded-lg`}>
@@ -170,15 +170,15 @@ export default function AIDiagnosisPage() {
               </CardContent>
             </Card>
 
-            <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/tuning/tasks')}>
+            <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/tuning')}>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded">
                     <Zap className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div className="flex-1">
-                    <h4 className="font-medium">튜닝 작업 관리</h4>
-                    <p className="text-xs text-muted-foreground">AI 기반 자동 튜닝 대상 관리</p>
+                    <h4 className="font-medium">튜닝 대시보드</h4>
+                    <p className="text-xs text-muted-foreground">SQL 튜닝 워크플로우 관리</p>
                   </div>
                 </div>
               </CardContent>

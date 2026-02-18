@@ -6,7 +6,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { createPureClient } from '@/lib/supabase/server';
+import { db } from '@/db';
+import { oracleConnections, auditLogs, userProfiles } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+import { invalidateConnectionCache } from '@/lib/oracle/utils';
 
 export async function DELETE(
   request: NextRequest,
@@ -28,51 +31,47 @@ export async function DELETE(
       return NextResponse.json({ error: 'Connection ID is required' }, { status: 400 });
     }
 
-    const supabase = await createPureClient();
-
     // 연결 정보 조회
-    const { data: connection, error: fetchError } = await supabase
-      .from('oracle_connections')
-      .select('id, name')
-      .eq('id', id)
-      .single();
+    const connectionResult = await db
+      .select({ id: oracleConnections.id, name: oracleConnections.name })
+      .from(oracleConnections)
+      .where(eq(oracleConnections.id, id))
+      .limit(1);
 
-    if (fetchError || !connection) {
+    if (connectionResult.length === 0) {
       console.error('[DELETE] Connection not found:', id);
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 });
     }
 
+    const connection = connectionResult[0];
     console.log('[DELETE] Found connection:', connection.name);
 
     // 연결 삭제
-    const { error: deleteError } = await supabase
-      .from('oracle_connections')
-      .delete()
-      .eq('id', id);
-
-    if (deleteError) {
-      console.error('Error deleting connection:', deleteError);
-      return NextResponse.json({ error: 'Failed to delete connection' }, { status: 500 });
-    }
+    await db
+      .delete(oracleConnections)
+      .where(eq(oracleConnections.id, id));
 
     // 감사 로그 기록
-    const { data: userProfile } = await supabase
-      .from('user_profiles')
-      .select('id')
-      .eq('email', session.user.email)
-      .single();
+    const userProfileResult = await db
+      .select({ id: userProfiles.id })
+      .from(userProfiles)
+      .where(eq(userProfiles.email, session.user.email))
+      .limit(1);
 
-    if (userProfile) {
-      await supabase.from('audit_logs').insert({
-        user_id: userProfile.id,
+    if (userProfileResult.length > 0) {
+      await db.insert(auditLogs).values({
+        userId: userProfileResult[0].id,
         action: 'DELETE',
-        resource_type: 'oracle_connection',
-        resource_id: id,
+        resourceType: 'oracle_connection',
+        resourceId: id,
         details: {
           name: connection.name,
         },
       });
     }
+
+    // 연결 캐시 무효화
+    invalidateConnectionCache(id);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

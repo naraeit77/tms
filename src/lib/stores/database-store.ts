@@ -16,7 +16,7 @@ export interface DatabaseConnection {
   oracleEdition?: string | null;
   isActive: boolean;
   isDefault: boolean;
-  healthStatus?: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY' | 'UNKNOWN';
+  healthStatus?: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY' | 'ERROR' | 'UNKNOWN';
   lastConnectedAt?: string | null;
 }
 
@@ -27,6 +27,7 @@ interface DatabaseState {
   setConnections: (connections: DatabaseConnection[]) => void;
   addConnection: (connection: DatabaseConnection) => void;
   removeConnection: (id: string) => void;
+  updateConnectionHealth: (id: string, healthStatus: DatabaseConnection['healthStatus'], version?: string) => void;
   selectConnection: (id: string) => void;
   getSelectedConnection: () => DatabaseConnection | null;
   getSelectedConnectionId: () => string | null;
@@ -41,15 +42,22 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
     const defaultConnection = connections.find((c) => c.isDefault);
     const currentSelected = get().selectedConnectionId;
 
+    // 현재 선택된 연결이 새 목록에 존재하는지 검증
+    const isCurrentValid = currentSelected && connections.some((c) => c.id === currentSelected);
+    const validSelectedId = isCurrentValid
+      ? currentSelected
+      : defaultConnection?.id || connections[0]?.id || null;
+
     set({
       connections,
-      selectedConnectionId: currentSelected || defaultConnection?.id || connections[0]?.id || null,
+      selectedConnectionId: validSelectedId,
     });
 
     if (typeof window !== 'undefined') {
-      const selectedId = currentSelected || defaultConnection?.id || connections[0]?.id || null;
-      if (selectedId) {
-        localStorage.setItem('selected-database-id', selectedId);
+      if (validSelectedId) {
+        localStorage.setItem('selected-database-id', validSelectedId);
+      } else {
+        localStorage.removeItem('selected-database-id');
       }
     }
   },
@@ -62,6 +70,14 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
       connections: state.connections.filter((conn) => conn.id !== id),
       selectedConnectionId:
         state.selectedConnectionId === id ? state.connections[0]?.id || null : state.selectedConnectionId,
+    })),
+  updateConnectionHealth: (id, healthStatus, version) =>
+    set((state) => ({
+      connections: state.connections.map((conn) =>
+        conn.id === id
+          ? { ...conn, healthStatus, ...(version ? { oracleVersion: version } : {}) }
+          : conn
+      ),
     })),
   selectConnection: (id) => {
     set({

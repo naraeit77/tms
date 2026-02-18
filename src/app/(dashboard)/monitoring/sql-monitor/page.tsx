@@ -6,7 +6,7 @@
  * DBMS_SQLTUNE.REPORT_SQL_MONITOR 기능을 활용한 고급 성능 분석 도구
  */
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
@@ -25,6 +25,8 @@ import {
   Pause,
   Trash2
 } from 'lucide-react';
+import { parseOracleEdition, checkFeatureAvailability } from '@/lib/oracle/edition-guard';
+import { EnterpriseFeatureAlert } from '@/components/ui/enterprise-feature-alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -87,6 +89,17 @@ interface SQLMonitorEntry {
 
 export default function SQLMonitorPage() {
   const { selectedConnectionId, selectedConnection } = useSelectedDatabase();
+
+  // 에디션 확인
+  const sqlMonitorAvailability = useMemo(() => {
+    const edition = parseOracleEdition(selectedConnection?.oracleEdition);
+    return checkFeatureAvailability('SQL_MONITOR', edition);
+  }, [selectedConnection?.oracleEdition]);
+
+  const currentEdition = useMemo(() => {
+    return parseOracleEdition(selectedConnection?.oracleEdition);
+  }, [selectedConnection?.oracleEdition]);
+
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [usernameFilter, setUsernameFilter] = useState('');
   const [selectedEntry, setSelectedEntry] = useState<SQLMonitorEntry | null>(null);
@@ -146,7 +159,11 @@ export default function SQLMonitorPage() {
     if (!uniqueEntriesMap.has(key)) {
       uniqueEntriesMap.set(key, entry);
     } else {
-      console.warn(`Duplicate SQL Monitor entry detected and filtered: ${key}`);
+      // 중복 항목은 자동으로 필터링됨 (정상 동작)
+      // 개발 환경에서만 디버그 로그 출력
+      if (process.env.NODE_ENV === 'development') {
+        console.debug(`Duplicate SQL Monitor entry filtered: ${key}`);
+      }
     }
   });
 
@@ -157,27 +174,9 @@ export default function SQLMonitorPage() {
       const execStart = new Date(entry.sql_exec_start);
       return execStart > clearedAt;
     });
-    console.log(`Filtered entries by cleared timestamp (${clearedAt.toISOString()}):`, {
-      before: Array.from(uniqueEntriesMap.values()).length,
-      after: filteredEntries.length,
-      filtered: Array.from(uniqueEntriesMap.values()).length - filteredEntries.length
-    });
   }
 
   const entries = filteredEntries;
-
-  // 디버깅: 받아온 데이터 확인
-  console.log('SQL Monitor Data:', {
-    monitorData,
-    rawEntries: rawEntries.length,
-    entries: entries.length,
-    duplicatesFiltered: rawEntries.length - entries.length,
-    isEnterpriseEdition,
-    edition: monitorData?.edition,
-    license: monitorData?.license,
-    error: error?.message || error,
-    selectedConnectionId
-  });
 
   // 통계 계산
   const stats = {
@@ -248,13 +247,10 @@ export default function SQLMonitorPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      console.log('[SQL Monitor Clear] Response:', data);
-
       // clearedAt 타임스탬프 저장 - Oracle DB 서버 시각 사용
       if (data.clearedAt) {
         const clearedTimestamp = new Date(data.clearedAt);
         setClearedAt(clearedTimestamp);
-        console.log('[SQL Monitor Clear] Set cleared timestamp:', clearedTimestamp.toISOString());
       }
 
       toast({
@@ -405,6 +401,13 @@ export default function SQLMonitorPage() {
             SQL Monitor 기능을 사용하려면 특정 Oracle 데이터베이스를 선택해주세요.
           </AlertDescription>
         </Alert>
+      ) : !sqlMonitorAvailability.available && currentEdition !== 'Unknown' ? (
+        <EnterpriseFeatureAlert
+          featureName="SQL Monitor"
+          requiredPack={sqlMonitorAvailability.requiredPack}
+          alternative={sqlMonitorAvailability.alternative}
+          currentEdition={currentEdition}
+        />
       ) : error ? (
         <Alert variant="destructive">
           <Crown className="h-4 w-4" />
@@ -414,16 +417,8 @@ export default function SQLMonitorPage() {
             {error.message && (
               <p className="text-sm font-medium text-red-600">{error.message}</p>
             )}
-            <div className="text-sm space-y-1 mt-2">
-              {monitorData?.edition && (
-                <p>현재 에디션: <span className="font-mono">{monitorData.edition}</span></p>
-              )}
-              {monitorData?.license && (
-                <p>현재 라이센스: <span className="font-mono">{monitorData.license}</span></p>
-              )}
-            </div>
             <p className="text-sm">
-              Enterprise Edition이 아니거나 CONTROL_MANAGEMENT_PACK_ACCESS 파라미터가 올바르게 설정되지 않았을 수 있습니다.
+              CONTROL_MANAGEMENT_PACK_ACCESS 파라미터가 올바르게 설정되지 않았을 수 있습니다.
             </p>
             <p className="text-sm font-mono bg-background/50 p-2 rounded mt-2">
               ALTER SYSTEM SET CONTROL_MANAGEMENT_PACK_ACCESS='DIAGNOSTIC+TUNING' SCOPE=BOTH;
@@ -940,7 +935,7 @@ export default function SQLMonitorPage() {
               {/* 상세 테스트 결과 */}
               <div className="space-y-3">
                 {testResults.tests?.map((test: any, idx: number) => (
-                  <div key={idx} className="border rounded-lg p-3">
+                  <div key={`test-${test.test}-${test.status}-${idx}`} className="border rounded-lg p-3">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
                         {test.status === 'success' ? (

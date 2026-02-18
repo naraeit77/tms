@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAuthClient, createPureClient } from '@/lib/supabase/server';
+import bcrypt from 'bcryptjs';
+import { db } from '@/db';
+import { users, userProfiles, userRoles, auditLogs } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 
 /**
  * POST /api/auth/signup
@@ -10,7 +13,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email, password, fullName } = body;
 
-    // 필수 필드 검증
     if (!email || !password) {
       return NextResponse.json(
         { error: '이메일과 비밀번호를 입력해주세요.' },
@@ -18,7 +20,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 비밀번호 길이 검증
     if (password.length < 8) {
       return NextResponse.json(
         { error: '비밀번호는 최소 8자 이상이어야 합니다.' },
@@ -26,97 +27,64 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Use auth client for signup (anon key)
-    const authClient = await createAuthClient();
+    // 이메일 중복 체크
+    const [existing] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
 
-    // Supabase Auth에 사용자 생성
-    const { data: authData, error: authError } = await authClient.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-        },
-      },
-    });
-
-    if (authError) {
-      // 이메일 중복 에러 처리
-      if (authError.message.includes('already registered')) {
-        return NextResponse.json(
-          { error: '이미 가입된 이메일입니다.' },
-          { status: 400 }
-        );
-      }
-
+    if (existing) {
       return NextResponse.json(
-        { error: authError.message },
+        { error: '이미 가입된 이메일입니다.' },
         { status: 400 }
       );
     }
 
-    if (!authData.user) {
-      return NextResponse.json(
-        { error: '회원가입에 실패했습니다.' },
-        { status: 500 }
-      );
-    }
+    // 비밀번호 해싱
+    const passwordHash = await bcrypt.hash(password, 12);
 
-    // Use service role client for database operations
-    const supabase = await createPureClient();
+    // 사용자 생성
+    const [newUser] = await db
+      .insert(users)
+      .values({
+        email,
+        passwordHash,
+      })
+      .returning({ id: users.id, email: users.email });
 
-    // viewer role 조회
-    const { data: viewerRole } = await supabase
-      .from('user_roles')
-      .select('id')
-      .eq('name', 'viewer')
-      .single();
+    // viewer 역할 조회
+    const [viewerRole] = await db
+      .select({ id: userRoles.id })
+      .from(userRoles)
+      .where(eq(userRoles.name, 'viewer'))
+      .limit(1);
 
-    // user_profiles 테이블에 프로필 생성
-    const { error: profileError } = await supabase
-      .from('user_profiles')
-      .insert({
-        id: authData.user.id,
-        email: authData.user.email!,
-        full_name: fullName || null,
-        role_id: viewerRole?.id || null,
-        preferences: {},
-        is_active: true,
-      });
+    // 프로필 생성
+    await db.insert(userProfiles).values({
+      id: newUser.id,
+      email: newUser.email,
+      fullName: fullName || null,
+      roleId: viewerRole?.id || null,
+      preferences: {},
+      isActive: true,
+    });
 
-    if (profileError) {
-      console.error('Profile creation error:', profileError);
-      // 프로필 생성 실패해도 계속 진행 (authorize 시 자동 생성됨)
-    }
-
-    // audit_logs에 기록
-    await supabase
-      .from('audit_logs')
-      .insert({
-        user_id: authData.user.id,
-        action: 'USER_SIGNUP',
-        resource_type: 'user',
-        resource_id: authData.user.id,
-        details: {
-          email: authData.user.email,
-          full_name: fullName,
-        },
-      });
-
-    // 이메일 확인이 필요한지 체크
-    const emailConfirmationRequired = authData.user.email_confirmed_at === null;
+    // 감사 로그 기록
+    await db.insert(auditLogs).values({
+      userId: newUser.id,
+      action: 'USER_SIGNUP',
+      resourceType: 'user',
+      details: { email, full_name: fullName },
+    });
 
     return NextResponse.json(
       {
         success: true,
-        message: emailConfirmationRequired
-          ? '회원가입이 완료되었습니다. 이메일을 확인해주세요.'
-          : '회원가입이 완료되었습니다.',
-        emailConfirmationRequired,
+        message: '회원가입이 완료되었습니다.',
         user: {
-          id: authData.user.id,
-          email: authData.user.email,
-          emailConfirmed: !emailConfirmationRequired,
+          id: newUser.id,
+          email: newUser.email,
         },
       },
       { status: 201 }

@@ -6,10 +6,10 @@
 module.exports = {
   apps: [
     {
-      name: 'narae-tms',
+      name: 'tms',
       script: 'node_modules/next/dist/bin/next',
       args: 'start',
-      cwd: '/var/www/tms',
+      cwd: '/Users/nit/tms',
 
       // 클러스터 모드 - CPU 코어 수만큼 인스턴스 생성
       instances: 'max', // 또는 구체적인 숫자 (예: 4)
@@ -21,35 +21,33 @@ module.exports = {
         PORT: 3000,
       },
 
-      // 프로덕션 환경 변수
+      // 프로덕션 환경 변수 (Mac Studio)
       env_production: {
         NODE_ENV: 'production',
         PORT: 3000,
-        // Oracle Instant Client 경로
-        LD_LIBRARY_PATH: '/usr/lib/oracle/21/client64/lib',
-        ORACLE_HOME: '/usr/lib/oracle/21/client64',
-        TNS_ADMIN: '/usr/lib/oracle/21/client64/network/admin',
+        // Oracle Instant Client 경로 (Mac)
+        DYLD_LIBRARY_PATH: '/opt/oracle/instantclient',
+        ORACLE_HOME: '/opt/oracle/instantclient',
       },
 
       // 스테이징 환경 변수 (선택사항)
       env_staging: {
         NODE_ENV: 'production',
         PORT: 3001,
-        LD_LIBRARY_PATH: '/usr/lib/oracle/21/client64/lib',
-        ORACLE_HOME: '/usr/lib/oracle/21/client64',
-        TNS_ADMIN: '/usr/lib/oracle/21/client64/network/admin',
+        DYLD_LIBRARY_PATH: '/opt/oracle/instantclient',
+        ORACLE_HOME: '/opt/oracle/instantclient',
       },
 
       // 메모리 및 재시작 설정
-      max_memory_restart: '1G',
+      max_memory_restart: '2G',
       min_uptime: '10s',
       max_restarts: 10,
       autorestart: true,
 
-      // 로그 설정
-      error_file: '/var/log/pm2/narae-tms-error.log',
-      out_file: '/var/log/pm2/narae-tms-out.log',
-      log_file: '/var/log/pm2/narae-tms-combined.log',
+      // 로그 설정 (Mac 경로)
+      error_file: '/Users/nit/tms/logs/pm2-error.log',
+      out_file: '/Users/nit/tms/logs/pm2-out.log',
+      log_file: '/Users/nit/tms/logs/pm2-combined.log',
       time: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
@@ -83,7 +81,7 @@ module.exports = {
       user: 'tms',
       host: 'sqltms.info',
       ref: 'origin/main',
-      repo: 'git@github.com:yourname/narae-tms.git',
+      repo: 'git@github.com:naraeit77/tms.git',
       path: '/var/www/tms',
       'post-deploy': 'npm ci && npm run build && pm2 reload ecosystem.config.js --env production && pm2 save',
       'pre-setup': 'sudo dnf install git -y',

@@ -6,7 +6,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { createPureClient } from '@/lib/supabase/server';
+import { db } from '@/db';
+import { oracleConnections } from '@/db/schema';
+import { eq, and } from 'drizzle-orm';
 import { executeQuery } from '@/lib/oracle/client';
 import type { OracleConnectionConfig } from '@/lib/oracle/types';
 import { decrypt } from '@/lib/crypto';
@@ -33,48 +35,50 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Supabase에서 연결 정보 조회
-    const supabase = await createPureClient();
-
-    console.log('🔍 Fetching connection:', {
+    // DB에서 연결 정보 조회
+    console.log('Fetching connection:', {
       connectionId,
       userId: session.user.id,
     });
 
-    const { data: connection, error: dbError } = await supabase
-      .from('oracle_connections')
-      .select('*')
-      .eq('id', connectionId)
-      .eq('created_by', session.user.id)
-      .single();
+    const [connection] = await db
+      .select()
+      .from(oracleConnections)
+      .where(
+        and(
+          eq(oracleConnections.id, connectionId),
+          eq(oracleConnections.isActive, true)
+        )
+      )
+      .limit(1);
 
-    if (dbError || !connection) {
-      console.error('❌ Connection fetch error:', {
-        error: dbError,
+    if (!connection) {
+      console.error('Connection fetch error:', {
         connectionId,
         userId: session.user.id,
       });
       return NextResponse.json({
         error: 'Connection not found',
-        details: dbError?.message || 'No connection data',
+        details: 'No connection data',
         connectionId,
       }, { status: 404 });
     }
 
-    console.log('✅ Connection found:', connection.name);
+    console.log('Connection found:', connection.name);
 
     // Oracle 연결 설정
-    const password = decrypt(connection.password_encrypted);
+    const password = decrypt(connection.passwordEncrypted);
     const config: OracleConnectionConfig = {
       id: connection.id,
       name: connection.name,
       host: connection.host,
       port: connection.port,
-      serviceName: connection.service_name,
+      serviceName: connection.serviceName,
       sid: connection.sid,
       username: connection.username,
       password,
-      connectionType: connection.connection_type as 'SERVICE_NAME' | 'SID',
+      connectionType: connection.connectionType as 'SERVICE_NAME' | 'SID',
+      privilege: connection.privilege || undefined,
     };
 
     // DBMS_XPLAN.DISPLAY_CURSOR SQL 구성

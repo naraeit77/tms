@@ -7,9 +7,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { createPureClient } from '@/lib/supabase/server';
+import { db } from '@/db';
+import { oracleConnections, auditLogs, userProfiles } from '@/db/schema';
+import { eq, desc } from 'drizzle-orm';
 import { encrypt } from '@/lib/crypto';
 import { healthCheck, type OracleConnectionConfig } from '@/lib/oracle';
+import { invalidateConnectionCache } from '@/lib/oracle/utils';
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,43 +21,42 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const supabase = await createPureClient();
-
     // Oracle 연결 목록 조회
-    const { data: connections, error } = await supabase
-      .from('oracle_connections')
-      .select(
-        `
-        id,
-        name,
-        description,
-        host,
-        port,
-        service_name,
-        sid,
-        username,
-        connection_type,
-        oracle_version,
-        oracle_edition,
-        is_active,
-        is_default,
-        last_connected_at,
-        last_health_check_at,
-        health_status,
-        created_at,
-        updated_at
-      `
-      )
-      .order('created_at', { ascending: false });
+    const connections = await db
+      .select({
+        id: oracleConnections.id,
+        name: oracleConnections.name,
+        description: oracleConnections.description,
+        host: oracleConnections.host,
+        port: oracleConnections.port,
+        service_name: oracleConnections.serviceName,
+        sid: oracleConnections.sid,
+        username: oracleConnections.username,
+        connection_type: oracleConnections.connectionType,
+        oracle_version: oracleConnections.oracleVersion,
+        oracle_edition: oracleConnections.oracleEdition,
+        is_active: oracleConnections.isActive,
+        is_default: oracleConnections.isDefault,
+        last_connected_at: oracleConnections.lastConnectedAt,
+        last_health_check_at: oracleConnections.lastHealthCheckAt,
+        health_status: oracleConnections.healthStatus,
+        created_at: oracleConnections.createdAt,
+        updated_at: oracleConnections.updatedAt,
+      })
+      .from(oracleConnections)
+      .orderBy(desc(oracleConnections.createdAt));
 
-    if (error) {
-      console.error('Error fetching connections:', error);
-      return NextResponse.json({ error: 'Failed to fetch connections' }, { status: 500 });
-    }
-
-    return NextResponse.json(connections || []);
+    return NextResponse.json(connections || [], {
+      headers: {
+        'Cache-Control': 'private, s-maxage=60, stale-while-revalidate=120',
+      },
+    });
   } catch (error) {
-    console.error('API Error:', error);
+    console.error('Error fetching connections:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      details: error instanceof Error ? error.stack : String(error),
+      code: (error as any)?.code || '',
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -65,8 +67,6 @@ export async function POST(request: NextRequest) {
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    const supabase = await createPureClient();
 
     const body = await request.json();
 
@@ -86,6 +86,9 @@ export async function POST(request: NextRequest) {
     // 비밀번호 암호화
     const encryptedPassword = encrypt(body.password);
 
+    // privilege 값 정규화 (NORMAL이면 저장하지 않음)
+    const privilege = body.privilege === 'NORMAL' ? undefined : body.privilege;
+
     // 연결 테스트
     const testConfig: OracleConnectionConfig = {
       id: '',
@@ -97,6 +100,7 @@ export async function POST(request: NextRequest) {
       username: body.username,
       password: body.password,
       connectionType: body.connection_type,
+      privilege: privilege,
     };
 
     try {
@@ -109,61 +113,82 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 사용자 프로필 조회 또는 생성
+      // 사용자 프로필 조회
       let userId: string | null = null;
 
-      // user_profiles 테이블에서 현재 사용자 확인
-      const { data: userProfile } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .eq('email', session.user.email)
-        .single();
+      const userProfileResult = await db
+        .select({ id: userProfiles.id })
+        .from(userProfiles)
+        .where(eq(userProfiles.email, session.user.email))
+        .limit(1);
 
-      if (userProfile) {
-        userId = userProfile.id;
+      if (userProfileResult.length > 0) {
+        userId = userProfileResult[0].id;
       }
 
-      // userId가 없으면 null로 설정 (auth.users는 별도로 관리됨)
-
       // 연결 정보 저장
-      const { data: connection, error } = await supabase
-        .from('oracle_connections')
-        .insert({
+      const now = new Date();
+      const [connection] = await db
+        .insert(oracleConnections)
+        .values({
           name: body.name,
           description: body.description || null,
           host: body.host,
           port: parseInt(body.port),
-          service_name: body.service_name || null,
+          serviceName: body.service_name || null,
           sid: body.sid || null,
           username: body.username,
-          password_encrypted: encryptedPassword,
-          connection_type: body.connection_type,
-          oracle_version: healthCheckResult.version,
-          oracle_edition: healthCheckResult.edition || null,
-          is_active: true,
-          is_default: body.is_default || false,
-          max_connections: body.max_connections || 10,
-          connection_timeout: body.connection_timeout || 30000,
-          last_connected_at: new Date().toISOString(),
-          last_health_check_at: new Date().toISOString(),
-          health_status: 'HEALTHY',
-          created_by: userId,
+          passwordEncrypted: encryptedPassword,
+          connectionType: body.connection_type,
+          privilege: privilege || null,
+          oracleVersion: healthCheckResult.version,
+          oracleEdition: healthCheckResult.edition || null,
+          isActive: true,
+          isDefault: body.is_default || false,
+          maxConnections: body.max_connections || 10,
+          connectionTimeout: body.connection_timeout || 30000,
+          lastConnectedAt: now,
+          lastHealthCheckAt: now,
+          healthStatus: 'HEALTHY',
+          createdBy: userId,
         })
-        .select()
-        .single();
+        .returning();
 
-      if (error) {
-        console.error('Error creating connection:', error);
-        return NextResponse.json({ error: 'Failed to create connection' }, { status: 500 });
-      }
+      // snake_case response for frontend compatibility
+      const responseData = {
+        id: connection.id,
+        name: connection.name,
+        description: connection.description,
+        host: connection.host,
+        port: connection.port,
+        service_name: connection.serviceName,
+        sid: connection.sid,
+        username: connection.username,
+        password_encrypted: connection.passwordEncrypted,
+        connection_type: connection.connectionType,
+        oracle_version: connection.oracleVersion,
+        oracle_edition: connection.oracleEdition,
+        privilege: connection.privilege,
+        is_active: connection.isActive,
+        is_default: connection.isDefault,
+        max_connections: connection.maxConnections,
+        connection_timeout: connection.connectionTimeout,
+        last_connected_at: connection.lastConnectedAt,
+        last_health_check_at: connection.lastHealthCheckAt,
+        health_status: connection.healthStatus,
+        metadata: connection.metadata,
+        created_by: connection.createdBy,
+        created_at: connection.createdAt,
+        updated_at: connection.updatedAt,
+      };
 
       // 감사 로그 기록 (userId가 있을 때만)
       if (userId) {
-        await supabase.from('audit_logs').insert({
-          user_id: userId,
+        await db.insert(auditLogs).values({
+          userId: userId,
           action: 'CREATE',
-          resource_type: 'oracle_connection',
-          resource_id: connection.id,
+          resourceType: 'oracle_connection',
+          resourceId: connection.id,
           details: {
             name: body.name,
             host: body.host,
@@ -171,7 +196,10 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      return NextResponse.json({ data: connection }, { status: 201 });
+      // 연결 캐시 무효화
+      invalidateConnectionCache(connection.id);
+
+      return NextResponse.json({ data: responseData }, { status: 201 });
     } catch (error) {
       console.error('Connection test error:', error);
       return NextResponse.json(

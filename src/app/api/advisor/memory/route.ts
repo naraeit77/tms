@@ -54,6 +54,38 @@ export async function GET(request: NextRequest) {
     const sgaTarget = targetResult.rows.find((r: any) => r.NAME === 'sga_target')?.VALUE || 0;
     const pgaTarget = targetResult.rows.find((r: any) => r.NAME === 'pga_aggregate_target')?.VALUE || 0;
 
+    // Hit Ratio 조회
+    const hitRatioQuery = `
+      SELECT
+        (SELECT ROUND((1 - (phy.value / (cur.value + con.value))) * 100, 2)
+         FROM v$sysstat cur, v$sysstat con, v$sysstat phy
+         WHERE cur.name = 'db block gets'
+           AND con.name = 'consistent gets'
+           AND phy.name = 'physical reads') as BUFFER_CACHE_RATIO,
+        (SELECT ROUND(SUM(pinhits) / SUM(pins) * 100, 2) FROM v$librarycache) as LIBRARY_CACHE_RATIO,
+        (SELECT ROUND(SUM(gets - getmisses) / SUM(gets) * 100, 2) FROM v$rowcache) as DICTIONARY_CACHE_RATIO
+      FROM DUAL
+    `;
+
+    let hitRatios = {
+      buffer_cache: 0,
+      library_cache: 0,
+      dictionary_cache: 0
+    };
+
+    try {
+      const hitRatioResult = await executeQuery(config, hitRatioQuery);
+      if (hitRatioResult.rows.length > 0) {
+        hitRatios = {
+          buffer_cache: hitRatioResult.rows[0].BUFFER_CACHE_RATIO,
+          library_cache: hitRatioResult.rows[0].LIBRARY_CACHE_RATIO,
+          dictionary_cache: hitRatioResult.rows[0].DICTIONARY_CACHE_RATIO
+        };
+      }
+    } catch (err) {
+      console.warn('Failed to fetch hit ratios:', err);
+    }
+
     // DB Cache Advice 조회
     const dbCacheAdviceQuery = `
       SELECT
@@ -67,13 +99,18 @@ export async function GET(request: NextRequest) {
       ORDER BY SIZE_FACTOR
     `;
 
-    let dbCacheAdvice = [];
+    let dbCacheAdvice: any[] = [];
     try {
       const cacheResult = await executeQuery(config, dbCacheAdviceQuery);
+      // Baseline 찾기 (Factor = 1)
+      const baseline = cacheResult.rows.find((r: any) => r.SIZE_FACTOR === 1) || cacheResult.rows[0];
+      const baselineReads = baseline ? baseline.ESTD_PHYSICAL_READS : 1;
+
       dbCacheAdvice = cacheResult.rows.map((row: any) => ({
         size_mb: Math.round(row.SIZE_MB),
         estd_physical_reads: row.ESTD_PHYSICAL_READS,
         size_factor: row.SIZE_FACTOR,
+        benefit_pct: baseline ? ((baselineReads - row.ESTD_PHYSICAL_READS) / baselineReads * 100) : 0
       }));
     } catch (error) {
       console.log('DB Cache Advice not available');
@@ -91,13 +128,18 @@ export async function GET(request: NextRequest) {
       ORDER BY SIZE_FACTOR
     `;
 
-    let sharedPoolAdvice = [];
+    let sharedPoolAdvice: any[] = [];
     try {
       const poolResult = await executeQuery(config, sharedPoolAdviceQuery);
+      // Baseline 찾기
+      const baseline = poolResult.rows.find((r: any) => r.SIZE_FACTOR === 1) || poolResult.rows[0];
+      const baselineTime = baseline ? baseline.ESTD_LC_LOAD_TIME : 1;
+
       sharedPoolAdvice = poolResult.rows.map((row: any) => ({
         size_mb: Math.round(row.SIZE_MB),
         estd_lc_load_time: row.ESTD_LC_LOAD_TIME,
         size_factor: row.SIZE_FACTOR,
+        benefit_pct: baseline ? ((baselineTime - row.ESTD_LC_LOAD_TIME) / baselineTime * 100) : 0
       }));
     } catch (error) {
       console.log('Shared Pool Advice not available');
@@ -162,6 +204,7 @@ export async function GET(request: NextRequest) {
         db_cache_advice: dbCacheAdvice,
         shared_pool_advice: sharedPoolAdvice,
         pga_target_advice: pgaTargetAdvice,
+        hit_ratios: hitRatios,
       },
       isEnterprise: true,
     });

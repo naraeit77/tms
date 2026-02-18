@@ -40,8 +40,9 @@ export default function ExecutionPlansPage() {
   const { selectedConnectionId, selectedConnection } = useSelectedDatabase();
   const searchParams = useSearchParams();
 
-  // 선택된 데이터베이스 연결 ID 가져오기
-  const effectiveConnectionId = selectedConnectionId || 'all';
+  // URL에서 connection_id를 가져오거나 선택된 데이터베이스 사용
+  const urlConnectionId = searchParams.get('connection_id');
+  const effectiveConnectionId = urlConnectionId || selectedConnectionId || 'all';
 
   // URL 쿼리 파라미터에서 SQL_ID 자동 입력 및 검색
   useEffect(() => {
@@ -143,7 +144,7 @@ export default function ExecutionPlansPage() {
           {isLoading ? (
             <div className="space-y-3">
               {[...Array(3)].map((_, i) => (
-                <Skeleton key={i} className="h-64 w-full" />
+                <Skeleton key={`skeleton-exec-plans-${i}`} className="h-64 w-full" />
               ))}
             </div>
           ) : error ? (

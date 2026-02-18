@@ -9,6 +9,11 @@ import { executeQuery } from '@/lib/oracle/client';
  * Oracle SQL Monitor 데이터 조회 (Enterprise Edition Only)
  */
 export async function GET(request: NextRequest) {
+  // 변수를 함수 스코프로 선언 (catch 블록에서도 접근 가능하도록)
+  let isEnterprise = false;
+  let editionInfo = 'Unknown';
+  let licenseValue: string | null = null;
+
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
@@ -28,10 +33,6 @@ export async function GET(request: NextRequest) {
     const config = await getOracleConfig(connectionId);
 
     // Enterprise Edition 확인
-    // 변수를 함수 스코프로 선언
-    let isEnterprise = false;
-    let editionInfo = 'Unknown';
-    let licenseValue: string | null = null;
 
     const editionCheckQuery = `
       SELECT
@@ -117,13 +118,21 @@ export async function GET(request: NextRequest) {
           m.SQL_EXEC_START >= SYSDATE - 1/24
     `;
 
-    // 필터 적용
+    // 필터 적용 (SQL Injection 방지: 화이트리스트 검증)
+    const validStatuses = ['EXECUTING', 'DONE', 'DONE (ERROR)', 'DONE (ALL ROWS)', 'DONE (FIRST N ROWS)', 'QUEUED'];
     if (status && status !== 'all') {
-      query += ` AND m.STATUS = '${status.toUpperCase()}'`;
+      const upperStatus = status.toUpperCase();
+      if (validStatuses.includes(upperStatus)) {
+        query += ` AND m.STATUS = '${upperStatus}'`;
+      }
     }
 
+    // username 필터는 특수문자 제거 후 적용 (SQL Injection 방지)
     if (username) {
-      query += ` AND UPPER(m.USERNAME) LIKE UPPER('%${username}%')`;
+      const sanitizedUsername = username.replace(/[^a-zA-Z0-9_]/g, '');
+      if (sanitizedUsername) {
+        query += ` AND UPPER(m.USERNAME) LIKE UPPER('%${sanitizedUsername}%')`;
+      }
     }
 
     query += ` ORDER BY m.SQL_EXEC_START DESC

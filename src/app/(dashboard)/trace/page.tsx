@@ -229,7 +229,7 @@ export default function TracePage() {
           {isLoading ? (
             <div className="space-y-3">
               {[...Array(3)].map((_, i) => (
-                <Skeleton key={i} className="h-24 w-full" />
+                <Skeleton key={`skeleton-trace-${i}`} className="h-24 w-full" />
               ))}
             </div>
           ) : traces && traces.length > 0 ? (

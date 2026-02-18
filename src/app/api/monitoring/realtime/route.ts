@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
 
     // Oracle에서 현재 실행 중이거나 최근에 실행된 SQL 조회
     const query = `
+      SELECT * FROM (
       SELECT
         sql_id,
         SUBSTR(sql_text, 1, 200) as sql_text,
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
         AND last_active_time > SYSDATE - (5/1440)
       ORDER BY
         last_active_time DESC
-      FETCH FIRST :limit ROWS ONLY
+      ) WHERE ROWNUM <= :limit
     `;
 
     const result = await executeQuery(config, query, [limit]);

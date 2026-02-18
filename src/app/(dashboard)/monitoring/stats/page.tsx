@@ -5,12 +5,10 @@
  * Oracle DBMS_STATS 패키지를 이용한 통계정보 수집 및 관리
  */
 
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   RefreshCw,
-  BarChart4,
-  Table as TableIcon,
   Database,
   AlertCircle,
   Play,
@@ -18,8 +16,9 @@ import {
   XCircle,
   Clock,
   Info,
-  TrendingUp,
-  Eye,
+  RotateCcw,
+  Timer,
+  Search,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -41,6 +40,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useSelectedDatabase } from '@/hooks/use-selected-database';
 import { format } from 'date-fns';
@@ -85,7 +85,6 @@ interface GatherStatsRequest {
 
 export default function StatsCollectionPage() {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const { selectedConnectionId, selectedConnection } = useSelectedDatabase();
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
   const [gatherDialogOpen, setGatherDialogOpen] = useState(false);
@@ -104,13 +103,43 @@ export default function StatsCollectionPage() {
   const [cascade, setCascade] = useState<boolean>(true);
   const [degree, setDegree] = useState<number>(4);
 
+  // 진행 상태 추적
+  const [currentProcessingTable, setCurrentProcessingTable] = useState<string | null>(null);
+  const [processedCount, setProcessedCount] = useState(0);
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const [startTimestamp, setStartTimestamp] = useState<number | null>(null);
+
   const effectiveConnectionId = selectedConnectionId || 'all';
 
-  // 테이블 통계 정보 조회
-  const { data: tablesData, isLoading: isLoadingTables, refetch: refetchTables, error: tablesError } = useQuery({
+  // 경과 시간 타이머
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (startTimestamp) {
+      interval = setInterval(() => {
+        setElapsedTime(Math.floor((Date.now() - startTimestamp) / 1000));
+      }, 1000);
+    } else {
+      setElapsedTime(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [startTimestamp]);
+
+  // 경과 시간 포맷팅
+  const formatElapsedTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return mins > 0 ? `${mins}분 ${secs}초` : `${secs}초`;
+  };
+
+  // 검색 조건이 있을 때만 테이블 통계 정보 조회 (전체 조회로 인한 부하 방지)
+  const hasSearchCondition = searchOwner.trim() !== '' || searchTable.trim() !== '';
+
+  const { data: tablesData, isLoading: isLoadingTables, refetch: refetchTables } = useQuery({
     queryKey: ['table-stats', effectiveConnectionId, searchOwner, searchTable],
     queryFn: async () => {
-      if (effectiveConnectionId === 'all') {
+      if (effectiveConnectionId === 'all' || !hasSearchCondition) {
         return { data: [] };
       }
       const params = new URLSearchParams({
@@ -125,7 +154,7 @@ export default function StatsCollectionPage() {
       }
       return res.json();
     },
-    enabled: effectiveConnectionId !== 'all',
+    enabled: effectiveConnectionId !== 'all' && hasSearchCondition,
     retry: 1,
   });
 
@@ -152,31 +181,67 @@ export default function StatsCollectionPage() {
   // 통계 수집 Mutation
   const gatherStatsMutation = useMutation({
     mutationFn: async (request: GatherStatsRequest) => {
-      const res = await fetch('/api/monitoring/stats/gather', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.details || '통계 수집 실패');
+      // AbortController를 사용하여 타임아웃 설정 (610초)
+      // API 라우트 타임아웃(600초 = 10분)보다 약간 길게 설정하여 안정성 확보
+      // 대형 테이블의 경우 통계 수집에 5~10분 걸릴 수 있음
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 610000); // 610초 타임아웃
+
+      try {
+        const res = await fetch('/api/monitoring/stats/gather', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request),
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!res.ok) {
+          const error = await res.json().catch(() => ({ error: '통계 수집 실패' }));
+          throw new Error(error.details || error.error || '통계 수집 실패');
+        }
+        return res.json();
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError' || error.message?.includes('timeout')) {
+          // 타임아웃 발생 시에도 통계 수집은 백그라운드에서 계속 진행될 수 있음
+          // 사용자에게는 성공 메시지를 보여주고, 이력에서 확인하도록 안내
+          // 에러를 throw하지 않고 성공 응답을 반환하여 onError가 호출되지 않도록 함
+          return {
+            success: true,
+            message: '통계 수집이 시작되었습니다. 큰 테이블의 경우 시간이 오래 걸릴 수 있습니다. 이력에서 진행 상황을 확인하세요.',
+            timeout: true,
+          };
+        }
+        // 네트워크 에러나 기타 에러는 그대로 throw
+        throw error;
       }
-      return res.json();
     },
-    onSuccess: () => {
-      toast({
-        title: '통계 수집 시작',
-        description: '통계 수집이 시작되었습니다. 이력에서 진행 상황을 확인하세요.',
-      });
+    onSuccess: (data: any) => {
+      // 타임아웃이 발생한 경우에도 성공으로 처리
+      if (data?.timeout) {
+        toast({
+          title: '통계 수집 시작',
+          description: data.message || '통계 수집이 시작되었습니다. 큰 테이블의 경우 시간이 오래 걸릴 수 있습니다. 이력에서 진행 상황을 확인하세요.',
+        });
+      } else {
+        toast({
+          title: '통계 수집 시작',
+          description: '통계 수집이 시작되었습니다. 이력에서 진행 상황을 확인하세요.',
+        });
+      }
       setGatherDialogOpen(false);
       setSelectedTables([]);
       refetchHistory();
       setTimeout(() => refetchTables(), 1000);
     },
     onError: (error: Error) => {
+      // 에러를 콘솔에만 출력하고 사용자에게는 일반적인 메시지 표시
+      console.error('통계 수집 에러:', error);
       toast({
         title: '통계 수집 실패',
-        description: error.message,
+        description: error.message || '통계 수집 중 오류가 발생했습니다. 이력에서 진행 상황을 확인하세요.',
         variant: 'destructive',
       });
     },
@@ -219,17 +284,73 @@ export default function StatsCollectionPage() {
 
   // 실제 통계 수집 실행
   const executeGatherStats = async () => {
-    for (const tableKey of selectedTables) {
+    // 진행 상태 초기화
+    setProcessedCount(0);
+    setStartTimestamp(Date.now());
+
+    // 각 테이블에 대해 순차적으로 통계 수집 실행
+    for (let i = 0; i < selectedTables.length; i++) {
+      const tableKey = selectedTables[i];
       const [owner, table_name] = tableKey.split('.');
+
+      // 현재 처리 중인 테이블 표시
+      setCurrentProcessingTable(tableKey);
+
+      try {
+        await gatherStatsMutation.mutateAsync({
+          connection_id: effectiveConnectionId,
+          owner,
+          table_name,
+          estimate_percent: estimatePercent,
+          cascade,
+          degree,
+          method_opt: 'FOR ALL COLUMNS SIZE AUTO',
+        });
+
+        // 처리 완료 카운트 증가
+        setProcessedCount(i + 1);
+      } catch (error: any) {
+        console.error(`테이블 ${tableKey} 통계 수집 중 예상치 못한 에러:`, error);
+        setProcessedCount(i + 1);
+        continue;
+      }
+
+      // 각 테이블 사이에 짧은 지연을 두어 서버 부하 감소
+      if (i < selectedTables.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    // 완료 후 상태 초기화
+    setCurrentProcessingTable(null);
+    setStartTimestamp(null);
+  };
+
+  // 특정 테이블 통계 재수집 (이력에서 재시도)
+  const retryGatherStats = async (owner: string, tableName: string) => {
+    setCurrentProcessingTable(`${owner}.${tableName}`);
+    setStartTimestamp(Date.now());
+
+    try {
       await gatherStatsMutation.mutateAsync({
         connection_id: effectiveConnectionId,
         owner,
-        table_name,
+        table_name: tableName,
         estimate_percent: estimatePercent,
         cascade,
         degree,
         method_opt: 'FOR ALL COLUMNS SIZE AUTO',
       });
+      toast({
+        title: '통계 수집 시작',
+        description: `${owner}.${tableName} 테이블의 통계 수집이 시작되었습니다.`,
+      });
+    } catch (error: any) {
+      console.error('통계 재수집 에러:', error);
+    } finally {
+      setCurrentProcessingTable(null);
+      setStartTimestamp(null);
+      refetchHistory();
     }
   };
 
@@ -325,7 +446,7 @@ export default function StatsCollectionPage() {
               <Label htmlFor="owner">Owner</Label>
               <Input
                 id="owner"
-                placeholder="예: SEO"
+                placeholder="예: SOE"
                 value={searchOwnerInput}
                 onChange={(e) => setSearchOwnerInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -488,10 +609,17 @@ export default function StatsCollectionPage() {
                 </TableBody>
               </Table>
             </div>
+          ) : !hasSearchCondition ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Search className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p className="text-lg font-medium">테이블을 검색해주세요</p>
+              <p className="text-sm mt-2">Owner 또는 테이블명을 입력하여 통계를 수집할 테이블을 검색하세요</p>
+              <p className="text-xs mt-1 text-muted-foreground/70">전체 테이블 조회는 성능 부하가 크므로 검색 조건이 필요합니다</p>
+            </div>
           ) : (
             <div className="text-center py-12 text-muted-foreground">
               <Database className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p className="text-lg font-medium">테이블이 없습니다</p>
+              <p className="text-lg font-medium">검색 결과가 없습니다</p>
               <p className="text-sm mt-2">검색 조건을 변경하거나 DB 연결을 확인하세요</p>
             </div>
           )}
@@ -500,7 +628,7 @@ export default function StatsCollectionPage() {
 
       {/* 통계 수집 옵션 다이얼로그 */}
       <Dialog open={gatherDialogOpen} onOpenChange={setGatherDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>통계 수집 설정</DialogTitle>
             <DialogDescription>
@@ -508,6 +636,24 @@ export default function StatsCollectionPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {/* 예상 시간 안내 */}
+            <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                <div className="text-sm">
+                  <p className="font-medium text-blue-900 dark:text-blue-100">예상 소요 시간 안내</p>
+                  <ul className="mt-2 text-blue-700 dark:text-blue-300 space-y-1">
+                    <li>• 소형 테이블 (1만 행 미만): 10초 ~ 1분</li>
+                    <li>• 중형 테이블 (1만~100만 행): 1분 ~ 5분</li>
+                    <li>• 대형 테이블 (100만 행 이상): 5분 ~ 10분</li>
+                  </ul>
+                  <p className="mt-2 text-xs text-blue-600 dark:text-blue-400">
+                    최대 10분까지 대기합니다. 대형 테이블은 샘플링 비율을 5% 이하로 낮추세요.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="estimate">샘플링 비율 (%)</Label>
               <Input
@@ -519,7 +665,7 @@ export default function StatsCollectionPage() {
                 onChange={(e) => setEstimatePercent(parseInt(e.target.value) || 10)}
               />
               <p className="text-xs text-muted-foreground">
-                10% 권장. 100%는 전체 스캔으로 느릴 수 있습니다.
+                10% 권장. 100%는 전체 스캔으로 느릴 수 있습니다. 큰 테이블은 낮은 비율 권장.
               </p>
             </div>
             <div className="space-y-2">
@@ -533,7 +679,7 @@ export default function StatsCollectionPage() {
                 onChange={(e) => setDegree(parseInt(e.target.value) || 4)}
               />
               <p className="text-xs text-muted-foreground">
-                CPU 코어 수를 고려하여 설정하세요.
+                CPU 코어 수를 고려하여 설정하세요. 큰 테이블은 높은 병렬도 권장.
               </p>
             </div>
             <div className="flex items-center space-x-2">
@@ -549,15 +695,51 @@ export default function StatsCollectionPage() {
               </Label>
             </div>
           </div>
+          {/* 진행 상태 표시 */}
+          {gatherStatsMutation.isPending && currentProcessingTable && (
+            <div className="space-y-3 py-2">
+              <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <RefreshCw className="h-5 w-5 text-green-600 dark:text-green-400 animate-spin" />
+                  <div>
+                    <p className="font-medium text-green-900 dark:text-green-100">
+                      통계 수집 진행 중
+                    </p>
+                    <p className="text-sm text-green-700 dark:text-green-300">
+                      {currentProcessingTable} 처리 중...
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm text-green-700 dark:text-green-300">
+                    <span>{processedCount} / {selectedTables.length} 테이블</span>
+                    <span className="flex items-center gap-1">
+                      <Timer className="h-3.5 w-3.5" />
+                      {formatElapsedTime(elapsedTime)}
+                    </span>
+                  </div>
+                  <Progress
+                    value={(processedCount / selectedTables.length) * 100}
+                    className="h-2"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setGatherDialogOpen(false)}>
-              취소
+            <Button
+              variant="outline"
+              onClick={() => setGatherDialogOpen(false)}
+              disabled={gatherStatsMutation.isPending}
+            >
+              {gatherStatsMutation.isPending ? '진행 중...' : '취소'}
             </Button>
             <Button onClick={executeGatherStats} disabled={gatherStatsMutation.isPending}>
               {gatherStatsMutation.isPending ? (
                 <>
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  수집 중...
+                  수집 중... ({formatElapsedTime(elapsedTime)})
                 </>
               ) : (
                 <>
@@ -598,51 +780,95 @@ export default function StatsCollectionPage() {
                       <TableHead>완료 시간</TableHead>
                       <TableHead className="text-right">소요 시간</TableHead>
                       <TableHead>오류 메시지</TableHead>
+                      <TableHead className="text-center">작업</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {history.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-mono text-sm">
-                          {item.owner}.{item.table_name}
-                        </TableCell>
-                        <TableCell>{item.operation}</TableCell>
-                        <TableCell>
-                          {item.status === 'SUCCESS' && (
-                            <Badge variant="default" className="gap-1">
-                              <CheckCircle2 className="h-3 w-3" />
-                              성공
-                            </Badge>
-                          )}
-                          {item.status === 'FAILED' && (
-                            <Badge variant="destructive" className="gap-1">
-                              <XCircle className="h-3 w-3" />
-                              실패
-                            </Badge>
-                          )}
-                          {item.status === 'IN_PROGRESS' && (
-                            <Badge variant="secondary" className="gap-1">
-                              <RefreshCw className="h-3 w-3 animate-spin" />
-                              진행중
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {format(new Date(item.start_time), 'yyyy-MM-dd HH:mm:ss', { locale: ko })}
-                        </TableCell>
-                        <TableCell>
-                          {item.end_time
-                            ? format(new Date(item.end_time), 'yyyy-MM-dd HH:mm:ss', { locale: ko })
-                            : '-'}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {item.duration_seconds !== null ? `${item.duration_seconds}초` : '-'}
-                        </TableCell>
-                        <TableCell className="max-w-xs truncate text-xs">
-                          {item.error_message || '-'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {history.map((item) => {
+                      const isTimeout = item.error_message?.includes('timeout') || item.error_message?.includes('Timeout');
+                      const isCurrentlyProcessing = currentProcessingTable === `${item.owner}.${item.table_name}`;
+
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-mono text-sm">
+                            {item.owner}.{item.table_name}
+                          </TableCell>
+                          <TableCell>{item.operation}</TableCell>
+                          <TableCell>
+                            {item.status === 'SUCCESS' && (
+                              <Badge variant="default" className="gap-1">
+                                <CheckCircle2 className="h-3 w-3" />
+                                성공
+                              </Badge>
+                            )}
+                            {item.status === 'FAILED' && (
+                              <Badge variant="destructive" className="gap-1">
+                                <XCircle className="h-3 w-3" />
+                                {isTimeout ? '타임아웃' : '실패'}
+                              </Badge>
+                            )}
+                            {item.status === 'IN_PROGRESS' && (
+                              <Badge variant="secondary" className="gap-1">
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                                진행중
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {format(new Date(item.start_time), 'yyyy-MM-dd HH:mm:ss', { locale: ko })}
+                          </TableCell>
+                          <TableCell>
+                            {item.end_time
+                              ? format(new Date(item.end_time), 'yyyy-MM-dd HH:mm:ss', { locale: ko })
+                              : '-'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {item.duration_seconds !== null ? `${item.duration_seconds}초` : '-'}
+                          </TableCell>
+                          <TableCell className="max-w-xs">
+                            {item.error_message ? (
+                              <div className="space-y-1">
+                                <p className="text-xs text-destructive truncate" title={item.error_message}>
+                                  {isTimeout ? '작업 시간 초과 (10분)' : item.error_message}
+                                </p>
+                                {isTimeout && (
+                                  <p className="text-xs text-muted-foreground">
+                                    샘플링 비율을 5% 이하로 낮추고 병렬도를 8 이상으로 높여보세요.
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              '-'
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {item.status === 'FAILED' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => retryGatherStats(item.owner, item.table_name)}
+                                disabled={gatherStatsMutation.isPending || isCurrentlyProcessing}
+                              >
+                                {isCurrentlyProcessing ? (
+                                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <>
+                                    <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                                    재시도
+                                  </>
+                                )}
+                              </Button>
+                            )}
+                            {item.status === 'SUCCESS' && (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                            {item.status === 'IN_PROGRESS' && (
+                              <span className="text-xs text-muted-foreground">진행중</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>

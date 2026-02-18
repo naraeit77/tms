@@ -6,12 +6,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { executeQuery } from '@/lib/oracle/client';
-import { createPureClient } from '@/lib/supabase/server';
-import { decrypt } from '@/lib/crypto';
+import { getConnection } from '@/lib/oracle/client';
+import { getOracleConfig } from '@/lib/oracle/utils';
 import oracledb from 'oracledb';
 
 export async function POST(request: NextRequest) {
+  let connection: oracledb.Connection | null = null;
+
   try {
     // 인증 확인
     const session = await getServerSession(authOptions);
@@ -20,47 +21,35 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { connectionId, query, options = {} } = body;
+    const { connectionId, query, schema, options = {} } = body;
 
     if (!connectionId || !query) {
       return NextResponse.json({ error: 'Missing required fields: connectionId, query' }, { status: 400 });
     }
 
-    console.log('[Execute API] Executing query for connection:', connectionId);
+    console.log('[Execute API] Executing query for connection:', connectionId, 'schema:', schema || 'default');
 
-    // Fetch connection details from Supabase
-    const supabase = await createPureClient();
-    const { data: connection, error: connectionError } = await supabase
-      .from('oracle_connections')
-      .select('*')
-      .eq('id', connectionId)
-      .single();
-
-    if (connectionError || !connection) {
-      console.error('[Execute API] Connection error:', connectionError);
-      return NextResponse.json({ error: 'Connection not found' }, { status: 404 });
-    }
-
-    console.log('[Execute API] Connection found:', connection.name);
-
-    // Decrypt password
-    const password = decrypt(connection.password_encrypted);
-
-    const config = {
-      id: connection.id,
-      name: connection.name,
-      host: connection.host,
-      port: connection.port,
-      username: connection.username,
-      password,
-      serviceName: connection.service_name,
-      sid: connection.sid,
-      connectionType: connection.connection_type as 'SERVICE_NAME' | 'SID',
-    };
+    // 캐싱된 연결 설정 가져오기
+    const config = await getOracleConfig(connectionId);
+    console.log('[Execute API] Connection found:', config.name);
 
     const startTime = Date.now();
 
     try {
+      // 하나의 연결을 사용하여 스키마 변경과 쿼리 실행을 함께 처리
+      connection = await getConnection(config);
+
+      // 스키마가 지정된 경우 현재 스키마 변경 (같은 connection에서)
+      if (schema) {
+        try {
+          await connection.execute(`ALTER SESSION SET CURRENT_SCHEMA = ${schema}`);
+          console.log('[Execute API] Schema changed to:', schema);
+        } catch (schemaError: any) {
+          console.warn('[Execute API] Failed to change schema:', schemaError.message);
+          // 스키마 변경 실패해도 쿼리는 계속 실행 (권한 문제일 수 있음)
+        }
+      }
+
       // 쿼리 정리: 세미콜론 제거 및 공백 정리
       const cleanQuery = query.trim().replace(/;+\s*$/, '');
 
@@ -72,8 +61,8 @@ export async function POST(request: NextRequest) {
       const offset = options.offset || 0;
       const fetchSize = options.fetchSize || 100;
 
-      // executeQuery 함수는 이미 연결 관리를 처리함
-      const result = await executeQuery<any>(config, cleanQuery, [], {
+      // 같은 connection에서 쿼리 실행
+      const result = await connection.execute(cleanQuery, [], {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
         maxRows: queryType === 'SELECT' ? maxRows : undefined,
         autoCommit: queryType !== 'SELECT',
@@ -126,6 +115,15 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('[Execute API] Request error:', error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
+  } finally {
+    // 연결 정리
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error('[Execute API] Error closing connection:', err);
+      }
+    }
   }
 }
 

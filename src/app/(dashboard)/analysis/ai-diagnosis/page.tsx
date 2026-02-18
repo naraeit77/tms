@@ -107,20 +107,21 @@ interface AIAnalysisResult {
   }
 }
 
-// Mock AI analysis generator
-const generateMockAIAnalysis = (sqlData: SqlData): AIAnalysisResult => {
-  const avgTime = sqlData.elapsed_time_ms / sqlData.executions
-  const cpuRatio = sqlData.cpu_time_ms / sqlData.elapsed_time_ms
-  const bufferRatio = sqlData.buffer_gets / sqlData.executions
-  
-  // Calculate performance score based on metrics
-  const performanceScore = Math.max(0, Math.min(100, 100 - (avgTime / 10) * 20))
-  const scalabilityScore = Math.max(0, Math.min(100, 100 - (bufferRatio / 1000) * 30))
-  const maintainabilityScore = Math.floor(Math.random() * 30) + 60
-  const securityScore = Math.floor(Math.random() * 20) + 70
-  
+// SQL 성능 메트릭 기반 분석 결과 생성
+const analyzeFromMetrics = (sqlData: SqlData): AIAnalysisResult => {
+  const avgTime = sqlData.elapsed_time_ms / Math.max(sqlData.executions, 1)
+  const cpuRatio = sqlData.cpu_time_ms / Math.max(sqlData.elapsed_time_ms, 1)
+  const bufferRatio = sqlData.buffer_gets / Math.max(sqlData.executions, 1)
+  const diskRatio = sqlData.disk_reads / Math.max(sqlData.executions, 1)
+
+  // Calculate performance score based on real metrics
+  const performanceScore = Math.max(0, Math.min(100, 100 - Math.min((avgTime / 50), 50)))
+  const scalabilityScore = Math.max(0, Math.min(100, 100 - Math.min((bufferRatio / 500), 50)))
+  const maintainabilityScore = Math.max(50, 100 - Math.min((diskRatio / 100), 40))
+  const securityScore = 85 // 바인드 변수 사용 시 기본 점수
+
   const overallScore = Math.floor((performanceScore + scalabilityScore + maintainabilityScore + securityScore) / 4)
-  
+
   const getGrade = (score: number): 'A' | 'B' | 'C' | 'D' | 'F' => {
     if (score >= 90) return 'A'
     if (score >= 80) return 'B'
@@ -129,17 +130,49 @@ const generateMockAIAnalysis = (sqlData: SqlData): AIAnalysisResult => {
     return 'F'
   }
 
-  const performanceIssues = []
-  const performanceRecs = []
-  
+  const performanceIssues: string[] = []
+  const performanceRecs: string[] = []
+  const scalabilityIssues: string[] = []
+  const scalabilityRecs: string[] = []
+
   if (avgTime > 100) {
-    performanceIssues.push('높은 평균 실행 시간이 감지됨')
+    performanceIssues.push('높은 평균 실행 시간이 감지됨 (' + avgTime.toFixed(2) + 'ms)')
     performanceRecs.push('인덱스 추가 또는 쿼리 재작성을 고려하세요')
   }
-  
+
   if (bufferRatio > 1000) {
-    performanceIssues.push('과도한 논리적 읽기가 발생')
+    performanceIssues.push('과도한 논리적 읽기가 발생 (' + bufferRatio.toFixed(0) + '개/실행)')
     performanceRecs.push('조인 조건을 최적화하세요')
+  }
+
+  if (diskRatio > 100) {
+    scalabilityIssues.push('디스크 읽기가 많음 (' + diskRatio.toFixed(0) + '개/실행)')
+    scalabilityRecs.push('버퍼 캐시 적중률 개선이 필요합니다')
+  }
+
+  if (cpuRatio > 0.8) {
+    performanceIssues.push('CPU 집약적 작업 (' + (cpuRatio * 100).toFixed(1) + '%)')
+    performanceRecs.push('복잡한 연산을 단순화하세요')
+  }
+
+  const optimizationOpportunities: AIAnalysisResult['optimization_opportunities'] = []
+
+  if (avgTime > 50) {
+    optimizationOpportunities.push({
+      impact: avgTime > 200 ? 'high' : 'medium',
+      effort: 'medium',
+      description: '실행 계획 분석을 통한 쿼리 최적화',
+      expected_improvement: `${Math.min(60, Math.floor(avgTime / 5))}% 성능 향상 예상`
+    })
+  }
+
+  if (bufferRatio > 500) {
+    optimizationOpportunities.push({
+      impact: bufferRatio > 2000 ? 'high' : 'medium',
+      effort: 'low',
+      description: '인덱스 추가로 테이블 스캔 제거',
+      expected_improvement: `${Math.min(70, Math.floor(bufferRatio / 50))}% I/O 감소 예상`
+    })
   }
 
   return {
@@ -151,67 +184,114 @@ const generateMockAIAnalysis = (sqlData: SqlData): AIAnalysisResult => {
       performance: {
         score: Math.floor(performanceScore),
         issues: performanceIssues,
-        recommendations: performanceRecs
+        recommendations: performanceRecs.length > 0 ? performanceRecs : ['현재 성능 양호']
       },
       scalability: {
         score: Math.floor(scalabilityScore),
-        issues: scalabilityScore < 70 ? ['높은 리소스 사용량'] : [],
-        recommendations: scalabilityScore < 70 ? ['파티셔닝 고려', '인덱스 최적화'] : ['현재 확장성 양호']
+        issues: scalabilityIssues,
+        recommendations: scalabilityRecs.length > 0 ? scalabilityRecs : ['현재 확장성 양호']
       },
       maintainability: {
-        score: maintainabilityScore,
-        issues: maintainabilityScore < 70 ? ['복잡한 쿼리 구조'] : [],
-        recommendations: ['주석 추가', '가독성 개선']
+        score: Math.floor(maintainabilityScore),
+        issues: [],
+        recommendations: ['SQL Tuning Advisor 분석 권장']
       },
       security: {
         score: securityScore,
-        issues: securityScore < 80 ? ['SQL 인젝션 위험 가능성'] : [],
-        recommendations: ['바인드 변수 사용', '입력 검증 강화']
+        issues: [],
+        recommendations: ['바인드 변수 사용 권장']
       }
     },
     key_insights: [
       `평균 실행 시간: ${avgTime.toFixed(2)}ms`,
       `실행당 논리적 읽기: ${bufferRatio.toFixed(0)}개`,
+      `실행당 디스크 읽기: ${diskRatio.toFixed(0)}개`,
       `CPU 집약도: ${(cpuRatio * 100).toFixed(1)}%`,
       `전체 실행 횟수: ${sqlData.executions.toLocaleString()}회`
     ],
-    optimization_opportunities: [
-      {
-        impact: avgTime > 100 ? 'high' : 'medium',
-        effort: 'medium',
-        description: '복합 인덱스 추가로 테이블 스캔 제거',
-        expected_improvement: '40-60% 성능 향상'
-      },
-      {
-        impact: 'medium',
-        effort: 'low',
-        description: '불필요한 컬럼 제거로 네트워크 부하 감소',
-        expected_improvement: '15-25% 성능 향상'
-      }
-    ],
-    suggested_rewrites: [
-      {
-        original_snippet: 'SELECT * FROM table WHERE func(column) = value',
-        optimized_snippet: 'SELECT col1, col2 FROM table WHERE column = value',
-        explanation: '함수 사용을 피하고 필요한 컬럼만 선택',
-        performance_gain: '30-50% 개선'
-      }
-    ],
-    index_recommendations: [
-      {
-        table: sqlData.schema_name || 'TABLE_NAME',
-        columns: ['column1', 'column2'],
-        type: 'btree',
-        reason: '자주 사용되는 WHERE 조건',
-        estimated_improvement: '50-70% 성능 향상'
-      }
-    ],
+    optimization_opportunities: optimizationOpportunities.length > 0 ? optimizationOpportunities : [{
+      impact: 'low',
+      effort: 'low',
+      description: '현재 성능이 양호합니다',
+      expected_improvement: '추가 최적화 불필요'
+    }],
+    suggested_rewrites: [],
+    index_recommendations: [],
     risk_assessment: {
       level: overallScore < 60 ? 'high' : overallScore < 80 ? 'medium' : 'low',
-      factors: overallScore < 70 ? ['높은 리소스 사용량', '느린 응답 시간'] : ['일반적인 성능 수준'],
-      mitigation: ['정기적인 성능 모니터링', '인덱스 최적화', '쿼리 튜닝']
+      factors: performanceIssues.length > 0 ? performanceIssues : ['일반적인 성능 수준'],
+      mitigation: ['정기적인 성능 모니터링', '실행 계획 분석', 'SQL Tuning Advisor 활용']
     }
   }
+}
+
+// Oracle SQL Tuning Advisor 결과를 AIAnalysisResult로 변환
+const convertAdvisorResults = (
+  sqlData: SqlData,
+  recommendations: any[],
+  baseAnalysis: AIAnalysisResult
+): AIAnalysisResult => {
+  const result = { ...baseAnalysis }
+
+  if (recommendations && recommendations.length > 0) {
+    // 권장사항에서 인덱스 권장 추출
+    const indexRecs = recommendations.filter(r =>
+      r.finding_type?.includes('INDEX') ||
+      r.actions?.some((a: string) => a?.includes('CREATE INDEX'))
+    )
+
+    if (indexRecs.length > 0) {
+      result.index_recommendations = indexRecs.map(r => ({
+        table: r.finding?.match(/테이블\s*"([^"]+)"/)?.[1] || sqlData.schema_name || 'TABLE',
+        columns: r.actions?.filter((a: string) => a?.includes('CREATE INDEX'))
+          .map((a: string) => {
+            const match = a.match(/\(([^)]+)\)/)
+            return match ? match[1].split(',').map((c: string) => c.trim()) : ['column']
+          }).flat() || ['column'],
+        type: 'btree' as const,
+        reason: r.finding || r.message || '성능 향상을 위한 인덱스',
+        estimated_improvement: r.benefit_value ? `${Math.min(r.benefit_value, 99)}% 성능 향상` : '성능 향상 예상'
+      }))
+    }
+
+    // SQL 재작성 권장 추출
+    const rewriteRecs = recommendations.filter(r =>
+      r.finding_type?.includes('RESTRUCTURE') ||
+      r.actions?.some((a: string) => a?.includes('SELECT') || a?.includes('REWRITE'))
+    )
+
+    if (rewriteRecs.length > 0) {
+      result.suggested_rewrites = rewriteRecs.slice(0, 3).map(r => ({
+        original_snippet: sqlData.sql_text?.substring(0, 100) || 'Original SQL',
+        optimized_snippet: r.actions?.[0]?.substring(0, 200) || 'Optimized SQL',
+        explanation: r.finding || r.message || 'SQL 재작성 권장',
+        performance_gain: r.benefit_value ? `${Math.min(r.benefit_value, 99)}% 개선` : '성능 개선 예상'
+      }))
+    }
+
+    // 전체 권장사항을 최적화 기회에 추가
+    const allOpportunities = recommendations.map(r => ({
+      impact: (r.benefit_value > 50 ? 'high' : r.benefit_value > 20 ? 'medium' : 'low') as 'high' | 'medium' | 'low',
+      effort: 'medium' as const,
+      description: r.finding || r.message || 'Oracle Advisor 권장사항',
+      expected_improvement: r.benefit_value ? `${Math.min(r.benefit_value, 99)}% 성능 향상` : '성능 향상 예상'
+    }))
+
+    if (allOpportunities.length > 0) {
+      result.optimization_opportunities = [...allOpportunities, ...result.optimization_opportunities].slice(0, 5)
+    }
+
+    // 권장사항이 있으면 점수 조정
+    if (recommendations.some(r => r.benefit_value > 30)) {
+      result.categories.performance.issues.push('Oracle Advisor가 최적화 기회를 발견함')
+      result.categories.performance.recommendations = [
+        ...recommendations.slice(0, 3).map(r => r.finding || r.message).filter(Boolean),
+        ...result.categories.performance.recommendations
+      ].slice(0, 5)
+    }
+  }
+
+  return result
 }
 
 export default function AIDiagnosisPage() {
@@ -288,14 +368,63 @@ export default function AIDiagnosisPage() {
   }
 
   const runAIAnalysis = async (sqlData: SqlData) => {
+    if (!selectedConnectionId || selectedConnectionId === 'all') return
+
     setAnalyzing(true)
     try {
-      // Simulate AI analysis with realistic delay
-      await new Promise(resolve => setTimeout(resolve, 3000))
-      const analysis = generateMockAIAnalysis(sqlData)
-      setAiAnalysis(analysis)
+      // 1. 먼저 메트릭 기반 분석 수행
+      const baseAnalysis = analyzeFromMetrics(sqlData)
+
+      // 2. Oracle SQL Tuning Advisor 호출 시도
+      const taskName = `AI_DIAG_${sqlData.sql_id}_${Date.now()}`
+
+      try {
+        // 튜닝 작업 생성 및 실행
+        const createResponse = await fetch('/api/advisor/sql-tuning/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            connection_id: selectedConnectionId,
+            sql_id: sqlData.sql_id,
+            task_name: taskName
+          })
+        })
+
+        if (createResponse.ok) {
+          // 권장사항 조회
+          const recsResponse = await fetch(
+            `/api/advisor/sql-tuning/recommendations?connection_id=${selectedConnectionId}&task_name=${taskName}`
+          )
+
+          if (recsResponse.ok) {
+            const recsData = await recsResponse.json()
+            if (recsData.success && recsData.data && recsData.data.length > 0) {
+              // Advisor 결과와 메트릭 분석 결합
+              const enhancedAnalysis = convertAdvisorResults(sqlData, recsData.data, baseAnalysis)
+              setAiAnalysis(enhancedAnalysis)
+              return
+            }
+          }
+        } else {
+          // API 에러 응답 로깅 (개발 환경에서만)
+          if (process.env.NODE_ENV === 'development') {
+            const errorData = await createResponse.json().catch(() => ({}))
+            console.log('SQL Tuning Advisor API error:', createResponse.status, errorData)
+          }
+        }
+      } catch (advisorError) {
+        // SQL Tuning Advisor가 사용 불가능한 경우 (권한 부족 등) 메트릭 기반 분석으로 폴백
+        if (process.env.NODE_ENV === 'development') {
+          console.log('SQL Tuning Advisor not available, using metrics-based analysis:', advisorError)
+        }
+      }
+
+      // Advisor 사용 불가 시 메트릭 기반 분석 결과 사용
+      setAiAnalysis(baseAnalysis)
     } catch (error) {
       console.error('Failed to run AI analysis:', error)
+      // 오류 시에도 메트릭 기반 분석 제공
+      setAiAnalysis(analyzeFromMetrics(sqlData))
     } finally {
       setAnalyzing(false)
     }
@@ -667,7 +796,7 @@ export default function AIDiagnosisPage() {
                       <CardContent>
                         <div className="space-y-2">
                           {aiAnalysis.key_insights.map((insight, index) => (
-                            <div key={index} className="flex items-center space-x-2 text-sm">
+                            <div key={`insight-${insight.substring(0, 20)}-${index}`} className="flex items-center space-x-2 text-sm">
                               <CheckCircle className="h-4 w-4 text-green-500" />
                               <span>{insight}</span>
                             </div>
@@ -690,7 +819,7 @@ export default function AIDiagnosisPage() {
                               <div key={category}>
                                 <div className="font-medium text-sm capitalize mb-1">{category}</div>
                                 {data.issues.map((issue, index) => (
-                                  <div key={index} className="flex items-center space-x-2 text-sm text-gray-600">
+                                  <div key={`issue-${category}-${issue.substring(0, 20)}-${index}`} className="flex items-center space-x-2 text-sm text-gray-600">
                                     <ArrowRight className="h-3 w-3" />
                                     <span>{issue}</span>
                                   </div>
@@ -707,7 +836,7 @@ export default function AIDiagnosisPage() {
                 <TabsContent value="opportunities" className="space-y-4">
                   <div className="space-y-4">
                     {aiAnalysis.optimization_opportunities.map((opportunity, index) => (
-                      <Card key={index}>
+                      <Card key={`opportunity-${opportunity.impact || ''}-${opportunity.description?.substring(0, 30) || ''}-${index}`}>
                         <CardContent className="pt-6">
                           <div className="flex items-start space-x-4">
                             <div className="flex-shrink-0">
@@ -741,7 +870,7 @@ export default function AIDiagnosisPage() {
                 <TabsContent value="rewrites" className="space-y-4">
                   <div className="space-y-4">
                     {aiAnalysis.suggested_rewrites.map((rewrite, index) => (
-                      <Card key={index}>
+                      <Card key={`rewrite-${rewrite.original_sql?.substring(0, 20) || ''}-${index}`}>
                         <CardHeader>
                           <CardTitle className="flex items-center">
                             <FileText className="h-5 w-5 mr-2" />
@@ -780,7 +909,7 @@ export default function AIDiagnosisPage() {
                 <TabsContent value="indexes" className="space-y-4">
                   <div className="space-y-4">
                     {aiAnalysis.index_recommendations.map((index, idx) => (
-                      <Card key={idx}>
+                      <Card key={`index-rec-${index.table}-${index.type}-${idx}`}>
                         <CardContent className="pt-6">
                           <div className="flex items-start space-x-4">
                             <Database className="h-6 w-6 text-blue-600 flex-shrink-0 mt-1" />
@@ -827,7 +956,7 @@ export default function AIDiagnosisPage() {
                           <div className="text-sm font-medium text-gray-500 mb-2">위험 요소</div>
                           <div className="space-y-1">
                             {aiAnalysis.risk_assessment.factors.map((factor, index) => (
-                              <div key={index} className="flex items-center space-x-2 text-sm">
+                              <div key={`risk-factor-${factor.substring(0, 20)}-${index}`} className="flex items-center space-x-2 text-sm">
                                 <AlertTriangle className="h-4 w-4 text-orange-500" />
                                 <span>{factor}</span>
                               </div>
@@ -839,7 +968,7 @@ export default function AIDiagnosisPage() {
                           <div className="text-sm font-medium text-gray-500 mb-2">완화 방안</div>
                           <div className="space-y-1">
                             {aiAnalysis.risk_assessment.mitigation.map((action, index) => (
-                              <div key={index} className="flex items-center space-x-2 text-sm">
+                              <div key={`mitigation-${action.substring(0, 20)}-${index}`} className="flex items-center space-x-2 text-sm">
                                 <CheckCircle className="h-4 w-4 text-green-500" />
                                 <span>{action}</span>
                               </div>

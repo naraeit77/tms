@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { createPureClient } from '@/lib/supabase/server';
+import { db } from '@/db';
+import { users, userProfiles } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 
 /**
  * GET /api/profile
@@ -14,24 +16,33 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const supabase = await createPureClient();
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', session.user.email)
-      .single();
+    const result = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        created_at: users.createdAt,
+        updated_at: users.updatedAt,
+        role_id: userProfiles.roleId,
+        full_name: userProfiles.fullName,
+        department: userProfiles.department,
+        phone: userProfiles.phone,
+        avatar_url: userProfiles.avatarUrl,
+        preferences: userProfiles.preferences,
+        last_login_at: userProfiles.lastLoginAt,
+        is_active: userProfiles.isActive,
+      })
+      .from(users)
+      .leftJoin(userProfiles, eq(userProfiles.id, users.id))
+      .where(eq(users.email, session.user.email))
+      .limit(1);
 
-    if (error) {
-      console.error('Failed to fetch profile:', error);
+    if (result.length === 0) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
     }
 
-    // 비밀번호는 제외하고 반환
-    const { password, ...profile } = data;
-
     return NextResponse.json({
       success: true,
-      data: profile,
+      data: result[0],
     });
   } catch (error) {
     console.error('Profile API error:', error);
@@ -57,24 +68,54 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }
 
-    const supabase = await createPureClient();
-    const { data, error } = await supabase
-      .from('users')
-      .update({ name, updated_at: new Date().toISOString() })
-      .eq('email', session.user.email)
-      .select()
-      .single();
+    // 사용자 ID 조회
+    const userResult = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, session.user.email))
+      .limit(1);
 
-    if (error) {
-      console.error('Failed to update profile:', error);
+    if (userResult.length === 0) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    const userId = userResult[0].id;
+
+    // userProfiles에서 fullName 업데이트
+    const updated = await db
+      .update(userProfiles)
+      .set({ fullName: name, updatedAt: new Date() })
+      .where(eq(userProfiles.id, userId))
+      .returning();
+
+    if (updated.length === 0) {
       return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
     }
 
-    const { password, ...profile } = data;
+    // 업데이트된 프로필 전체 조회
+    const result = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        created_at: users.createdAt,
+        updated_at: users.updatedAt,
+        role_id: userProfiles.roleId,
+        full_name: userProfiles.fullName,
+        department: userProfiles.department,
+        phone: userProfiles.phone,
+        avatar_url: userProfiles.avatarUrl,
+        preferences: userProfiles.preferences,
+        last_login_at: userProfiles.lastLoginAt,
+        is_active: userProfiles.isActive,
+      })
+      .from(users)
+      .leftJoin(userProfiles, eq(userProfiles.id, users.id))
+      .where(eq(users.email, session.user.email))
+      .limit(1);
 
     return NextResponse.json({
       success: true,
-      data: profile,
+      data: result[0],
     });
   } catch (error) {
     console.error('Profile update error:', error);

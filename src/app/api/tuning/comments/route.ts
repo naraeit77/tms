@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { createPureClient } from '@/lib/supabase/server';
+import { db } from '@/db';
+import { tuningComments, tuningHistory } from '@/db/schema';
+import { eq, asc } from 'drizzle-orm';
 
 /**
  * GET /api/tuning/comments
@@ -19,17 +21,31 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const supabase = await createPureClient();
+    const data = await db
+      .select()
+      .from(tuningComments)
+      .where(eq(tuningComments.tuningTaskId, tuningTaskId))
+      .orderBy(asc(tuningComments.createdAt));
 
-    const { data, error } = await supabase
-      .from('tuning_comments')
-      .select('*')
-      .eq('tuning_task_id', tuningTaskId)
-      .order('created_at', { ascending: true });
+    // snake_case 변환 (프론트엔드 호환)
+    const formatted = data.map((row) => ({
+      id: row.id,
+      tuning_task_id: row.tuningTaskId,
+      parent_comment_id: row.parentCommentId,
+      comment: row.comment,
+      comment_type: row.commentType,
+      attachments: row.attachments,
+      author_id: row.authorId,
+      author_name: row.authorName,
+      mentions: row.mentions,
+      is_resolved: row.isResolved,
+      resolved_by: row.resolvedBy,
+      resolved_at: row.resolvedAt,
+      created_at: row.createdAt,
+      updated_at: row.updatedAt,
+    }));
 
-    if (error) throw error;
-
-    return NextResponse.json({ data });
+    return NextResponse.json({ data: formatted });
   } catch (error) {
     console.error('Get tuning comments error:', error);
     return NextResponse.json(
@@ -70,41 +86,54 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = await createPureClient();
-
     // 코멘트 추가
-    const { data: newComment, error } = await supabase
-      .from('tuning_comments')
-      .insert({
-        tuning_task_id,
-        parent_comment_id,
+    const [newComment] = await db
+      .insert(tuningComments)
+      .values({
+        tuningTaskId: tuning_task_id,
+        parentCommentId: parent_comment_id,
         comment,
-        comment_type,
-        author_id: session.user.id,
-        author_name: session.user.name || session.user.email,
+        commentType: comment_type,
+        authorId: session.user.id,
+        authorName: session.user.name || session.user.email,
         attachments: [],
         mentions: [],
-        is_resolved: false,
+        isResolved: false,
       })
-      .select()
-      .single();
-
-    if (error) throw error;
+      .returning();
 
     // 튜닝 이력에 기록
-    await supabase
-      .from('tuning_history')
-      .insert({
-        tuning_task_id,
-        oracle_connection_id: '', // task에서 가져와야 함
-        sql_id: '', // task에서 가져와야 함
-        activity_type: 'COMMENT',
+    await db
+      .insert(tuningHistory)
+      .values({
+        tuningTaskId: tuning_task_id,
+        oracleConnectionId: '', // task에서 가져와야 함
+        sqlId: '', // task에서 가져와야 함
+        activityType: 'COMMENT',
         description: `${session.user.name || session.user.email}님이 ${comment_type === 'COMMENT' ? '코멘트' : comment_type === 'QUESTION' ? '질문' : comment_type === 'SOLUTION' ? '해결방법' : '이슈'}를 추가했습니다`,
-        performed_by: session.user.id,
+        performedBy: session.user.id,
         metadata: { comment_id: newComment.id },
       });
 
-    return NextResponse.json(newComment, { status: 201 });
+    // snake_case 변환 (프론트엔드 호환)
+    const formatted = {
+      id: newComment.id,
+      tuning_task_id: newComment.tuningTaskId,
+      parent_comment_id: newComment.parentCommentId,
+      comment: newComment.comment,
+      comment_type: newComment.commentType,
+      attachments: newComment.attachments,
+      author_id: newComment.authorId,
+      author_name: newComment.authorName,
+      mentions: newComment.mentions,
+      is_resolved: newComment.isResolved,
+      resolved_by: newComment.resolvedBy,
+      resolved_at: newComment.resolvedAt,
+      created_at: newComment.createdAt,
+      updated_at: newComment.updatedAt,
+    };
+
+    return NextResponse.json(formatted, { status: 201 });
   } catch (error) {
     console.error('Create tuning comment error:', error);
     return NextResponse.json(

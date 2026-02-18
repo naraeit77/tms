@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createPureClient } from '@/lib/supabase/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { db } from '@/db';
+import { oracleConnections, sqlStatistics } from '@/db/schema';
+import { eq, and, gte, asc } from 'drizzle-orm';
 
 // Generate demo trend data
 function generateDemoTrendData(period: string) {
@@ -15,10 +19,9 @@ function generateDemoTrendData(period: string) {
       timestamp.setDate(timestamp.getDate() - i);
     }
 
-    // Generate realistic-looking data with some variation
     const baseResponseTime = 0.25;
     const variation = (Math.random() - 0.5) * 0.1;
-    const trend = -i * 0.001; // Slight improvement over time
+    const trend = -i * 0.001;
 
     data.push({
       timestamp: timestamp.toISOString(),
@@ -31,8 +34,8 @@ function generateDemoTrendData(period: string) {
   return data;
 }
 
-// Get trend data from Supabase
-async function getTrendDataFromSupabase(supabase: any, databaseId: string, period: string) {
+// Get trend data from local PostgreSQL
+async function getTrendDataFromDB(databaseId: string, period: string) {
   let startDate = new Date();
 
   switch (period) {
@@ -50,23 +53,29 @@ async function getTrendDataFromSupabase(supabase: any, databaseId: string, perio
       break;
   }
 
-  // Query sql_statistics grouped by time intervals
-  const { data, error } = await supabase
-    .from('sql_statistics')
-    .select('created_at, elapsed_time_seconds, executions')
-    .eq('database_id', databaseId)
-    .gte('created_at', startDate.toISOString())
-    .order('created_at', { ascending: true });
+  // Query sql_statistics
+  const data = await db
+    .select({
+      createdAt: sqlStatistics.createdAt,
+      elapsedTimeMs: sqlStatistics.elapsedTimeMs,
+      executions: sqlStatistics.executions,
+    })
+    .from(sqlStatistics)
+    .where(and(
+      eq(sqlStatistics.oracleConnectionId, databaseId),
+      gte(sqlStatistics.createdAt, startDate)
+    ))
+    .orderBy(asc(sqlStatistics.createdAt));
 
-  if (error || !data || data.length === 0) {
+  if (!data || data.length === 0) {
     return null;
   }
 
   // Group data by time intervals
   const intervals = period === '24h' ? 24 : period === '7d' ? 7 : period === '30d' ? 30 : 90;
   const intervalMs = period === '24h'
-    ? 60 * 60 * 1000 // 1 hour
-    : 24 * 60 * 60 * 1000; // 1 day
+    ? 60 * 60 * 1000
+    : 24 * 60 * 60 * 1000;
 
   const now = Date.now();
   const trendData = [];
@@ -75,16 +84,16 @@ async function getTrendDataFromSupabase(supabase: any, databaseId: string, perio
     const intervalStart = now - (i + 1) * intervalMs;
     const intervalEnd = now - i * intervalMs;
 
-    const intervalData = data.filter((row: any) => {
-      const rowTime = new Date(row.created_at).getTime();
+    const intervalData = data.filter((row) => {
+      const rowTime = new Date(row.createdAt!).getTime();
       return rowTime >= intervalStart && rowTime < intervalEnd;
     });
 
     if (intervalData.length > 0) {
-      const avgResponseTime = intervalData.reduce((sum: number, row: any) =>
-        sum + (row.elapsed_time_seconds || 0), 0) / intervalData.length;
+      const avgResponseTime = intervalData.reduce((sum, row) =>
+        sum + (row.elapsedTimeMs || 0), 0) / intervalData.length;
 
-      const totalExecutions = intervalData.reduce((sum: number, row: any) =>
+      const totalExecutions = intervalData.reduce((sum, row) =>
         sum + (row.executions || 0), 0);
 
       trendData.push({
@@ -94,7 +103,6 @@ async function getTrendDataFromSupabase(supabase: any, databaseId: string, perio
         sqlCount: intervalData.length
       });
     } else {
-      // No data for this interval
       trendData.push({
         timestamp: new Date(intervalEnd).toISOString(),
         avgResponseTime: 0,
@@ -109,11 +117,8 @@ async function getTrendDataFromSupabase(supabase: any, databaseId: string, perio
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    // Check authentication
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session?.user) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
@@ -125,7 +130,6 @@ export async function GET(request: NextRequest) {
     const period = searchParams.get('period') || '7d';
     const databaseId = searchParams.get('databaseId');
 
-    // If no database ID provided, return demo data
     if (!databaseId) {
       return NextResponse.json({
         success: true,
@@ -135,16 +139,17 @@ export async function GET(request: NextRequest) {
     }
 
     // Get database connection to verify ownership
-    const pureSupabase = await createPureClient();
-    const { data: dbConnection, error: dbError } = await pureSupabase
-      .from('oracle_connections')
-      .select('*')
-      .eq('id', databaseId)
-      .eq('created_by', userId)
-      .eq('is_active', true)
-      .single();
+    const [dbConnection] = await db
+      .select()
+      .from(oracleConnections)
+      .where(and(
+        eq(oracleConnections.id, databaseId),
+        eq(oracleConnections.createdBy, userId),
+        eq(oracleConnections.isActive, true)
+      ))
+      .limit(1);
 
-    if (dbError || !dbConnection) {
+    if (!dbConnection) {
       return NextResponse.json({
         success: true,
         data: generateDemoTrendData(period),
@@ -153,7 +158,7 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      const trendData = await getTrendDataFromSupabase(pureSupabase, databaseId, period);
+      const trendData = await getTrendDataFromDB(databaseId, period);
 
       if (!trendData || trendData.length === 0) {
         return NextResponse.json({
@@ -166,11 +171,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         data: trendData,
-        metadata: { source: 'supabase', period, databaseId }
+        metadata: { source: 'database', period, databaseId }
       });
 
     } catch (error) {
-      console.error('Supabase trend query error:', error);
+      console.error('Trend query error:', error);
       return NextResponse.json({
         success: true,
         data: generateDemoTrendData(period),

@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Users, RefreshCw, AlertTriangle, XCircle, Loader2, Info } from 'lucide-react';
+import { Users, RefreshCw, AlertTriangle, XCircle, Loader2, Info, Activity, Ban, Clock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +30,10 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSelectedDatabase } from '@/hooks/use-selected-database';
 import { useToast } from '@/hooks/use-toast';
+import { PageHeader } from '@/components/ui/page-header';
+import { DataCard, DataCardGrid } from '@/components/ui/data-card';
+import { ConnectionRequired } from '@/components/ui/empty-state';
+import { SessionStatusBadge } from '@/components/ui/status-badge';
 
 interface Session {
   id: string;
@@ -71,7 +75,7 @@ export default function SessionsPage() {
   // Use the global selected connection ID or 'all'
   const effectiveConnectionId = selectedConnectionId || 'all';
 
-  // Sessions 조회
+  // Sessions 조회 (캐싱 최적화)
   const {
     data: sessionsData,
     isLoading,
@@ -96,28 +100,27 @@ export default function SessionsPage() {
       if (!res.ok) throw new Error('Failed to fetch sessions');
       return res.json();
     },
-    refetchInterval: 10000, // 10초마다 자동 새로고침
+    enabled: effectiveConnectionId !== 'all', // 연결이 선택되었을 때만 쿼리 실행
+    refetchInterval: 15000, // 15초마다 자동 새로고침 (10초에서 증가)
+    staleTime: 10 * 1000, // 10초간 캐시 유지
+    gcTime: 60 * 1000, // 1분간 가비지 컬렉션 방지
+    refetchOnWindowFocus: false, // 윈도우 포커스 시 재요청 비활성화
+    placeholderData: (previousData) => previousData, // 이전 데이터 유지하여 깜빡임 방지
   });
 
   const rawSessions: Session[] = sessionsData?.data || [];
 
   // 중복 제거 - 동일한 oracle_connection_id, sid, serial_number 조합은 하나만 유지
+  // 중복 세션은 정상적인 상황일 수 있으므로 조용히 필터링
   const uniqueSessionsMap = new Map<string, Session>();
   rawSessions.forEach(session => {
     const key = `${session.oracle_connection_id}-${session.sid}-${session.serial_number}`;
     if (!uniqueSessionsMap.has(key)) {
       uniqueSessionsMap.set(key, session);
-    } else {
-      console.warn(`Duplicate session detected and filtered: ${key}`);
     }
+    // 중복 세션은 조용히 필터링 (로그 제거)
   });
   const sessions = Array.from(uniqueSessionsMap.values());
-
-  // 디버깅을 위한 로그
-  if (rawSessions.length !== sessions.length) {
-    console.log(`Filtered ${rawSessions.length - sessions.length} duplicate sessions`);
-    console.log('Raw sessions count:', rawSessions.length, 'Unique sessions count:', sessions.length);
-  }
 
   // 검색 및 상태 필터링
   const filteredSessions = sessions.filter((session) => {
@@ -200,96 +203,97 @@ export default function SessionsPage() {
     }
   };
 
+  // 연결이 선택되지 않았을 때 안내 메시지 표시
+  if (!selectedConnectionId || selectedConnectionId === 'all') {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Sessions"
+          description="Oracle 데이터베이스 세션 모니터링"
+          icon={<Users className="h-6 w-6 text-primary" />}
+        />
+        <ConnectionRequired feature="세션 모니터링" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* 페이지 헤더 */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Sessions</h1>
-          <p className="text-sm sm:text-base text-muted-foreground mt-1">
-            Oracle 데이터베이스 세션 모니터링
-          </p>
-          {selectedConnection && (
-            <p className="text-sm text-muted-foreground mt-1">
-              연결: <span className="font-medium">{selectedConnection.name}</span> ({selectedConnection.host}:{selectedConnection.port})
-            </p>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Sessions"
+        description={selectedConnection ?
+          `${selectedConnection.name} (${selectedConnection.host}:${selectedConnection.port}) 세션 모니터링` :
+          'Oracle 데이터베이스 세션 모니터링'
+        }
+        icon={<Users className="h-6 w-6 text-primary" />}
+        badge={
+          <Badge variant="outline" className="animate-pulse">
+            {isFetching ? '갱신 중...' : 'Live'}
+          </Badge>
+        }
+        actions={
+          <Button
+            variant="outline"
+            onClick={() => refetch()}
+            disabled={isFetching}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
+            새로고침
+          </Button>
+        }
+      />
 
       {/* 통계 카드 */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              총 세션
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">{stats.total}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Active 세션
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-green-600">{stats.active}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Inactive 세션
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-gray-600">{stats.inactive}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Blocked 세션
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-red-600">{stats.blocked}</div>
-          </CardContent>
-        </Card>
-      </div>
+      <DataCardGrid columns={4}>
+        <DataCard
+          title="총 세션"
+          value={stats.total}
+          icon={<Users className="h-5 w-5" />}
+          loading={isLoading}
+          variant="blue"
+        />
+        <DataCard
+          title="Active 세션"
+          value={stats.active}
+          icon={<Activity className="h-5 w-5" />}
+          loading={isLoading}
+          variant="green"
+        />
+        <DataCard
+          title="Inactive 세션"
+          value={stats.inactive}
+          icon={<Clock className="h-5 w-5" />}
+          loading={isLoading}
+          variant="default"
+        />
+        <DataCard
+          title="Blocked 세션"
+          value={stats.blocked}
+          icon={<Ban className="h-5 w-5" />}
+          loading={isLoading}
+          variant="red"
+        />
+      </DataCardGrid>
 
       {/* 필터 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>필터</CardTitle>
+      <Card className="glass border-primary/20">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">필터</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-3">
             {/* 검색 */}
             <Input
-              placeholder="사용자명, 머신, 프로그램 검색..."
+              placeholder="사용자명, 머신, 프로그램, SQL ID 검색..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              className="h-10"
             />
-
-            {/* DB 연결 - 현재 글로벌 선택기 사용 */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-md border bg-muted/50">
-              <span className="text-sm text-muted-foreground">
-                연결: <span className="font-medium text-foreground">
-                  {selectedConnection?.name || '전체 DB'}
-                </span>
-              </span>
-            </div>
 
             {/* 상태 필터 */}
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
+              <SelectTrigger className="h-10">
                 <SelectValue placeholder="상태" />
               </SelectTrigger>
               <SelectContent>
@@ -299,15 +303,13 @@ export default function SessionsPage() {
               </SelectContent>
             </Select>
 
-            {/* 새로고침 버튼 */}
-            <Button
-              variant="outline"
-              onClick={() => refetch()}
-              disabled={isFetching}
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
-              새로고침
-            </Button>
+            {/* 현재 연결 정보 */}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md border bg-muted/50 h-10">
+              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-sm text-muted-foreground">
+                {selectedConnection?.name || '전체 DB'}
+              </span>
+            </div>
           </div>
         </CardContent>
       </Card>

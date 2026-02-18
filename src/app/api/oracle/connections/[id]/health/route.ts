@@ -6,9 +6,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { createPureClient } from '@/lib/supabase/server';
-import { decrypt } from '@/lib/crypto';
-import { healthCheck, type OracleConnectionConfig } from '@/lib/oracle';
+import { db } from '@/db';
+import { oracleConnections } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+import { healthCheck } from '@/lib/oracle';
+import { getOracleConfig, invalidateConnectionCache } from '@/lib/oracle/utils';
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -18,47 +20,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     }
 
     const { id } = await params;
-    const supabase = await createPureClient();
 
-    // 연결 정보 조회
-    const { data: connection, error } = await supabase
-      .from('oracle_connections')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (error || !connection) {
-      console.error('Connection not found:', { id, error });
-      return NextResponse.json({ error: 'Connection not found' }, { status: 404 });
-    }
-
-    // 비밀번호 복호화
-    let password: string;
-    try {
-      password = decrypt(connection.password_encrypted);
-    } catch (decryptError) {
-      console.error('Password decryption failed:', decryptError);
-      return NextResponse.json(
-        {
-          error: 'Password decryption failed',
-          details: decryptError instanceof Error ? decryptError.message : 'Unknown error',
-        },
-        { status: 500 }
-      );
-    }
-
-    // Health Check 수행
-    const config: OracleConnectionConfig = {
-      id: connection.id,
-      name: connection.name,
-      host: connection.host,
-      port: connection.port,
-      serviceName: connection.service_name || undefined,
-      sid: connection.sid || undefined,
-      username: connection.username,
-      password,
-      connectionType: connection.connection_type,
-    };
+    // 캐싱된 연결 설정 가져오기
+    const config = await getOracleConfig(id);
 
     console.log('Performing health check for connection:', {
       name: config.name,
@@ -75,23 +39,26 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     const healthStatus = healthCheckResult.isHealthy ? 'HEALTHY' : 'ERROR';
 
     // Health Check 업데이트 (버전 및 에디션 정보 포함)
-    const updateData: any = {
-      last_health_check_at: new Date().toISOString(),
-      health_status: healthStatus,
+    const updateData: Record<string, any> = {
+      lastHealthCheckAt: new Date(),
+      healthStatus: healthStatus,
     };
 
     if (healthCheckResult.isHealthy) {
-      updateData.last_connected_at = new Date().toISOString();
-      updateData.oracle_version = healthCheckResult.version;
-      updateData.oracle_edition = healthCheckResult.edition || null;
+      updateData.lastConnectedAt = new Date();
+      updateData.oracleVersion = healthCheckResult.version;
+      updateData.oracleEdition = healthCheckResult.edition || null;
     }
 
-    const { error: updateError } = await supabase
-      .from('oracle_connections')
-      .update(updateData)
-      .eq('id', id);
+    try {
+      await db
+        .update(oracleConnections)
+        .set(updateData)
+        .where(eq(oracleConnections.id, id));
 
-    if (updateError) {
+      // 연결 정보가 업데이트되었으므로 캐시 무효화
+      invalidateConnectionCache(id);
+    } catch (updateError) {
       console.error('Failed to update health check status:', updateError);
     }
 

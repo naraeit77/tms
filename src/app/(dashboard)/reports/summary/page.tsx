@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useSession } from 'next-auth/react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -74,128 +76,176 @@ interface ReportSummary {
   }
 }
 
-// Mock report data
-const generateReportSummary = (period: string): ReportSummary => {
+// Empty report data when no data available
+const getEmptyReportSummary = (period: string): ReportSummary => {
   return {
     period,
-    totalSQL: 4247,
-    totalExecutions: 1547832,
-    avgResponseTime: 0.247,
+    totalSQL: 0,
+    totalExecutions: 0,
+    avgResponseTime: 0,
     performanceGrades: {
-      A: Math.floor(Math.random() * 800) + 200,
-      B: Math.floor(Math.random() * 600) + 300,
-      C: Math.floor(Math.random() * 400) + 200,
-      D: Math.floor(Math.random() * 200) + 100,
-      F: Math.floor(Math.random() * 150) + 50
+      A: 0,
+      B: 0,
+      C: 0,
+      D: 0,
+      F: 0
     },
-    topProblematicSQL: [
-      { sql_id: 'SQL_ABC123DEF', issues: 5, impact: 'high' },
-      { sql_id: 'SQL_XYZ789GHI', issues: 3, impact: 'medium' },
-      { sql_id: 'SQL_JKL456MNO', issues: 4, impact: 'high' },
-      { sql_id: 'SQL_PQR012STU', issues: 2, impact: 'low' },
-    ],
-    improvements: [
-      { description: '인덱스 최적화를 통한 스캔 효율성 개선', impact: 23, status: 'implemented' },
-      { description: '복잡한 조인 쿼리 리팩토링', impact: 18, status: 'planned' },
-      { description: '통계 정보 업데이트 자동화', impact: 15, status: 'recommended' },
-      { description: '파티셔닝 전략 개선', impact: 12, status: 'recommended' },
-    ],
+    topProblematicSQL: [],
+    improvements: [],
     resourceUtilization: {
-      cpu: 67.3,
-      memory: 78.5,
-      io: 45.2
+      cpu: 0,
+      memory: 0,
+      io: 0
     }
   }
 }
 
 export default function ReportsSummaryPage() {
-  const [reportData, setReportData] = useState<ReportSummary | null>(null)
+  const { status } = useSession()
+  const queryClient = useQueryClient()
   const [period, setPeriod] = useState('7d')
-  const [loading, setLoading] = useState(true)
   const [generatingReport, setGeneratingReport] = useState(false)
-  const [databases, setDatabases] = useState<any[]>([])
   const [selectedDatabase, setSelectedDatabase] = useState<string>('')
-  const [isDemo, setIsDemo] = useState(false)
-  const [trendData, setTrendData] = useState<any[]>([])
-  const [trendLoading, setTrendLoading] = useState(false)
 
+  // 데이터베이스 목록 조회 - React Query 사용 (전역 캐시 공유)
+  // 모든 훅은 조건문 전에 호출되어야 함
+  const { data: databasesData } = useQuery({
+    queryKey: ['oracle-connections'], // 전역 쿼리 키로 통일
+    queryFn: async () => {
+      const response = await fetch('/api/oracle/connections')
+      if (response.status === 401) {
+        return []
+      }
+      if (!response.ok) {
+        throw new Error('Failed to fetch databases')
+      }
+      const data = await response.json()
+      return data.map((conn: any) => ({
+        id: conn.id,
+        name: conn.name,
+        host: conn.host,
+        port: conn.port,
+      })) || []
+    },
+    enabled: status === 'authenticated',
+    staleTime: 5 * 60 * 1000, // 5분간 캐시 유지
+    gcTime: 10 * 60 * 1000, // 10분간 가비지 컬렉션 방지
+    retry: false,
+    refetchOnWindowFocus: false, // 포커스 시 재요청 비활성화
+  })
+
+  // 첫 번째 데이터베이스 자동 선택
   useEffect(() => {
-    loadDatabases()
-  }, [])
+    if (databasesData && databasesData.length > 0 && !selectedDatabase) {
+      setSelectedDatabase(databasesData[0].id)
+    }
+  }, [databasesData, selectedDatabase])
 
-  useEffect(() => {
-    loadReport(period)
-    loadTrendData(period)
-  }, [period, selectedDatabase])
-
-  const loadDatabases = async () => {
-    try {
-      const response = await fetch('/api/databases')
-      const result = await response.json()
-      if (result.success && result.data) {
-        setDatabases(result.data)
-        if (result.data.length > 0) {
-          setSelectedDatabase(result.data[0].id)
+  // 보고서 데이터 조회 - React Query 사용
+  const { data: reportResponse, isLoading: reportLoading } = useQuery({
+    queryKey: ['reports-summary', period, selectedDatabase],
+    queryFn: async () => {
+      if (status !== 'authenticated') {
+        return {
+          success: true,
+          data: getEmptyReportSummary(period),
+          metadata: { source: 'demo' }
         }
       }
-    } catch (error) {
-      console.error('Failed to load databases:', error)
-      // Don't block the page if database list fails
-    }
-  }
 
-  const loadReport = async (selectedPeriod: string) => {
-    setLoading(true)
-    try {
-      // Try to get real data from API with selected database
       const url = selectedDatabase
-        ? `/api/reports/summary?period=${selectedPeriod}&databaseId=${selectedDatabase}`
-        : `/api/reports/summary?period=${selectedPeriod}`
+        ? `/api/reports/summary?period=${period}&databaseId=${selectedDatabase}`
+        : `/api/reports/summary?period=${period}`
 
       const response = await fetch(url)
-      const result = await response.json()
+      
+      if (response.status === 401) {
+        window.location.href = '/auth/signin'
+        throw new Error('Unauthorized')
+      }
 
+      if (!response.ok) {
+        throw new Error('Failed to fetch report')
+      }
+
+      const result = await response.json()
+      
       if (result.success && result.data) {
-        setReportData(result.data)
-        // Check if this is demo data - only consider it demo if source indicates fallback or no database selected
-        setIsDemo(result.metadata?.source !== 'supabase')
+        return result
       } else {
         // Fallback to demo data
-        setReportData(generateReportSummary(selectedPeriod))
-        setIsDemo(true)
+        return {
+          success: true,
+          data: getEmptyReportSummary(period),
+          metadata: { source: 'demo' }
+        }
       }
-    } catch (error) {
-      console.error('Failed to load report:', error)
-      // Fallback to demo data
-      setReportData(generateReportSummary(selectedPeriod))
-      setIsDemo(true)
-    } finally {
-      setLoading(false)
-    }
-  }
+    },
+    enabled: status !== 'loading',
+    staleTime: 60 * 1000, // 1분간 캐시 유지
+    retry: false,
+  })
 
-  const loadTrendData = async (selectedPeriod: string) => {
-    setTrendLoading(true)
-    try {
+  // 트렌드 데이터 조회 - React Query 사용
+  const { data: trendResponse, isLoading: trendLoading } = useQuery({
+    queryKey: ['reports-trend', period, selectedDatabase],
+    queryFn: async () => {
+      if (status !== 'authenticated') {
+        return { success: true, data: [] }
+      }
+
       const url = selectedDatabase
-        ? `/api/reports/summary/trend?period=${selectedPeriod}&databaseId=${selectedDatabase}`
-        : `/api/reports/summary/trend?period=${selectedPeriod}`
+        ? `/api/reports/summary/trend?period=${period}&databaseId=${selectedDatabase}`
+        : `/api/reports/summary/trend?period=${period}`
 
       const response = await fetch(url)
-      const result = await response.json()
-
-      if (result.success && result.data) {
-        setTrendData(result.data)
-      } else {
-        setTrendData([])
+      
+      if (response.status === 401) {
+        window.location.href = '/auth/signin'
+        throw new Error('Unauthorized')
       }
-    } catch (error) {
-      console.error('Failed to load trend data:', error)
-      setTrendData([])
-    } finally {
-      setTrendLoading(false)
+
+      if (!response.ok) {
+        return { success: false, data: [] }
+      }
+
+      return response.json()
+    },
+    enabled: status === 'authenticated',
+    staleTime: 60 * 1000, // 1분간 캐시 유지
+    retry: false,
+  })
+
+  // 데이터 변환 및 처리 - useMemo로 최적화
+  const { reportData, isDemo, trendData } = useMemo((): { reportData: ReportSummary; isDemo: boolean; trendData: any[] } => {
+    const report: ReportSummary = reportResponse?.data || getEmptyReportSummary(period)
+    const isDemoData = reportResponse?.metadata?.source !== 'database' || status !== 'authenticated'
+
+    const transformedTrendData = trendResponse?.success && trendResponse?.data
+      ? trendResponse.data.map((item: any) => ({
+          timestamp: new Date(item.timestamp),
+          avgCpuTime: Number.isFinite(item.avgCpuTime) ? item.avgCpuTime :
+                     (Number.isFinite(item.avgResponseTime) ? item.avgResponseTime * 1000 : 0),
+          avgElapsedTime: Number.isFinite(item.avgElapsedTime) ? item.avgElapsedTime :
+                         (Number.isFinite(item.avgResponseTime) ? item.avgResponseTime * 1000 : 0),
+          avgBufferGets: Number.isFinite(item.avgBufferGets) ? item.avgBufferGets : 0,
+          totalExecutions: Number.isFinite(item.totalExecutions) ? item.totalExecutions :
+                          (Number.isFinite(item.executions) ? item.executions : 0),
+          avgDiskReads: Number.isFinite(item.avgDiskReads) ? item.avgDiskReads : 0,
+          activeQueries: Number.isFinite(item.activeQueries) ? item.activeQueries : 0,
+          problemQueries: Number.isFinite(item.problemQueries) ? item.problemQueries : 0,
+        })).filter((item: any) => !isNaN(item.timestamp.getTime()))
+      : []
+
+    return {
+      reportData: report,
+      isDemo: isDemoData,
+      trendData: transformedTrendData
     }
-  }
+  }, [reportResponse, trendResponse, period, status])
+
+  const loading = reportLoading
+  const databases = databasesData || []
 
   const generatePDFReport = async () => {
     if (!reportData) return
@@ -224,7 +274,14 @@ export default function ReportsSummaryPage() {
     }
   }
 
-  if (loading || !reportData) {
+  // 수동 새로고침 핸들러
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['reports-summary'] })
+    queryClient.invalidateQueries({ queryKey: ['reports-trend'] })
+  }
+
+  // 인증 로딩 중이거나 데이터 로딩 중인 경우
+  if (status === 'loading' || loading || !reportData) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -232,7 +289,7 @@ export default function ReportsSummaryPage() {
     )
   }
 
-  const totalGraded = Object.values(reportData.performanceGrades).reduce((sum, count) => sum + count, 0)
+  const totalGraded = (Object.values(reportData.performanceGrades) as number[]).reduce((sum, count) => sum + count, 0)
   const goodPerformance = reportData.performanceGrades.A + reportData.performanceGrades.B
   const poorPerformance = reportData.performanceGrades.D + reportData.performanceGrades.F
 
@@ -291,8 +348,8 @@ export default function ReportsSummaryPage() {
               <SelectItem value="90d">최근 90일</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" onClick={() => loadReport(period)}>
-            <RefreshCw className="h-4 w-4 mr-2" />
+          <Button variant="outline" onClick={handleRefresh} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             새로고침
           </Button>
           <Button onClick={generatePDFReport} disabled={generatingReport}>
@@ -371,10 +428,10 @@ export default function ReportsSummaryPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {Object.entries(reportData.performanceGrades).map(([grade, count]) => (
+                  {(Object.entries(reportData.performanceGrades) as [string, number][]).map(([grade, count]) => (
                     <div key={grade} className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
-                        <Badge 
+                        <Badge
                           className={
                             grade === 'A' ? 'bg-green-100 text-green-800' :
                             grade === 'B' ? 'bg-blue-100 text-blue-800' :
@@ -389,7 +446,7 @@ export default function ReportsSummaryPage() {
                       </div>
                       <div className="flex items-center space-x-2">
                         <div className="w-24 bg-gray-200 rounded-full h-2">
-                          <div 
+                          <div
                             className={`h-2 rounded-full ${
                               grade === 'A' ? 'bg-green-600' :
                               grade === 'B' ? 'bg-blue-600' :
@@ -507,7 +564,7 @@ export default function ReportsSummaryPage() {
             <CardContent>
               <div className="space-y-4">
                 {reportData.topProblematicSQL.map((sql, index) => (
-                  <Card key={sql.sql_id} className="border-l-4 border-l-red-500">
+                  <Card key={`${sql.sql_id}-${index}`} className="border-l-4 border-l-red-500">
                     <CardContent className="pt-4">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center space-x-3">
@@ -614,7 +671,7 @@ export default function ReportsSummaryPage() {
               <div className="space-y-4">
                 {reportData.improvements.map((improvement, index) => (
                   <div 
-                    key={index}
+                    key={`improvement-${improvement.status || ''}-${improvement.title || ''}-${index}`}
                     className="flex items-center justify-between p-4 border rounded-lg"
                   >
                     <div className="flex items-start space-x-3 flex-1">

@@ -1,12 +1,27 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSelectedDatabase } from '@/hooks/use-selected-database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import {
   ArrowLeft,
   AlertTriangle,
@@ -17,6 +32,7 @@ import {
   Download,
   Filter,
   Calendar,
+  Database,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
@@ -32,11 +48,31 @@ interface PatternIssue {
   last_detected: string
 }
 
+interface PatternSQL {
+  sql_id: string
+  sql_text: string
+  module?: string
+  schema_name?: string
+  executions: number
+  elapsed_time_ms: number
+  cpu_time_ms: number
+  buffer_gets: number
+  disk_reads: number
+  rows_processed: number
+  avg_elapsed_time_ms: number
+  gets_per_exec: number
+  last_active_time: string
+  plan_hash_value?: number
+}
+
 export default function PatternDetectionPage() {
   const router = useRouter()
   const { selectedConnectionId } = useSelectedDatabase()
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all')
   const [selectedPattern, setSelectedPattern] = useState<string>('all')
+  const filterRef = useRef<HTMLDivElement>(null)
+  const [selectedIssue, setSelectedIssue] = useState<PatternIssue | null>(null)
+  const [isSqlDialogOpen, setIsSqlDialogOpen] = useState(false)
 
   // 패턴 이슈 목록 조회
   const { data: issues, isLoading, refetch } = useQuery({
@@ -83,6 +119,29 @@ export default function PatternDetectionPage() {
     return <CheckCircle2 className="h-5 w-5" />
   }
 
+  // 선택된 이슈의 SQL 목록 조회
+  const { data: patternSQLs, isLoading: isLoadingSQLs } = useQuery({
+    queryKey: ['pattern-sqls', selectedConnectionId, selectedIssue?.pattern_type],
+    queryFn: async () => {
+      if (!selectedConnectionId || selectedConnectionId === 'all' || !selectedIssue) {
+        return []
+      }
+
+      const params = new URLSearchParams({
+        connection_id: selectedConnectionId,
+        pattern_type: selectedIssue.pattern_type,
+        limit: '50',
+      })
+
+      const res = await fetch(`/api/analysis/pattern-detection/sqls?${params}`)
+      if (!res.ok) throw new Error('Failed to fetch pattern SQLs')
+
+      const data = await res.json()
+      return data.data || []
+    },
+    enabled: !!selectedConnectionId && selectedConnectionId !== 'all' && !!selectedIssue && isSqlDialogOpen,
+  })
+
   const patternTypes = [
     { value: 'all', label: '모든 패턴' },
     { value: 'full_table_scan', label: '전체 테이블 스캔' },
@@ -91,6 +150,11 @@ export default function PatternDetectionPage() {
     { value: 'inefficient_sort', label: '비효율적 정렬' },
     { value: 'redundant_execution', label: '중복 실행' },
   ]
+
+  const handleViewRelatedSQL = (issue: PatternIssue) => {
+    setSelectedIssue(issue)
+    setIsSqlDialogOpen(true)
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -139,7 +203,7 @@ export default function PatternDetectionPage() {
       )}
 
       {/* Filters */}
-      <Card>
+      <Card ref={filterRef} className="transition-all duration-300">
         <CardContent className="p-6">
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
@@ -158,7 +222,9 @@ export default function PatternDetectionPage() {
             <select
               value={selectedPattern}
               onChange={(e) => setSelectedPattern(e.target.value)}
-              className="px-3 py-2 border rounded-md text-sm"
+              className={`px-3 py-2 border rounded-md text-sm transition-all ${
+                selectedPattern !== 'all' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : ''
+              }`}
             >
               {patternTypes.map((type) => (
                 <option key={type.value} value={type.value}>
@@ -166,6 +232,11 @@ export default function PatternDetectionPage() {
                 </option>
               ))}
             </select>
+            {selectedPattern !== 'all' && (
+              <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-300">
+                필터 적용됨
+              </Badge>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -266,9 +337,9 @@ export default function PatternDetectionPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => router.push(`/analysis/pattern-detection/${issue.id}`)}
+                    onClick={() => handleViewRelatedSQL(issue)}
                   >
-                    상세 보기
+                    관련 SQL 보기
                   </Button>
                 </div>
               </CardContent>
@@ -284,6 +355,96 @@ export default function PatternDetectionPage() {
           </Card>
         )}
       </div>
+
+      {/* 관련 SQL 목록 Dialog */}
+      <Dialog open={isSqlDialogOpen} onOpenChange={setIsSqlDialogOpen}>
+        <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Database className="h-5 w-5" />
+              관련 SQL 목록
+            </DialogTitle>
+            {selectedIssue && (
+              <>
+                <DialogDescription>
+                  패턴: {selectedIssue.pattern_type} · 총 {selectedIssue.sql_count}개의 SQL
+                </DialogDescription>
+                <div className="flex items-center gap-2 mt-2">
+                  <Badge variant="outline">{selectedIssue.pattern_type}</Badge>
+                </div>
+              </>
+            )}
+          </DialogHeader>
+
+          {isLoadingSQLs ? (
+            <div className="py-8 text-center">
+              <RefreshCw className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-500">SQL 목록을 불러오는 중...</p>
+            </div>
+          ) : patternSQLs && patternSQLs.length > 0 ? (
+            <div className="space-y-4">
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[120px]">SQL ID</TableHead>
+                      <TableHead className="w-[100px]">Schema</TableHead>
+                      <TableHead className="w-[100px]">Module</TableHead>
+                      <TableHead className="text-right w-[100px]">Executions</TableHead>
+                      <TableHead className="text-right w-[120px]">Elapsed (ms)</TableHead>
+                      <TableHead className="text-right w-[120px]">CPU (ms)</TableHead>
+                      <TableHead className="text-right w-[120px]">Buffer Gets</TableHead>
+                      <TableHead className="text-right w-[120px]">Disk Reads</TableHead>
+                      <TableHead className="min-w-[300px]">SQL Text</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {patternSQLs.map((sql: PatternSQL, index: number) => (
+                      <TableRow key={`pattern-${sql.sql_id}-${sql.schema_name || ''}-${sql.module || ''}-${index}`}>
+                        <TableCell>
+                          <code className="text-xs font-mono bg-muted px-2 py-0.5 rounded">
+                            {sql.sql_id}
+                          </code>
+                        </TableCell>
+                        <TableCell className="text-sm">{sql.schema_name || '-'}</TableCell>
+                        <TableCell className="text-sm">{sql.module || '-'}</TableCell>
+                        <TableCell className="text-right font-mono">
+                          {(sql.executions ?? 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {(sql.elapsed_time_ms ?? 0).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {(sql.cpu_time_ms ?? 0).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {(sql.buffer_gets ?? 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {(sql.disk_reads ?? 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <code className="text-xs font-mono bg-muted px-2 py-0.5 rounded block overflow-hidden text-ellipsis">
+                            {sql.sql_text || '-'}
+                          </code>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="text-sm text-gray-500 text-center">
+                총 {patternSQLs.length}개의 SQL이 표시됩니다. (최대 50개)
+              </div>
+            </div>
+          ) : (
+            <div className="py-8 text-center">
+              <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />
+              <p className="text-gray-500">관련 SQL이 없습니다.</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

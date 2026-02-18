@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -87,6 +88,7 @@ const steps = [
 
 export default function GenerateReportPage() {
   const router = useRouter();
+  const { status } = useSession();
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [reportName, setReportName] = useState('');
@@ -106,24 +108,42 @@ export default function GenerateReportPage() {
   const [cpuThreshold, setCpuThreshold] = useState('1000');
   const [generating, setGenerating] = useState(false);
 
-  // Load databases when component mounts
+  // Load databases when component mounts (only when authenticated)
   useEffect(() => {
-    loadDatabases();
-  }, []);
+    if (status === 'authenticated') {
+      loadDatabases();
+    }
+  }, [status]);
+
+  // 인증 상태가 로딩 중이면 빈 페이지 표시
+  if (status === 'loading') {
+    return null;
+  }
 
   const loadDatabases = async () => {
+    // 인증되지 않은 경우 API 호출하지 않음
+    if (status !== 'authenticated') {
+      return;
+    }
+
     setLoadingDatabases(true);
     try {
       const response = await fetch('/api/databases');
+      if (response.status === 401) {
+        // 인증 오류는 조용히 처리
+        console.debug('Authentication required for databases API');
+        return;
+      }
       const result = await response.json();
 
       if (result.success) {
         setDatabases(result.data);
       } else {
-        console.error('Failed to load databases:', result.error);
+        console.debug('Failed to load databases:', result.error);
       }
     } catch (error) {
-      console.error('Failed to load databases:', error);
+      // 네트워크 오류는 조용히 처리
+      console.debug('Failed to load databases:', error);
     } finally {
       setLoadingDatabases(false);
     }
@@ -186,7 +206,13 @@ export default function GenerateReportPage() {
         alert(`보고서 생성이 시작되었습니다.\n보고서 ID: ${result.data.id}\n\n보고서 목록에서 생성 진행 상황을 확인하실 수 있습니다.`);
         router.push('/reports');
       } else {
-        alert(`보고서 생성 실패: ${result.error}`);
+        // Handle specific error codes
+        if (result.code === 'USER_NOT_FOUND' || response.status === 401) {
+          alert('인증 정보가 만료되었습니다. 다시 로그인해주세요.');
+          router.push('/auth/signin');
+        } else {
+          alert(`보고서 생성 실패: ${result.error || '알 수 없는 오류가 발생했습니다.'}`);
+        }
         setGenerating(false);
       }
     } catch (error) {
@@ -329,7 +355,7 @@ export default function GenerateReportPage() {
                             <span className="text-xs text-gray-600 dark:text-gray-400">포함 내용:</span>
                             {template.tags.map((tag, index) => (
                               <Badge
-                                key={index}
+                                key={`tag-${template.name || ''}-${tag}-${index}`}
                                 variant="outline"
                                 className="text-xs"
                               >

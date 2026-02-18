@@ -4,6 +4,10 @@ const config = {
   darkMode: ['class'],
   content: ['./src/**/*.{ts,tsx}'],
   prefix: '',
+  // Mantine과 충돌 방지 - preflight 비활성화
+  corePlugins: {
+    preflight: false,
+  },
   theme: {
     container: {
       center: true,
@@ -13,6 +17,10 @@ const config = {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ['Pretendard Variable', 'var(--font-inter)', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+        mono: ['var(--font-mono)', 'JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', 'monospace'],
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',

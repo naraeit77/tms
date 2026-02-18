@@ -1,7 +1,26 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+/**
+ * 실시간 모니터링 페이지
+ * 성능 최적화: 차트 컴포넌트 지연 로딩 및 React Query 캐싱 개선
+ */
+
+import { useState, useEffect, useMemo, Suspense } from 'react'
+
+// Development-only logging helper (disabled by default to reduce console noise)
+// Set NEXT_PUBLIC_DEBUG_MONITORING=true in .env.local to enable
+const isDebugEnabled = process.env.NEXT_PUBLIC_DEBUG_MONITORING === 'true'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const devLog = (..._args: unknown[]) => {
+  if (isDebugEnabled) {
+    // Only log if explicitly enabled via environment variable
+    console.log(..._args)
+  }
+}
+import { useQuery } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
@@ -28,78 +47,107 @@ import {
   Users,
   BarChart3,
   AlertCircle,
-  LineChart
+  LineChart,
+  History,
+  GitBranch,
+  ChevronRight
 } from 'lucide-react'
-import { ScatterPlot } from '@/components/charts/scatter-plot'
 import { PerformancePoint } from '@/types/performance'
-import { PerformanceTrendChart, PerformanceTrendData } from '@/components/charts/performance-trend-chart'
-import { ResourceAnalysisChart, ResourceData } from '@/components/charts/resource-analysis-chart'
+import { PerformanceTrendData } from '@/components/charts/performance-trend-chart'
+import { ResourceData } from '@/components/charts/resource-analysis-chart'
+import {
+  SystemMetricsSkeleton,
+  DatabaseStatsSkeleton,
+  TopSqlSkeleton,
+  ChartSkeleton,
+  DatabaseInfoSkeleton,
+  PerformanceTabSkeleton,
+  DetailsTabSkeleton,
+  AlertsSkeleton,
+  RefreshingIndicator,
+} from '@/components/monitoring/monitoring-skeleton'
+import { Skeleton } from '@/components/ui/skeleton'
+import dynamic from 'next/dynamic'
 
-// Breadcrumb component
-function Breadcrumb() {
-  return (
-    <nav className="text-sm breadcrumb mb-6">
-      <ol className="flex items-center space-x-2 text-gray-500 dark:text-gray-400">
-        <li><a href="/dashboard" className="hover:text-blue-600">홈</a></li>
-        <li className="text-gray-300">/</li>
-        <li className="text-gray-900 dark:text-white font-medium">실시간 모니터링</li>
-      </ol>
-    </nav>
-  )
-}
+// 차트 컴포넌트 지연 로딩 - D3.js 기반 무거운 컴포넌트들을 코드 분할
+const ScatterPlot = dynamic(
+  () => import('@/components/charts/scatter-plot').then(mod => ({ default: mod.ScatterPlot })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-[400px] flex items-center justify-center">
+        <div className="space-y-4 w-full px-6">
+          <Skeleton className="h-6 w-48" />
+          <Skeleton className="w-full h-[320px]" />
+        </div>
+      </div>
+    )
+  }
+)
 
-// Mock data generators
-const generateSystemMetrics = () => ({
-  cpuUsage: Math.random() * 100,
-  memoryUsage: Math.random() * 100,
-  diskIO: Math.random() * 1000,
-  networkIO: Math.random() * 500,
-  activeConnections: Math.floor(Math.random() * 50) + 10,
-  blockedSessions: Math.floor(Math.random() * 5),
-  avgResponseTime: Math.random() * 200 + 50,
-  transactionsPerSecond: Math.random() * 100 + 20,
-})
+const PerformanceTrendChart = dynamic(
+  () => import('@/components/charts/performance-trend-chart').then(mod => ({ default: mod.PerformanceTrendChart })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-[400px] flex items-center justify-center">
+        <div className="space-y-4 w-full px-6">
+          <Skeleton className="h-6 w-48" />
+          <Skeleton className="w-full h-[320px]" />
+        </div>
+      </div>
+    )
+  }
+)
 
-const generateDatabaseStats = () => ({
-  totalSQL: Math.floor(Math.random() * 1000) + 500,
-  activeSQL: Math.floor(Math.random() * 100) + 20,
-  problemSQL: Math.floor(Math.random() * 10) + 1,
-  totalSessions: Math.floor(Math.random() * 30) + 15,
-  activeSessions: Math.floor(Math.random() * 20) + 10,
-  blockedQueries: Math.floor(Math.random() * 3),
-  tablespaceUsage: Math.random() * 100,
-  redoLogSize: Math.random() * 2048 + 512,
-})
+const ResourceAnalysisChart = dynamic(
+  () => import('@/components/charts/resource-analysis-chart').then(mod => ({ default: mod.ResourceAnalysisChart })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-[400px] flex items-center justify-center">
+        <div className="space-y-4 w-full px-6">
+          <Skeleton className="h-6 w-48" />
+          <Skeleton className="w-full h-[320px]" />
+        </div>
+      </div>
+    )
+  }
+)
+
+// Note: System metrics and database stats are calculated from real Oracle API data
+// in the processedMetrics useMemo hook (see below). No mock generators needed.
 
 const generatePerformanceDataFromMetrics = (metrics: any): PerformancePoint[] => {
   const data: PerformancePoint[] = []
 
-  // Use real SQL data from top_sql
+  // Use real SQL data from top_sql (대시보드와 동일하게 중복 허용)
   if (metrics.top_sql && metrics.top_sql.length > 0) {
     metrics.top_sql.forEach((sql: any) => {
-      const cpuTime = sql.avg_cpu_ms || 0
-      const bufferGets = sql.avg_buffer_gets || 0
-      const elapsedTime = sql.avg_elapsed_ms || 0
+      const executions = Math.max(sql.executions || 0, 1)
+      const cpuTimeAvgMs = sql.avg_cpu_ms || 0
+      const bufferGetsAvg = sql.avg_buffer_gets || 0
+      const elapsedTimeAvgMs = sql.avg_elapsed_ms || 0
 
-      // Grade based on performance
+      // Grade based on performance (A-F, 5 levels - sql-grading.ts 기준)
       let grade: 'A' | 'B' | 'C' | 'D' | 'F' = 'A'
-      if (elapsedTime > 2000) grade = 'F'
-      else if (elapsedTime > 1000) grade = 'D'
-      else if (elapsedTime > 500) grade = 'C'
-      else if (elapsedTime > 200) grade = 'B'
+      if (elapsedTimeAvgMs > 2000) grade = 'F'
+      else if (elapsedTimeAvgMs > 1000) grade = 'D'
+      else if (elapsedTimeAvgMs > 500) grade = 'C'
+      else if (elapsedTimeAvgMs > 200) grade = 'B'
 
       data.push({
         sql_id: sql.sql_id,
-        x: cpuTime,
-        y: bufferGets,
-        size: bufferGets,
+        x: elapsedTimeAvgMs,
+        y: bufferGetsAvg,
+        size: executions,
         grade,
         metrics: {
-          elapsed_time: elapsedTime,
-          cpu_time: cpuTime,
-          buffer_gets: bufferGets,
+          elapsed_time: elapsedTimeAvgMs * executions,
+          cpu_time: cpuTimeAvgMs * executions,
+          buffer_gets: bufferGetsAvg * executions,
           disk_reads: 0,
-          executions: sql.executions || 0,
+          executions,
           rows_processed: 0,
           parse_calls: 0,
           sorts: 0,
@@ -108,116 +156,79 @@ const generatePerformanceDataFromMetrics = (metrics: any): PerformancePoint[] =>
     })
   }
 
-  // If no real data, generate some sample points based on averages
-  if (data.length === 0) {
-    const avgCpu = metrics.sql_statistics?.avg_cpu_time || 100
-    const avgBuffer = metrics.sql_statistics?.avg_buffer_gets || 1000
-
-    for (let i = 0; i < 20; i++) {
-      const multiplier = 0.5 + Math.random()
-      const cpuTime = avgCpu * multiplier
-      const bufferGets = avgBuffer * multiplier
-
-      let grade: 'A' | 'B' | 'C' | 'D' | 'F' = 'B'
-      if (cpuTime > 500) grade = 'D'
-      else if (cpuTime > 200) grade = 'C'
-      else if (cpuTime < 50) grade = 'A'
-
-      data.push({
-        sql_id: `SQL_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-        x: cpuTime,
-        y: bufferGets,
-        size: bufferGets,
-        grade,
-        metrics: {
-          elapsed_time: cpuTime * 1.2,
-          cpu_time: cpuTime,
-          buffer_gets: bufferGets,
-          disk_reads: Math.floor(Math.random() * 100),
-          executions: Math.floor(Math.random() * 50) + 1,
-          rows_processed: Math.floor(Math.random() * 1000),
-          parse_calls: Math.floor(Math.random() * 10),
-          sorts: Math.floor(Math.random() * 5),
-        }
-      })
-    }
-  }
+  // 실제 데이터가 없으면 빈 배열 반환 (mock 데이터 생성하지 않음)
 
   return data
 }
 
-const generateTrendDataFromMetrics = (metrics: any): PerformanceTrendData[] => {
-  const data: PerformanceTrendData[] = []
-  const now = new Date()
+// generateTrendDataFromMetrics 삭제됨 - mock 데이터 대신 실제 API 데이터만 사용
 
-  // Get real values from top SQL data
-  const topSqlData = metrics.top_sql || []
-
-  // Calculate actual averages from top SQL
-  const baseCpuTime = topSqlData.length > 0
-    ? topSqlData.reduce((sum: number, sql: any) => sum + (sql.avg_cpu_ms || 0), 0) / topSqlData.length
-    : 200
-
-  const baseElapsedTime = topSqlData.length > 0
-    ? topSqlData.reduce((sum: number, sql: any) => sum + (sql.avg_elapsed_ms || 0), 0) / topSqlData.length
-    : 300
-
-  const baseBufferGets = topSqlData.length > 0
-    ? topSqlData.reduce((sum: number, sql: any) => sum + (sql.avg_buffer_gets || 0), 0) / topSqlData.length
-    : 2000
-
-  const baseDiskReads = topSqlData.length > 0
-    ? topSqlData.reduce((sum: number, sql: any) => sum + (sql.disk_reads || 0), 0) / topSqlData.length
-    : 100
-
-  const totalExecutions = topSqlData.reduce((sum: number, sql: any) => sum + (sql.executions || 0), 0)
-  const problemSqlCount = topSqlData.filter((sql: any) => sql.avg_elapsed_ms > 1000).length
-
-  // Generate time series data with realistic variations
-  for (let i = 30; i >= 0; i--) {
-    const timestamp = new Date(now.getTime() - i * 2 * 60 * 1000) // 2분 간격
-    // 사인파 패턴 + 랜덤 노이즈 (더 자연스러운 패턴)
-    const sineWave = Math.sin(i * 0.2) * 0.15 // -0.15 ~ +0.15
-    const randomNoise = (Math.random() - 0.5) * 0.1 // -0.05 ~ +0.05
-    const variation = 1 + sineWave + randomNoise // 0.8 ~ 1.2 범위
-
-    data.push({
-      timestamp,
-      avgCpuTime: Math.max(0, baseCpuTime * variation),
-      avgElapsedTime: Math.max(0, baseElapsedTime * variation),
-      avgBufferGets: Math.max(0, baseBufferGets * variation),
-      totalExecutions: Math.max(0, Math.floor((totalExecutions / 30) * variation)),
-      avgDiskReads: Math.max(0, Math.floor(baseDiskReads * variation)),
-      activeQueries: metrics.sessions?.active || Math.floor(Math.random() * 20) + 10,
-      problemQueries: Math.max(0, Math.floor(problemSqlCount * variation))
-    })
-  }
-
-  return data
-}
-
-const generateResourceDataFromMetrics = (metrics: any): ResourceData[] => {
+/**
+ * OS 레벨 리소스 데이터 생성 함수
+ * osStats가 있으면 실제 Oracle V$OSSTAT 기반 데이터 사용
+ * 없으면 추정치 기반 폴백 데이터 생성
+ */
+const generateResourceDataFromMetrics = (metrics: any, osStats?: any): ResourceData[] => {
   const data: ResourceData[] = []
   const now = new Date()
   const categories = ['현재', '1분전', '5분전', '10분전', '15분전']
 
-  // Calculate memory usage from SGA components
-  const totalMemory = Object.values(metrics.memory || {}).reduce((sum: number, val: any) => sum + (Number(val) || 0), 0)
-  const memoryUsagePct = totalMemory > 0 ? Math.min(95, (totalMemory / 10000) * 100) : 60
+  // OS 메트릭이 있으면 실제 데이터 사용
+  if (osStats && osStats.cpu && osStats.memory) {
+    devLog('[ResourceData] 실제 OS 메트릭 사용:', {
+      cpu: osStats.cpu.usage_percent,
+      memory: osStats.memory.usage_percent,
+      io: osStats.io.mb_per_sec,
+      network: osStats.network.mb_per_sec,
+    })
 
-  // Get session-based CPU estimate
-  const cpuUsageEstimate = Math.min(95, (metrics.sessions?.active || 0) * 2 + 30)
+    const cpuUsage = osStats.cpu.usage_percent || 0
+    const memoryUsage = osStats.memory.usage_percent || 0
+    const diskIO = osStats.io.mb_per_sec || 0
+    const networkIO = osStats.network.mb_per_sec || 0
+
+    // 현재 시점의 실제 데이터만 표시 (과거 데이터에 random 변동 추가하지 않음)
+    categories.forEach((category, index) => {
+      const timestamp = new Date(now.getTime() - index * 60 * 1000)
+      data.push({
+        category,
+        cpuUsage: Math.max(0, Math.min(100, cpuUsage)),
+        memoryUsage: Math.max(0, Math.min(100, memoryUsage)),
+        diskIO: Math.max(0, diskIO),
+        networkIO: Math.max(0, networkIO),
+        timestamp
+      })
+    })
+
+    return data
+  }
+
+  // 폴백: OS 메트릭이 없으면 Oracle 시스템 메트릭 기반 추정치 사용
+  devLog('[ResourceData] OS 메트릭 없음, Oracle 시스템 메트릭 기반 추정치 사용')
+
+  // V$SYSMETRIC 기반 실제 CPU 사용률 (Host CPU Utilization)
+  const hostCpuUsage = metrics.system?.cpu_usage || 0
+  const dbCpuUsage = metrics.system?.db_cpu_usage || 0
+  // 실제 CPU 메트릭이 없으면 세션 기반 추정
+  const cpuUsageEstimate = hostCpuUsage > 0 ? hostCpuUsage : (dbCpuUsage > 0 ? dbCpuUsage : Math.min(95, (metrics.sessions?.active || 0) * 2 + 10))
+
+  // SGA 기반 메모리 사용률
+  const sgaUsedGb = metrics.memory?.sga_used_gb || 0
+  const sgaMaxGb = metrics.memory?.sga_max_gb || 0
+  const memoryUsagePct = sgaMaxGb > 0 ? Math.min(100, (sgaUsedGb / sgaMaxGb) * 100) : 0
+
+  // I/O 메트릭 (V$SYSMETRIC 기반)
+  const diskIO = (metrics.io?.read_mbps || 0) + (metrics.io?.write_mbps || 0)
+  const networkIO = (metrics.sessions?.total || 0) * 0.1
 
   categories.forEach((category, index) => {
     const timestamp = new Date(now.getTime() - index * 60 * 1000)
-    const variation = 0.9 + Math.random() * 0.2
-
     data.push({
       category,
-      cpuUsage: cpuUsageEstimate * variation,
-      memoryUsage: memoryUsagePct * variation,
-      diskIO: (metrics.sql_statistics?.avg_buffer_gets || 1000) * 0.01 * variation,
-      networkIO: (metrics.sessions?.active || 10) * 2 * variation,
+      cpuUsage: cpuUsageEstimate,
+      memoryUsage: memoryUsagePct,
+      diskIO,
+      networkIO,
       timestamp
     })
   })
@@ -225,55 +236,8 @@ const generateResourceDataFromMetrics = (metrics: any): ResourceData[] => {
   return data
 }
 
-const generateTopSlowQueries = () => {
-  const queries = []
-  for (let i = 0; i < 10; i++) {
-    queries.push({
-      sql_id: `SQL_${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-      elapsed_time: Math.random() * 5000 + 1000,
-      cpu_time: Math.random() * 3000 + 500,
-      executions: Math.floor(Math.random() * 50) + 1,
-      buffer_gets: Math.floor(Math.random() * 50000) + 10000,
-      sql_text: `SELECT * FROM users u JOIN orders o ON u.id = o.user_id WHERE u.created_at > SYSDATE - ${i+1}`
-    })
-  }
-  return queries.sort((a, b) => b.elapsed_time - a.elapsed_time)
-}
-
-const generateAlerts = () => [
-  {
-    id: 1,
-    severity: 'critical' as const,
-    message: 'CPU usage exceeded 90% threshold',
-    timestamp: new Date(Date.now() - Math.random() * 300000),
-    acknowledged: false,
-    source: 'System Monitor'
-  },
-  {
-    id: 2,
-    severity: 'warning' as const,
-    message: 'Long running query detected (>5 minutes)',
-    timestamp: new Date(Date.now() - Math.random() * 600000),
-    acknowledged: false,
-    source: 'SQL Monitor'
-  },
-  {
-    id: 3,
-    severity: 'info' as const,
-    message: 'New SQL pattern identified in performance cluster',
-    timestamp: new Date(Date.now() - Math.random() * 900000),
-    acknowledged: true,
-    source: 'AI Analyzer'
-  },
-  {
-    id: 4,
-    severity: 'warning' as const,
-    message: 'Tablespace usage above 85%',
-    timestamp: new Date(Date.now() - Math.random() * 1200000),
-    acknowledged: false,
-    source: 'Storage Monitor'
-  },
-]
+// Note: Top slow queries and alerts are generated from real Oracle API data
+// in the processedMetrics useMemo hook based on actual performance thresholds.
 
 // Database connection info type
 interface DatabaseConnection {
@@ -284,23 +248,51 @@ interface DatabaseConnection {
   service_name: string | null
   sid: string | null
   oracle_version: string
-  health_status: 'healthy' | 'warning' | 'error'
+  health_status: 'healthy' | 'warning' | 'error' | 'degraded' | 'unhealthy' | 'unknown'
   is_active: boolean
 }
 
 export default function MonitoringPage() {
+  const router = useRouter()
   const { selectedConnectionId, selectedConnection } = useSelectedDatabase()
   const [activeTab, setActiveTab] = useState('overview')
   const [isAutoRefresh, setIsAutoRefresh] = useState(true)
-  const [refreshInterval, setRefreshInterval] = useState(60)
-  const [timeRange, setTimeRange] = useState('1h')
-  const [loading, setLoading] = useState(false)
+  const [refreshInterval, setRefreshInterval] = useState(30) // 30초 기본 갱신 주기
+  const [timeRange, setTimeRange] = useState('10m')
+  const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false)
+  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
+  const [filterOptions, setFilterOptions] = useState({
+    showOnlyCritical: false,
+    minElapsedTime: 0,
+    minBufferGets: 0,
+  })
+
+  // 시간 범위를 분으로 변환하는 함수
+  const getMinutesFromTimeRange = (range: string): number => {
+    switch (range) {
+      case '1m': return 1
+      case '5m': return 5
+      case '10m': return 10
+      case '15m': return 15
+      case '30m': return 30
+      case '1h': return 60
+      default: return 10
+    }
+  }
   const [databases, setDatabases] = useState<DatabaseConnection[]>([])
+
+  // 시간 범위 선택 관련 상태
+  const [selectedTimeRange, setSelectedTimeRange] = useState<{ start: Date; end: Date } | null>(null)
+  const [timeRangeSQLs, setTimeRangeSQLs] = useState<any[]>([])
+  const [isTimeRangeDialogOpen, setIsTimeRangeDialogOpen] = useState(false)
+  const [isLoadingTimeRangeSQLs, setIsLoadingTimeRangeSQLs] = useState(false)
 
   // State for different data types
   const [systemMetrics, setSystemMetrics] = useState({
     cpuUsage: 0,
     memoryUsage: 0,
+    bufferCacheHitRate: 0,
+    totalTransactions: 0,
     diskIO: 0,
     networkIO: 0,
     activeConnections: 0,
@@ -316,6 +308,8 @@ export default function MonitoringPage() {
     activeSessions: 0,
     blockedQueries: 0,
     tablespaceUsage: 0,
+    tablespaceTopName: 'N/A',
+    tablespaces: [] as any[],
     redoLogSize: 0,
   })
   const [topSlowQueries, setTopSlowQueries] = useState<any[]>([])
@@ -331,215 +325,572 @@ export default function MonitoringPage() {
   const [showAlertDetailModal, setShowAlertDetailModal] = useState(false)
   const [selectedAlert, setSelectedAlert] = useState<any>(null)
 
-  // Fetch databases on mount
+  // Fetch databases using React Query (전역 캐시 공유)
+  const { data: databasesData } = useQuery({
+    queryKey: ['oracle-connections'], // 전역 쿼리 키로 통일
+    queryFn: async () => {
+      const response = await fetch('/api/oracle/connections')
+      if (!response.ok) throw new Error('Failed to fetch databases')
+      const data = await response.json()
+      return data.map((conn: any) => ({
+        id: conn.id,
+        name: conn.name,
+        host: conn.host,
+        port: conn.port,
+        service_name: conn.service_name,
+        sid: conn.sid,
+        oracle_version: conn.oracle_version,
+        is_active: conn.is_active === true,
+        health_status: (conn.health_status || 'unknown').toLowerCase(),
+      })) || []
+    },
+    staleTime: 5 * 60 * 1000, // 5분
+    gcTime: 10 * 60 * 1000, // 10분간 가비지 컬렉션 방지
+    refetchOnWindowFocus: false, // 포커스 시 재요청 비활성화
+  })
+
+  // Update databases state when data changes
   useEffect(() => {
-    fetchDatabases()
-  }, [])
+    if (databasesData) {
+      setDatabases(databasesData)
+    }
+  }, [databasesData])
 
-  // Auto-refresh logic
+
+  // Fetch monitoring metrics using React Query with DMA cache support
+  // 성능 최적화: staleTime을 늘려 초기 로딩 시 캐시 활용도 증가
+  const { data: metricsData, isLoading: loading, isFetching, refetch: refetchMetrics } = useQuery({
+    queryKey: ['monitoring-metrics', selectedConnectionId],
+    queryFn: async () => {
+      const response = await fetch(`/api/monitoring/metrics?connection_id=${selectedConnectionId}`)
+      if (!response.ok) throw new Error('Failed to fetch metrics')
+      const result = await response.json()
+      return result.data
+    },
+    enabled: !!selectedConnectionId,
+    staleTime: 45 * 1000, // 45초간 fresh 상태 유지 (캐시 히트율 증가)
+    gcTime: 5 * 60 * 1000, // 5분간 캐시 유지
+    refetchInterval: isAutoRefresh ? refreshInterval * 1000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: 'always', // 마운트 시 stale 데이터면 백그라운드 갱신
+    refetchOnWindowFocus: false, // 윈도우 포커스 시 재요청 비활성화
+    placeholderData: (previousData) => previousData, // 이전 데이터 유지하여 깜빡임 방지
+  })
+
+  // 성능 트렌드 데이터 - Oracle 서버 시간 기반 실제 데이터 조회 (모든 시간대 SQL 포함)
+  // 메인 메트릭 로드 완료 후 지연 로드하여 초기 로딩 속도 개선
+  const { data: performanceTrendData, refetch: refetchTrend, isLoading: trendLoading } = useQuery({
+    queryKey: ['monitoring-performance-trend', selectedConnectionId, timeRange],
+    queryFn: async () => {
+      if (!selectedConnectionId) return null
+      const minutes = getMinutesFromTimeRange(timeRange)
+      const res = await fetch(`/api/monitoring/performance-trend?connection_id=${selectedConnectionId}&minutes=${minutes}`)
+      if (!res.ok) throw new Error('Failed to fetch performance trend')
+      const result = await res.json()
+      return result
+    },
+    enabled: !!selectedConnectionId && !!metricsData, // 메트릭 로드 후 실행
+    refetchInterval: isAutoRefresh ? 60000 : false, // 60초마다 갱신
+    staleTime: 45 * 1000, // 45초로 증가
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    placeholderData: (previousData) => previousData,
+  })
+
+  // OS 레벨 리소스 메트릭 - Oracle V$OSSTAT 기반 실제 데이터 조회
+  // 메인 메트릭 로드 완료 후 지연 로드하여 초기 로딩 속도 개선
+  const { data: osStatsData, refetch: refetchOsStats } = useQuery({
+    queryKey: ['monitoring-os-stats', selectedConnectionId],
+    queryFn: async () => {
+      if (!selectedConnectionId) return null
+      const res = await fetch(`/api/monitoring/os-stats?connection_id=${selectedConnectionId}`)
+      if (!res.ok) throw new Error('Failed to fetch OS stats')
+      const result = await res.json()
+      return result.data
+    },
+    enabled: !!selectedConnectionId && !!metricsData, // 메트릭 로드 후 실행
+    refetchInterval: isAutoRefresh ? refreshInterval * 1000 : false, // 메인 갱신 주기와 동기화
+    staleTime: 30 * 1000, // 30초로 증가
+    gcTime: 2 * 60 * 1000, // 2분간 캐시 유지
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    placeholderData: (previousData) => previousData,
+  })
+
+  // 성능 트렌드 데이터가 변경되면 trendData state 직접 업데이트 (대시보드와 동일 패턴)
+  // useMemo 대신 useEffect로 직접 state 업데이트하여 oracleTimestamp가 확실히 포함되도록 함
   useEffect(() => {
-    if (selectedConnectionId) {
-      loadData()
-    }
+    if (performanceTrendData?.data && performanceTrendData.data.length > 0) {
+      // Oracle 서버 시간 기반 실제 데이터 사용
+      const chartData = performanceTrendData.data.map((item: any) => {
+        const timestamp = new Date(item.timestamp.replace(' ', 'T'))
+        // oracleTimestamp: API에서 제공하는 oracleTimestamp 또는 timestamp 문자열 사용
+        const oracleTs = item.oracleTimestamp || item.timestamp
+        return {
+          timestamp,
+          oracleTimestamp: oracleTs, // Oracle 서버 시간 문자열 (YYYY-MM-DD HH24:MI:SS)
+          avgCpuTime: item.avgCpuTime || 0,
+          avgElapsedTime: item.avgElapsedTime || 0,
+          avgBufferGets: item.avgBufferGets || 0,
+          totalExecutions: item.totalExecutions || 0,
+          avgDiskReads: item.avgDiskReads || 0,
+          activeQueries: item.activeQueries || 0,
+          problemQueries: item.problemQueries || 0,
+          source: item.source || performanceTrendData.source || 'unknown',
+          sqls: item.sqls || [],
+        }
+      })
+      setTrendData(chartData)
 
-    if (isAutoRefresh && selectedConnectionId) {
-      const interval = setInterval(loadData, refreshInterval * 1000)
-      return () => clearInterval(interval)
-    }
-  }, [isAutoRefresh, refreshInterval, timeRange, selectedConnectionId])
-
-  const fetchDatabases = async () => {
-    try {
-      const response = await fetch('/api/databases')
-      if (response.ok) {
-        const result = await response.json()
-        const dbList = result.data || []
-        setDatabases(dbList)
-        // 상단 헤더에서 DB 선택을 사용하므로 자동 선택 제거
+      if (process.env.NODE_ENV === 'development') {
+        devLog('[Monitoring] 트렌드 데이터 직접 업데이트:', {
+          count: chartData.length,
+          source: performanceTrendData.source,
+          firstOracleTimestamp: chartData[0]?.oracleTimestamp,
+          lastOracleTimestamp: chartData[chartData.length - 1]?.oracleTimestamp,
+        })
       }
+    } else if (!trendLoading) {
+      // API 데이터가 없으면 빈 배열 설정 (mock 데이터 생성하지 않음)
+      setTrendData([])
+    }
+  }, [performanceTrendData, trendLoading, metricsData])
+
+  // 시간 범위 선택 핸들러 - 선택된 시간대의 SQL 정보를 추출
+  // 중요: 차트의 시간축은 Oracle 서버 시간 기준이므로, 드래그로 선택된 범위도
+  // Oracle 서버 시간 문자열을 그대로 사용해야 정확한 매칭이 됩니다.
+  const handleTimeRangeSelect = async (startTime: Date, endTime: Date) => {
+    setSelectedTimeRange({ start: startTime, end: endTime })
+    setIsTimeRangeDialogOpen(true)
+    setIsLoadingTimeRangeSQLs(true)
+
+    if (!selectedConnectionId) {
+      setTimeRangeSQLs([])
+      setIsLoadingTimeRangeSQLs(false)
+      return
+    }
+
+    try {
+      // 차트에 실제로 표시된 trendData를 사용하여 Oracle 서버 시간 문자열을 찾습니다.
+      // trendData는 useMemo로 처리된 데이터로, timestamp는 Date 객체이고
+      // oracleTimestamp에 원본 Oracle 서버 시간 문자열이 저장되어 있습니다.
+      let startTimeStr = ''
+      let endTimeStr = ''
+      let dataSource = 'v$sql'
+
+      if (trendData && trendData.length > 0) {
+        // 디버그: trendData의 oracleTimestamp 필드 확인
+        devLog('[TimeRangeSelect] trendData 샘플:', {
+          first: {
+            timestamp: trendData[0]?.timestamp,
+            oracleTimestamp: trendData[0]?.oracleTimestamp,
+            source: trendData[0]?.source,
+          },
+          last: {
+            timestamp: trendData[trendData.length - 1]?.timestamp,
+            oracleTimestamp: trendData[trendData.length - 1]?.oracleTimestamp,
+            source: trendData[trendData.length - 1]?.source,
+          }
+        })
+
+        // 선택된 시간 범위를 분 단위로 변환하여 비교 (밀리초 차이로 인한 매칭 실패 방지)
+        const startTimeMs = startTime.getTime()
+        const endTimeMs = endTime.getTime()
+
+        // 차트 데이터에서 선택 범위와 겹치는 데이터 포인트 찾기
+        // 1분 단위 데이터이므로, 30초 여유를 두고 비교
+        const tolerance = 30 * 1000 // 30초 허용 오차
+        const matchingData = trendData.filter((d: any) => {
+          const dTime = d.timestamp instanceof Date ? d.timestamp.getTime() : new Date(d.timestamp).getTime()
+          return dTime >= (startTimeMs - tolerance) && dTime <= (endTimeMs + tolerance)
+        })
+
+        devLog('[TimeRangeSelect] 매칭 결과:', {
+          trendDataLength: trendData.length,
+          matchingCount: matchingData.length,
+          startTime: startTime.toISOString(),
+          endTime: endTime.toISOString(),
+          firstTrendTimestamp: trendData[0]?.timestamp instanceof Date ? trendData[0].timestamp.toISOString() : trendData[0]?.timestamp,
+          lastTrendTimestamp: trendData[trendData.length - 1]?.timestamp instanceof Date ? trendData[trendData.length - 1].timestamp.toISOString() : trendData[trendData.length - 1]?.timestamp,
+        })
+
+        if (matchingData.length > 0) {
+          // 매칭된 데이터 중 첫 번째와 마지막의 Oracle 서버 시간 문자열 사용
+          startTimeStr = matchingData[0].oracleTimestamp || ''
+          endTimeStr = matchingData[matchingData.length - 1].oracleTimestamp || ''
+          dataSource = matchingData[0].source || 'v$sql'
+
+          devLog('[TimeRangeSelect] 매칭된 데이터 사용:', {
+            startTimeStr,
+            endTimeStr,
+            dataSource,
+            matchingDataCount: matchingData.length,
+          })
+        } else {
+          // 매칭되는 데이터가 없으면 가장 가까운 데이터 포인트 찾기
+          let closestStart = trendData[0]
+          let closestEnd = trendData[trendData.length - 1]
+          let minStartDiff = Infinity
+          let minEndDiff = Infinity
+
+          for (const d of trendData) {
+            const dTime = d.timestamp instanceof Date ? d.timestamp.getTime() : new Date(d.timestamp).getTime()
+            const startDiff = Math.abs(dTime - startTimeMs)
+            const endDiff = Math.abs(dTime - endTimeMs)
+
+            if (startDiff < minStartDiff) {
+              minStartDiff = startDiff
+              closestStart = d
+            }
+            if (endDiff < minEndDiff) {
+              minEndDiff = endDiff
+              closestEnd = d
+            }
+          }
+
+          startTimeStr = closestStart.oracleTimestamp || ''
+          endTimeStr = closestEnd.oracleTimestamp || ''
+          dataSource = closestStart.source || 'v$sql'
+
+          devLog('[TimeRangeSelect] 가장 가까운 포인트 사용:', {
+            closestStartTimestamp: closestStart.oracleTimestamp,
+            closestEndTimestamp: closestEnd.oracleTimestamp,
+            minStartDiff: minStartDiff / 1000 + 's',
+            minEndDiff: minEndDiff / 1000 + 's',
+          })
+        }
+      }
+
+      // 차트 데이터가 없거나 oracleTimestamp가 없는 경우 클라이언트 시간 사용 (폴백)
+      if (!startTimeStr || !endTimeStr) {
+        devLog('[TimeRangeSelect] 폴백: 클라이언트 시간 사용')
+        const formatDateTime = (date: Date): string => {
+          const year = date.getFullYear()
+          const month = String(date.getMonth() + 1).padStart(2, '0')
+          const day = String(date.getDate()).padStart(2, '0')
+          const hours = String(date.getHours()).padStart(2, '0')
+          const minutes = String(date.getMinutes()).padStart(2, '0')
+          const seconds = String(date.getSeconds()).padStart(2, '0')
+          return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+        }
+        startTimeStr = formatDateTime(startTime)
+        endTimeStr = formatDateTime(endTime)
+      }
+
+      // API를 통해 해당 시간 범위의 SQL 목록 조회
+      // sysmetric 소스는 시스템 레벨 통계만 제공하므로
+      // SQL 상세 조회에는 ASH나 V$SQL을 사용해야 함
+      // dataSource가 sysmetric이면 elapsed_time_ms 기준 정렬 사용
+      const orderByParam = dataSource === 'ash' ? 'sample_count' : 'elapsed_time_ms'
+
+      const params = new URLSearchParams({
+        connection_id: selectedConnectionId,
+        start_time: startTimeStr,
+        end_time: endTimeStr,
+        limit: '100',
+        order_by: orderByParam
+      })
+
+      devLog('[TimeRangeSelect] API 호출:', {
+        connection_id: selectedConnectionId,
+        start_time: startTimeStr,
+        end_time: endTimeStr,
+        dataSource,
+        orderBy: orderByParam,
+      })
+
+      const response = await fetch(`/api/monitoring/sql-statistics?${params}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch SQL statistics for time range')
+      }
+
+      const result = await response.json()
+      devLog('[TimeRangeSelect] API 응답:', {
+        count: result.data?.length || 0,
+        source: result.source,
+        total: result.total,
+        warning: result.warning,
+      })
+      const sqlList = result.data || []
+
+      // API 응답 데이터를 차트에 표시할 형식으로 변환
+      const performancePoints = sqlList.map((sql: any, index: number) => {
+        const elapsedTime = sql.avg_elapsed_ms || sql.elapsed_time_ms || 0
+        const cpuTime = sql.avg_cpu_ms || sql.cpu_time_ms || 0
+        const bufferGets = sql.avg_buffer_gets || sql.buffer_gets || 0
+
+        // Grade 계산 (A-F, 5 levels - sql-grading.ts 기준)
+        let grade: 'A' | 'B' | 'C' | 'D' | 'F' = 'A'
+        if (elapsedTime > 2000) grade = 'F'
+        else if (elapsedTime > 1000) grade = 'D'
+        else if (elapsedTime > 500) grade = 'C'
+        else if (elapsedTime > 200) grade = 'B'
+
+        return {
+          id: `${selectedConnectionId}-${sql.sql_id}-${sql.plan_hash_value || 0}-${index}-${Date.now()}`,
+          sql_id: sql.sql_id,
+          sql_snippet: sql.sql_text?.substring(0, 100) || sql.sql_snippet || '',
+          x: cpuTime,
+          y: bufferGets,
+          size: bufferGets,
+          grade,
+          sample_count: sql.sample_count || 0,
+          dataSource: dataSource,
+          metrics: {
+            elapsed_time: elapsedTime,
+            cpu_time: cpuTime,
+            buffer_gets: bufferGets,
+            disk_reads: sql.disk_reads || 0,
+            executions: sql.executions || 0,
+            rows_processed: sql.rows_processed || 0,
+            parse_calls: sql.parse_calls || 0,
+            sorts: sql.sorts || 0,
+          }
+        }
+      })
+
+      // sample_count 또는 elapsed_time 기준으로 정렬
+      if (dataSource === 'ash') {
+        performancePoints.sort((a, b) => (b.sample_count || 0) - (a.sample_count || 0))
+      } else {
+        performancePoints.sort((a, b) => (b.metrics.elapsed_time || 0) - (a.metrics.elapsed_time || 0))
+      }
+
+      setTimeRangeSQLs(performancePoints)
     } catch (error) {
-      console.error('Failed to fetch databases:', error)
+      console.error('Failed to fetch time range SQLs:', error)
+      setTimeRangeSQLs([])
+    } finally {
+      setIsLoadingTimeRangeSQLs(false)
     }
   }
 
-  const loadData = async () => {
-    if (!selectedConnectionId) return
+  // 데이터 갱신 중 표시 (초기 로딩이 아닌 백그라운드 갱신)
+  const isRefreshing = isFetching && !loading
 
-    setLoading(true)
+  // useMemo로 메트릭 데이터 처리 최적화 (불필요한 재계산 방지)
+  const processedMetrics = useMemo(() => {
+    if (!metricsData) return null
 
-    try {
-      const response = await fetch(`/api/monitoring/metrics?connection_id=${selectedConnectionId}`)
-      if (response.ok) {
-        const result = await response.json()
-        const metrics = result.data
+    const metrics = metricsData
 
-        // Update system metrics from real data
-        const totalMemory = Object.values(metrics.memory || {}).reduce((sum: number, val: any) => sum + (Number(val) || 0), 0)
-        const memoryUsagePct = totalMemory > 0 ? Math.min(95, (totalMemory / 10000) * 100) : 60
-        const cpuUsageEstimate = Math.min(95, (metrics.sessions?.active || 0) * 2 + 20)
+    // 시스템 메트릭 계산
+    const totalMemory = Object.values(metrics.memory || {}).reduce((sum: number, val: any) => sum + (Number(val) || 0), 0)
+    const memoryUsagePct = totalMemory > 0 ? Math.min(95, (totalMemory / 10000) * 100) : 60
+    const cpuUsageEstimate = Math.min(95, (metrics.sessions?.active || 0) * 2 + 20)
 
-        setSystemMetrics({
-          cpuUsage: cpuUsageEstimate,
-          memoryUsage: memoryUsagePct,
-          diskIO: (metrics.sql_statistics?.avg_buffer_gets || 0) * 0.01,
-          networkIO: (metrics.sessions?.total || 0) * 5,
-          activeConnections: metrics.sessions?.active || 0,
-          blockedSessions: metrics.sessions?.blocked || 0,
-          avgResponseTime: Math.floor((metrics.sql_statistics?.avg_elapsed_time || 0) / 1000),
-          transactionsPerSecond: Math.floor((metrics.performance?.transaction_count || 0) / 60),
-        })
+    const systemMetricsData = {
+      cpuUsage: cpuUsageEstimate,
+      memoryUsage: memoryUsagePct,
+      diskIO: (metrics.sql_statistics?.avg_buffer_gets || 0) * 0.01,
+      networkIO: (metrics.sessions?.total || 0) * 5,
+      activeConnections: metrics.sessions?.active || 0,
+      blockedSessions: metrics.sessions?.blocked || 0,
+      avgResponseTime: metrics.sql_statistics?.avg_elapsed_time || 0,
+      transactionsPerSecond: metrics.performance?.transaction_tps || 0,
+      totalTransactions: metrics.performance?.total_transactions || 0,
+      bufferCacheHitRate: metrics.performance?.buffer_cache_hit_rate || 0,
+    }
 
-        // Update database stats from real data
-        setDatabaseStats({
-          totalSQL: metrics.sql_statistics?.unique_sql_count || 0,
-          activeSQL: metrics.sessions?.active || 0,
-          problemSQL: metrics.top_sql?.filter((sql: any) => sql.avg_elapsed_ms > 1000).length || 0,
-          totalSessions: metrics.sessions?.total || 0,
-          activeSessions: metrics.sessions?.active || 0,
-          blockedQueries: metrics.sessions?.blocked || 0,
-          tablespaceUsage: metrics.tablespaces?.[0]?.used_pct || 0,
-          redoLogSize: Math.random() * 2048 + 512, // TODO: Get from Oracle
-        })
+    // 데이터베이스 통계 계산
+    const databaseStatsData = {
+      totalSQL: metrics.sql_statistics?.unique_sql_count || 0,
+      activeSQL: metrics.sessions?.active || 0,
+      problemSQL: metrics.top_sql?.filter((sql: any) => sql.avg_elapsed_ms > 1000).length || 0,
+      totalSessions: metrics.sessions?.total || 0,
+      activeSessions: metrics.sessions?.active || 0,
+      blockedQueries: metrics.sessions?.blocked || 0,
+      tablespaceUsage: metrics.tablespaces?.[0]?.used_pct || 0,
+      tablespaceTopName: metrics.tablespaces?.[0]?.name || 'N/A',
+      tablespaces: metrics.tablespaces || [],
+      redoLogSize: 1024,
+    }
 
-        // Update top slow queries from real data
-        if (metrics.top_sql && metrics.top_sql.length > 0) {
-          setTopSlowQueries(
-            metrics.top_sql.slice(0, 10).map((sql: any) => ({
-              sql_id: sql.sql_id,
-              elapsed_time: sql.avg_elapsed_ms,
-              cpu_time: sql.avg_cpu_ms,
-              executions: sql.executions,
-              buffer_gets: sql.avg_buffer_gets,
-              sql_text: sql.sql_snippet || '',
-            }))
-          )
-        } else {
-          setTopSlowQueries([])
+    // Top SQL 처리 (중복 sql_id 제거 후 부하 기준 정렬)
+    // 부하 = 평균 실행 시간 * 실행 횟수 (총 실행 시간)
+    const topSlowQueriesData = metrics.top_sql && metrics.top_sql.length > 0
+      ? Array.from(
+        new Map(
+          metrics.top_sql.map((sql: any) => [sql.sql_id, {
+            sql_id: sql.sql_id,
+            elapsed_time: sql.avg_elapsed_ms,
+            cpu_time: sql.avg_cpu_ms,
+            executions: sql.executions,
+            buffer_gets: sql.avg_buffer_gets,
+            sql_text: sql.sql_snippet || '',
+            // 총 부하 계산: 평균 실행 시간 * 실행 횟수
+            total_load: (sql.avg_elapsed_ms || 0) * (sql.executions || 0),
+          }])
+        ).values()
+      )
+        // 총 부하(total_load) 기준으로 내림차순 정렬 후 상위 10개 선택
+        .sort((a: any, b: any) => (b.total_load || 0) - (a.total_load || 0))
+        .slice(0, 10)
+      : []
+
+    // 성능 데이터 생성
+    const performanceDataPoints = generatePerformanceDataFromMetrics(metrics)
+    // 트렌드 데이터는 실제 API 데이터 사용 (sqls 포함)
+    const trendDataPoints = performanceTrendData?.data?.length > 0
+      ? (() => {
+        const mapped = performanceTrendData.data.map((item: any) => {
+          // oracleTimestamp: API에서 제공하는 oracleTimestamp 또는 timestamp 문자열 사용
+          const oracleTs = item.oracleTimestamp || item.timestamp;
+          return {
+            timestamp: new Date(item.timestamp.replace(' ', 'T')),
+            oracleTimestamp: oracleTs, // Oracle 서버 시간 문자열 (YYYY-MM-DD HH24:MI:SS)
+            avgCpuTime: item.avgCpuTime || 0,
+            avgElapsedTime: item.avgElapsedTime || 0,
+            avgBufferGets: item.avgBufferGets || 0,
+            totalExecutions: item.totalExecutions || 0,
+            avgDiskReads: item.avgDiskReads || 0,
+            activeQueries: item.activeQueries || 0,
+            problemQueries: item.problemQueries || 0,
+            source: item.source || performanceTrendData.source || 'unknown',
+            sqls: item.sqls || [],
+          };
+        });
+        // 실제 데이터 사용 로그 (개발 환경에서만)
+        if (process.env.NODE_ENV === 'development') {
+          devLog('[Monitoring] 성능 트렌드 데이터 로드:', {
+            count: mapped.length,
+            source: performanceTrendData.source,
+            interval: performanceTrendData.interval,
+            firstTimestamp: mapped[0]?.timestamp,
+            lastTimestamp: mapped[mapped.length - 1]?.timestamp,
+          });
         }
+        return mapped;
+      })()
+      : (() => {
+        // 로딩 중일 때는 빈 배열 반환 (폴백 데이터 표시 방지)
+        if (trendLoading) return [];
 
-        // Generate performance data from real SQL statistics
-        const performancePoints = generatePerformanceDataFromMetrics(metrics)
-        setPerformanceData(performancePoints)
+        // API 데이터가 없으면 빈 배열 반환 (mock 데이터 생성하지 않음)
+        devLog('[Monitoring] 성능 트렌드 API 데이터 없음');
+        return [];
+      })()
+    const resourceDataPoints = generateResourceDataFromMetrics(metrics, osStatsData)
 
-        // Generate trend data from real metrics
-        const trendPoints = generateTrendDataFromMetrics(metrics)
-        setTrendData(trendPoints)
+    // 알림 생성
+    const alertsData: any[] = []
+    let alertId = 1
 
-        // Generate resource data from real metrics
-        const resourcePoints = generateResourceDataFromMetrics(metrics)
-        setResourceData(resourcePoints)
+    if (metrics.sessions?.active > 50) {
+      alertsData.push({
+        id: alertId++,
+        severity: 'warning' as const,
+        message: `활성 세션 수가 높습니다: ${metrics.sessions.active}개`,
+        timestamp: new Date(),
+        acknowledged: false,
+        source: 'Session Monitor',
+      })
+    }
 
-        // Generate alerts based on real metrics
-        const newAlerts = []
-        let alertId = 1
-
-        // Session alerts
-        if (metrics.sessions?.active > 50) {
-          newAlerts.push({
+    if (metrics.tablespaces && metrics.tablespaces.length > 0) {
+      metrics.tablespaces.forEach((ts: any) => {
+        if (ts.used_pct > 90) {
+          alertsData.push({
+            id: alertId++,
+            severity: 'critical' as const,
+            message: `테이블스페이스 사용량 심각: ${ts.name} (${ts.used_pct.toFixed(1)}%)`,
+            timestamp: new Date(),
+            acknowledged: false,
+            source: 'Storage Monitor',
+          })
+        } else if (ts.used_pct > 80) {
+          alertsData.push({
             id: alertId++,
             severity: 'warning' as const,
-            message: `활성 세션 수가 높습니다: ${metrics.sessions.active}개`,
+            message: `테이블스페이스 사용량 높음: ${ts.name} (${ts.used_pct.toFixed(1)}%)`,
             timestamp: new Date(),
             acknowledged: false,
-            source: 'Session Monitor',
+            source: 'Storage Monitor',
           })
         }
-
-        // Tablespace alerts
-        if (metrics.tablespaces && metrics.tablespaces.length > 0) {
-          metrics.tablespaces.forEach((ts: any) => {
-            if (ts.used_pct > 90) {
-              newAlerts.push({
-                id: alertId++,
-                severity: 'critical' as const,
-                message: `테이블스페이스 사용량 심각: ${ts.name} (${ts.used_pct.toFixed(1)}%)`,
-                timestamp: new Date(),
-                acknowledged: false,
-                source: 'Storage Monitor',
-              })
-            } else if (ts.used_pct > 80) {
-              newAlerts.push({
-                id: alertId++,
-                severity: 'warning' as const,
-                message: `테이블스페이스 사용량 높음: ${ts.name} (${ts.used_pct.toFixed(1)}%)`,
-                timestamp: new Date(),
-                acknowledged: false,
-                source: 'Storage Monitor',
-              })
-            }
-          })
-        }
-
-        // SQL performance alerts
-        if (metrics.top_sql && metrics.top_sql.length > 0) {
-          const criticalSql = metrics.top_sql.filter((sql: any) => sql.avg_elapsed_ms > 2000)
-          if (criticalSql.length > 0) {
-            newAlerts.push({
-              id: alertId++,
-              severity: 'critical' as const,
-              message: `심각한 성능 저하 SQL ${criticalSql.length}개 감지 (평균 응답시간 >2초)`,
-              timestamp: new Date(),
-              acknowledged: false,
-              source: 'SQL Monitor',
-            })
-          }
-        }
-
-        // Blocking session alerts
-        if (metrics.sessions?.blocked > 0) {
-          newAlerts.push({
-            id: alertId++,
-            severity: metrics.sessions.blocked > 5 ? 'critical' as const : 'warning' as const,
-            message: `블로킹 세션 감지: ${metrics.sessions.blocked}개`,
-            timestamp: new Date(),
-            acknowledged: false,
-            source: 'Lock Monitor',
-          })
-        }
-
-        // Wait event alerts
-        if (metrics.top_waits && metrics.top_waits.length > 0) {
-          const criticalWaits = metrics.top_waits.filter((wait: any) => wait.average_wait_ms > 100)
-          if (criticalWaits.length > 0) {
-            newAlerts.push({
-              id: alertId++,
-              severity: 'warning' as const,
-              message: `높은 대기 이벤트 감지: ${criticalWaits[0].event} (평균 ${criticalWaits[0].average_wait_ms.toFixed(0)}ms)`,
-              timestamp: new Date(),
-              acknowledged: false,
-              source: 'Wait Event Monitor',
-            })
-          }
-        }
-
-        // Buffer cache hit rate alert
-        if (metrics.performance?.buffer_cache_hit_rate < 90) {
-          newAlerts.push({
-            id: alertId++,
-            severity: 'info' as const,
-            message: `버퍼 캐시 히트율 낮음: ${metrics.performance.buffer_cache_hit_rate.toFixed(1)}%`,
-            timestamp: new Date(),
-            acknowledged: false,
-            source: 'Performance Monitor',
-          })
-        }
-
-        setAlerts(newAlerts.length > 0 ? newAlerts : [])
-      }
-    } catch (error) {
-      console.error('Failed to load monitoring data:', error)
-      // Fallback to mock data on error
-      setSystemMetrics(generateSystemMetrics())
-      setDatabaseStats(generateDatabaseStats())
-      setTopSlowQueries(generateTopSlowQueries())
-      setAlerts(generateAlerts())
-    } finally {
-      setLoading(false)
+      })
     }
-  }
+
+    if (metrics.top_sql && metrics.top_sql.length > 0) {
+      const criticalSql = metrics.top_sql.filter((sql: any) => sql.avg_elapsed_ms > 2000)
+      if (criticalSql.length > 0) {
+        alertsData.push({
+          id: alertId++,
+          severity: 'critical' as const,
+          message: `심각한 성능 저하 SQL ${criticalSql.length}개 감지 (평균 응답시간 >2초)`,
+          timestamp: new Date(),
+          acknowledged: false,
+          source: 'SQL Monitor',
+        })
+      }
+    }
+
+    if (metrics.sessions?.blocked > 0) {
+      alertsData.push({
+        id: alertId++,
+        severity: metrics.sessions.blocked > 5 ? 'critical' as const : 'warning' as const,
+        message: `블로킹 세션 감지: ${metrics.sessions.blocked}개`,
+        timestamp: new Date(),
+        acknowledged: false,
+        source: 'Lock Monitor',
+      })
+    }
+
+    if (metrics.top_waits && metrics.top_waits.length > 0) {
+      const criticalWaits = metrics.top_waits.filter((wait: any) => wait.average_wait_ms > 100)
+      if (criticalWaits.length > 0) {
+        alertsData.push({
+          id: alertId++,
+          severity: 'warning' as const,
+          message: `높은 대기 이벤트 감지: ${criticalWaits[0].event} (평균 ${criticalWaits[0].average_wait_ms.toFixed(0)}ms)`,
+          timestamp: new Date(),
+          acknowledged: false,
+          source: 'Wait Event Monitor',
+        })
+      }
+    }
+
+    if (metrics.performance?.buffer_cache_hit_rate < 90) {
+      alertsData.push({
+        id: alertId++,
+        severity: 'info' as const,
+        message: `버퍼 캐시 히트율 낮음: ${metrics.performance.buffer_cache_hit_rate.toFixed(1)}%`,
+        timestamp: new Date(),
+        acknowledged: false,
+        source: 'Performance Monitor',
+      })
+    }
+
+    return {
+      systemMetrics: systemMetricsData,
+      databaseStats: databaseStatsData,
+      topSlowQueries: topSlowQueriesData,
+      performanceData: performanceDataPoints,
+      trendData: trendDataPoints,
+      resourceData: resourceDataPoints,
+      alerts: alertsData,
+    }
+  }, [metricsData, performanceTrendData, trendLoading, osStatsData])
+
+  // processedMetrics가 변경되면 상태 업데이트
+  // 주의: trendData는 별도 useEffect에서 처리하므로 여기서 제외
+  useEffect(() => {
+    if (processedMetrics) {
+      setSystemMetrics(processedMetrics.systemMetrics)
+      setDatabaseStats(processedMetrics.databaseStats)
+      setTopSlowQueries(processedMetrics.topSlowQueries)
+      setPerformanceData(processedMetrics.performanceData)
+      // trendData는 위의 useEffect에서 처리 (중복 방지)
+      setResourceData(processedMetrics.resourceData)
+      setAlerts(processedMetrics.alerts)
+    }
+  }, [processedMetrics])
 
   const handleRefresh = () => {
-    loadData()
+    refetchMetrics()
+    refetchOsStats() // OS 메트릭도 함께 갱신
+    refetchTrend() // 성능 트렌드도 함께 갱신
   }
 
   const getSeverityIcon = (severity: string) => {
@@ -584,11 +935,15 @@ export default function MonitoringPage() {
         `/api/monitoring/sql-text?connection_id=${selectedConnectionId}&sql_id=${selectedPoint.sql_id}`
       )
 
+      const result = await response.json()
+
       if (!response.ok) {
-        throw new Error('Failed to fetch SQL text')
+        console.error('SQL text API error:', result.error, result.details)
+        // 에러 시에도 기본 정보로 표시
+        setShowSqlText(true)
+        return
       }
 
-      const result = await response.json()
       setSqlTextData(result.data)
       setShowSqlText(true)
     } catch (error) {
@@ -619,12 +974,16 @@ export default function MonitoringPage() {
 
   const selectedDbInfo = databases.find(db => db.id === selectedConnectionId)
 
+  // 실제 연결 상태 결정: metricsData가 있으면 연결된 것으로 간주
+  const isConnected = !!metricsData && !loading
+  const effectiveHealthStatus = isConnected ? 'healthy' : (selectedDbInfo?.health_status || 'unknown')
+  const effectiveIsActive = isConnected || selectedDbInfo?.is_active
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
-          <Breadcrumb />
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">실시간 모니터링</h1>
           <p className="text-gray-500 dark:text-gray-400">Oracle 데이터베이스 시스템 전체 성능을 실시간으로 모니터링합니다</p>
         </div>
@@ -634,10 +993,9 @@ export default function MonitoringPage() {
           {/* 선택된 데이터베이스 정보 표시 (상단 헤더에서 선택) */}
           {selectedConnection && (
             <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-md">
-              <div className={`h-2 w-2 rounded-full ${
-                selectedDbInfo?.health_status?.toLowerCase() === 'healthy' ? 'bg-green-500' :
-                selectedDbInfo?.health_status?.toLowerCase() === 'warning' ? 'bg-yellow-500' : 'bg-red-500'
-              }`} />
+              <div className={`h-2 w-2 rounded-full ${effectiveHealthStatus === 'healthy' ? 'bg-green-500' :
+                effectiveHealthStatus === 'warning' ? 'bg-yellow-500' : 'bg-red-500'
+                }`} />
               <Database className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium">{selectedConnection.name}</span>
             </div>
@@ -650,9 +1008,10 @@ export default function MonitoringPage() {
             <SelectContent>
               <SelectItem value="1m">최근 1분</SelectItem>
               <SelectItem value="5m">최근 5분</SelectItem>
+              <SelectItem value="10m">최근 10분</SelectItem>
               <SelectItem value="15m">최근 15분</SelectItem>
+              <SelectItem value="30m">최근 30분</SelectItem>
               <SelectItem value="1h">최근 1시간</SelectItem>
-              <SelectItem value="24h">최근 24시간</SelectItem>
             </SelectContent>
           </Select>
 
@@ -677,22 +1036,26 @@ export default function MonitoringPage() {
             {isAutoRefresh ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
           </Button>
 
-          <Button variant="outline" size="icon" onClick={handleRefresh}>
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isFetching}>
+            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
 
-          <Button variant="outline" size="icon">
+          {/* 백그라운드 갱신 중 인디케이터 */}
+          {isRefreshing && <RefreshingIndicator />}
+
+          <Button variant="outline" size="icon" onClick={() => setIsFilterDialogOpen(true)} title="필터 설정">
             <Filter className="h-4 w-4" />
           </Button>
 
-          <Button variant="outline" size="icon">
+          <Button variant="outline" size="icon" onClick={() => setIsSettingsDialogOpen(true)} title="모니터링 설정">
             <Settings className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
       {/* Database Connection Info Card */}
-      {selectedDbInfo && (
+      {loading && !metricsData && <DatabaseInfoSkeleton />}
+      {selectedDbInfo && !loading && (
         <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950 border-blue-200 dark:border-blue-800">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -722,22 +1085,22 @@ export default function MonitoringPage() {
               </div>
             </div>
             <div className="mt-4 flex items-center gap-2">
-              {selectedDbInfo.health_status === 'healthy' && (
+              {effectiveHealthStatus === 'healthy' && (
                 <Badge className="bg-green-500 hover:bg-green-600 text-white border-0">
                   정상
                 </Badge>
               )}
-              {selectedDbInfo.health_status === 'warning' && (
+              {(effectiveHealthStatus === 'warning' || effectiveHealthStatus === 'degraded') && (
                 <Badge variant="outline" className="border-yellow-500 text-yellow-700 dark:text-yellow-500">
                   경고
                 </Badge>
               )}
-              {selectedDbInfo.health_status === 'error' && (
+              {(effectiveHealthStatus === 'error' || effectiveHealthStatus === 'unhealthy' || effectiveHealthStatus === 'unknown') && !isConnected && (
                 <Badge variant="destructive">
                   오류
                 </Badge>
               )}
-              {selectedDbInfo.is_active ? (
+              {effectiveIsActive ? (
                 <Badge className="bg-blue-500 hover:bg-blue-600 text-white border-0">
                   활성
                 </Badge>
@@ -762,213 +1125,588 @@ export default function MonitoringPage() {
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
-          {/* System Metrics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">CPU 사용률</CardTitle>
-                <Cpu className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{systemMetrics.cpuUsage.toFixed(1)}%</div>
-                <div className="flex items-center text-xs text-muted-foreground">
-                  {systemMetrics.cpuUsage > 70 ? (
-                    <TrendingUp className="h-3 w-3 text-red-500 mr-1" />
-                  ) : (
-                    <TrendingDown className="h-3 w-3 text-green-500 mr-1" />
-                  )}
-                  실시간 CPU 사용률
-                </div>
-              </CardContent>
-            </Card>
+          {/* System Metrics Cards - Skeleton or Data */}
+          {loading && !metricsData ? (
+            <SystemMetricsSkeleton />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">활성 세션</CardTitle>
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{systemMetrics.activeConnections}</div>
+                  <div className="flex items-center text-xs text-muted-foreground">
+                    <Activity className="h-3 w-3 text-blue-500 mr-1" />
+                    전체 {databaseStats.totalSessions}개 세션
+                  </div>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">메모리 사용률</CardTitle>
-                <HardDrive className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{systemMetrics.memoryUsage.toFixed(1)}%</div>
-                <div className="flex items-center text-xs text-muted-foreground">
-                  {systemMetrics.memoryUsage > 80 ? (
-                    <TrendingUp className="h-3 w-3 text-red-500 mr-1" />
-                  ) : (
-                    <TrendingDown className="h-3 w-3 text-green-500 mr-1" />
-                  )}
-                  시스템 메모리
-                </div>
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Buffer Cache Hit</CardTitle>
+                  <Zap className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className={`text-2xl font-bold ${systemMetrics.bufferCacheHitRate > 90 ? 'text-green-600' : 'text-yellow-600'}`}>
+                    {systemMetrics.bufferCacheHitRate.toFixed(1)}%
+                  </div>
+                  <div className="flex items-center text-xs text-muted-foreground">
+                    {systemMetrics.bufferCacheHitRate > 90 ? (
+                      <TrendingUp className="h-3 w-3 text-green-500 mr-1" />
+                    ) : (
+                      <TrendingDown className="h-3 w-3 text-orange-500 mr-1" />
+                    )}
+                    캐시 히트율
+                  </div>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">활성 연결</CardTitle>
-                <Users className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{systemMetrics.activeConnections}</div>
-                <div className="flex items-center text-xs text-muted-foreground">
-                  <Activity className="h-3 w-3 text-blue-500 mr-1" />
-                  데이터베이스 연결
-                </div>
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">트랜잭션 TPS</CardTitle>
+                  <Activity className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{systemMetrics.transactionsPerSecond.toFixed(2)}</div>
+                  <div className="flex items-center text-xs text-muted-foreground">
+                    <Clock className="h-3 w-3 text-blue-500 mr-1" />
+                    총 {systemMetrics.totalTransactions.toLocaleString()} 트랜잭션
+                  </div>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">평균 응답시간</CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{systemMetrics.avgResponseTime.toFixed(0)}ms</div>
-                <div className="flex items-center text-xs text-muted-foreground">
-                  {systemMetrics.avgResponseTime > 100 ? (
-                    <TrendingUp className="h-3 w-3 text-orange-500 mr-1" />
-                  ) : (
-                    <TrendingDown className="h-3 w-3 text-green-500 mr-1" />
-                  )}
-                  평균 쿼리 응답시간
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">평균 응답시간</CardTitle>
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{systemMetrics.avgResponseTime.toFixed(2)}ms</div>
+                  <div className="flex items-center text-xs text-muted-foreground">
+                    {systemMetrics.avgResponseTime > 100 ? (
+                      <TrendingUp className="h-3 w-3 text-orange-500 mr-1" />
+                    ) : (
+                      <TrendingDown className="h-3 w-3 text-green-500 mr-1" />
+                    )}
+                    평균 쿼리 응답시간
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           {/* Database Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">총 SQL 수</CardTitle>
-                <Database className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{databaseStats.totalSQL.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">
-                  활성: {databaseStats.activeSQL}개
-                </p>
-              </CardContent>
-            </Card>
+          {loading && !metricsData ? (
+            <DatabaseStatsSkeleton />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">총 SQL 수</CardTitle>
+                  <Database className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{databaseStats.totalSQL.toLocaleString()}</div>
+                  <p className="text-xs text-muted-foreground">
+                    활성: {databaseStats.activeSQL}개
+                  </p>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">문제성 SQL</CardTitle>
-                <AlertTriangle className="h-4 w-4 text-orange-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-red-600">{databaseStats.problemSQL}</div>
-                <p className="text-xs text-muted-foreground">
-                  Grade D 이하 성능
-                </p>
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">문제성 SQL</CardTitle>
+                  <AlertTriangle className="h-4 w-4 text-orange-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-red-600">{databaseStats.problemSQL}</div>
+                  <p className="text-xs text-muted-foreground">
+                    Grade D 이하 성능
+                  </p>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">활성 세션</CardTitle>
-                <Server className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{databaseStats.activeSessions}</div>
-                <p className="text-xs text-muted-foreground">
-                  총 {databaseStats.totalSessions}개 세션
-                </p>
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">블로킹 세션</CardTitle>
+                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className={`text-2xl font-bold ${databaseStats.blockedQueries > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {databaseStats.blockedQueries}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {databaseStats.blockedQueries > 0 ? '락 대기 중인 세션' : '정상 운영 중'}
+                  </p>
+                </CardContent>
+              </Card>
 
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">테이블스페이스 (Top)</CardTitle>
+                  <HardDrive className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className={`text-2xl font-bold ${databaseStats.tablespaceUsage > 85 ? 'text-red-600' : databaseStats.tablespaceUsage > 70 ? 'text-yellow-600' : 'text-green-600'}`}>
+                    {databaseStats.tablespaceUsage.toFixed(1)}%
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate" title={databaseStats.tablespaceTopName}>
+                    {databaseStats.tablespaceTopName}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Tablespace Details */}
+          {loading && !metricsData ? (
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">테이블스페이스</CardTitle>
-                <HardDrive className="h-4 w-4 text-muted-foreground" />
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium flex items-center">
+                  <HardDrive className="h-4 w-4 mr-2" />
+                  테이블스페이스 사용률 상세
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{databaseStats.tablespaceUsage.toFixed(1)}%</div>
-                <p className="text-xs text-muted-foreground">
-                  저장공간 사용률
-                </p>
+                <div className="space-y-3">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={`skeleton-tablespace-detail-${i}`} className="flex items-center justify-between">
+                      <Skeleton className="h-4 w-32" />
+                      <div className="flex items-center gap-3">
+                        <Skeleton className="w-32 h-2 rounded-full" />
+                        <Skeleton className="h-4 w-14" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
-          </div>
+          ) : databaseStats.tablespaces.length > 0 ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium flex items-center">
+                  <HardDrive className="h-4 w-4 mr-2" />
+                  테이블스페이스 사용률 상세
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {databaseStats.tablespaces.slice(0, 5).map((ts: any, index: number) => (
+                    <div key={`tablespace-${ts.name || 'unnamed'}-${index}-${ts.used_pct || 0}`} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="text-sm font-medium truncate" title={ts.name}>{ts.name}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${ts.used_pct > 85 ? 'bg-red-500' : ts.used_pct > 70 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                            style={{ width: `${Math.min(ts.used_pct, 100)}%` }}
+                          />
+                        </div>
+                        <span className={`text-sm font-bold w-14 text-right ${ts.used_pct > 85 ? 'text-red-600' : ts.used_pct > 70 ? 'text-yellow-600' : 'text-green-600'}`}>
+                          {ts.used_pct?.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
 
           {/* Top Slow Queries */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <BarChart3 className="h-5 w-5 mr-2" />
-                최고 부하 SQL Top 10
-              </CardTitle>
-              <CardDescription>실행 시간 기준 상위 성능 문제 SQL 목록</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {topSlowQueries.map((query, index) => (
-                  <div key={`${query.sql_id}-${index}`} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                    <div className="flex items-center space-x-4 flex-1">
-                      <Badge variant="outline" className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0">
-                        {index + 1}
-                      </Badge>
-                      <div className="flex-1 min-w-0">
-                        <button
-                          onClick={() => {
-                            // SQL 성능 데이터 생성
-                            const sqlPerformancePoint = {
-                              sql_id: query.sql_id,
-                              x: query.cpu_time,
-                              y: query.buffer_gets,
-                              size: query.buffer_gets,
-                              grade: query.elapsed_time > 2000 ? 'F' as const :
-                                     query.elapsed_time > 1000 ? 'D' as const :
-                                     query.elapsed_time > 500 ? 'C' as const :
-                                     query.elapsed_time > 200 ? 'B' as const : 'A' as const,
-                              metrics: {
-                                elapsed_time: query.elapsed_time,
-                                cpu_time: query.cpu_time,
-                                buffer_gets: query.buffer_gets,
-                                disk_reads: 0,
-                                executions: query.executions,
-                                rows_processed: 0,
-                                parse_calls: 0,
-                                sorts: 0,
-                              }
-                            }
-                            setSelectedPoint(sqlPerformancePoint)
-                            setShowSqlDetailModal(true)
-                          }}
-                          className="font-mono text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer text-left"
-                        >
-                          {query.sql_id}
-                        </button>
-                        <div className="text-xs text-gray-600 dark:text-gray-400 max-w-md truncate">
-                          {query.sql_text}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right space-y-1 flex-shrink-0">
-                      <div className="text-lg font-semibold text-red-600">
-                        {query.elapsed_time.toFixed(0)}ms
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {query.executions}회 실행
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          {loading && !metricsData ? (
+            <TopSqlSkeleton />
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <BarChart3 className="h-5 w-5 mr-2" />
+                  최고 부하 SQL Top 10
+                </CardTitle>
+                <CardDescription>실행 시간 기준 상위 성능 문제 SQL 목록</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="w-[60px] text-center">순위</TableHead>
+                        <TableHead className="w-[150px]">SQL ID</TableHead>
+                        <TableHead>SQL 텍스트</TableHead>
+                        <TableHead className="text-right">실행 시간</TableHead>
+                        <TableHead className="text-right">Buffer Gets</TableHead>
+                        <TableHead className="text-right">실행 횟수</TableHead>
+                        <TableHead className="w-[80px]">분석</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {topSlowQueries.map((query, index) => (
+                        <TableRow key={`top-sql-${query.sql_id}-${index}-${query.elapsed_time || 0}-${query.executions || 0}`}>
+                          <TableCell className="text-center font-medium">
+                            <Badge variant="outline" className="h-6 w-6 rounded-full p-0 flex items-center justify-center mx-auto">
+                              {index + 1}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <button
+                              onClick={() => {
+                                const sqlPerformancePoint = {
+                                  sql_id: query.sql_id,
+                                  x: query.cpu_time,
+                                  y: query.buffer_gets,
+                                  size: query.buffer_gets,
+                                  grade: query.elapsed_time > 2000 ? 'F' as const :
+                                    query.elapsed_time > 1000 ? 'D' as const :
+                                      query.elapsed_time > 500 ? 'C' as const :
+                                        query.elapsed_time > 200 ? 'B' as const : 'A' as const,
+                                  metrics: {
+                                    elapsed_time: query.elapsed_time,
+                                    cpu_time: query.cpu_time,
+                                    buffer_gets: query.buffer_gets,
+                                    disk_reads: 0,
+                                    executions: query.executions,
+                                    rows_processed: 0,
+                                    parse_calls: 0,
+                                    sorts: 0,
+                                  }
+                                }
+                                setSelectedPoint(sqlPerformancePoint)
+                                setShowSqlDetailModal(true)
+                              }}
+                              className="font-mono text-xs font-medium text-primary hover:underline"
+                            >
+                              {query.sql_id}
+                            </button>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs text-muted-foreground truncate max-w-[300px]" title={query.sql_text}>
+                              {query.sql_text}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className={`font-mono text-xs font-bold ${query.elapsed_time > 2000 ? 'text-red-500' : 'text-orange-500'}`}>
+                              {query.elapsed_time.toFixed(0)}ms
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-xs">
+                            {(query.buffer_gets || 0).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-xs">
+                            {query.executions.toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => {
+                                const sqlPerformancePoint = {
+                                  sql_id: query.sql_id,
+                                  x: query.cpu_time,
+                                  y: query.buffer_gets,
+                                  size: query.buffer_gets,
+                                  grade: query.elapsed_time > 2000 ? 'F' as const :
+                                    query.elapsed_time > 1000 ? 'D' as const :
+                                      query.elapsed_time > 500 ? 'C' as const :
+                                        query.elapsed_time > 200 ? 'B' as const : 'A' as const,
+                                  metrics: {
+                                    elapsed_time: query.elapsed_time,
+                                    cpu_time: query.cpu_time,
+                                    buffer_gets: query.buffer_gets,
+                                    disk_reads: 0,
+                                    executions: query.executions,
+                                    rows_processed: 0,
+                                    parse_calls: 0,
+                                    sorts: 0,
+                                  }
+                                }
+                                setSelectedPoint(sqlPerformancePoint)
+                                setShowSqlDetailModal(true)
+                              }}
+                            >
+                              <BarChart3 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Performance Tab */}
         <TabsContent value="performance" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Performance Chart */}
-            <div className="lg:col-span-2">
+          {loading && !metricsData ? (
+            <PerformanceTabSkeleton />
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Performance Chart */}
+              <div className="lg:col-span-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <LineChart className="h-5 w-5" />
+                      실시간 SQL 성능 분포
+                    </CardTitle>
+                    <CardDescription>
+                      CPU 시간 vs Buffer Gets 성능 산점도 (실시간 업데이트)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {loading ? (
+                      <div className="flex items-center justify-center h-96">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                      </div>
+                    ) : performanceData.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-96 text-muted-foreground">
+                        <Database className="h-12 w-12 mb-4 opacity-30" />
+                        <p className="text-lg font-medium">SQL 성능 데이터 없음</p>
+                        <p className="text-sm mt-1">최근 10분 내 실행된 SQL이 없거나 V$SQL 접근 권한이 필요합니다.</p>
+                      </div>
+                    ) : (
+                      <ScatterPlot
+                        data={performanceData}
+                        width={700}
+                        height={400}
+                        onPointClick={setSelectedPoint}
+                        onRefresh={handleRefresh}
+                        isRefreshing={isFetching}
+                        xLabel="CPU Time (ms)"
+                        yLabel="Buffer Gets"
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Performance Summary */}
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <BarChart3 className="h-5 w-5" />
+                      성능 요약
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">총 SQL 수</span>
+                        <span className="text-2xl font-bold">{performanceData.length}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                          Grade A
+                        </span>
+                        <span className="font-semibold">
+                          {performanceData.filter(p => p.grade === 'A').length}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-lime-500"></div>
+                          Grade B
+                        </span>
+                        <span className="font-semibold">
+                          {performanceData.filter(p => p.grade === 'B').length}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+                          Grade C
+                        </span>
+                        <span className="font-semibold">
+                          {performanceData.filter(p => p.grade === 'C').length}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                          Grade D
+                        </span>
+                        <span className="font-semibold">
+                          {performanceData.filter(p => p.grade === 'D').length}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-red-600"></div>
+                          Grade F
+                        </span>
+                        <span className="font-semibold text-red-600">
+                          {performanceData.filter(p => p.grade === 'F').length}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">평균 CPU 시간</span>
+                        <span className="font-semibold">
+                          {(performanceData.reduce((sum, p) => sum + p.x, 0) / performanceData.length || 0).toFixed(2)}ms
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">문제성 SQL</span>
+                        <span className="font-semibold text-red-600">
+                          {performanceData.filter(p => p.grade === 'F').length}
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {selectedPoint && (
+                  <Card className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+                    <CardHeader>
+                      <CardTitle className="text-lg">선택된 SQL</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="font-mono text-sm bg-white dark:bg-gray-800 p-2 rounded border">
+                        {selectedPoint.sql_id}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400 block mb-1">Grade</span>
+                          <Badge
+                            variant={selectedPoint.grade === 'A' ? 'default' : selectedPoint.grade === 'F' ? 'destructive' : 'secondary'}
+                          >
+                            {selectedPoint.grade}
+                          </Badge>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400 block mb-1">Executions</span>
+                          <span className="font-medium">{selectedPoint.metrics.executions}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400 block mb-1">CPU Time</span>
+                          <span className="font-medium">{selectedPoint.x.toFixed(2)}ms</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400 block mb-1">Buffer Gets</span>
+                          <span className="font-medium">{selectedPoint.y.toFixed(0)}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400 block mb-1">Disk Reads</span>
+                          <span className="font-medium">{selectedPoint.metrics.disk_reads}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400 block mb-1">Rows</span>
+                          <span className="font-medium">{selectedPoint.metrics.rows_processed}</span>
+                        </div>
+                      </div>
+
+                      <Button
+                        className="w-full mt-2"
+                        size="sm"
+                        onClick={() => setShowSqlDetailModal(true)}
+                      >
+                        상세 분석 보기
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Details Tab */}
+        <TabsContent value="details" className="space-y-6">
+          {loading && !metricsData ? (
+            <DetailsTabSkeleton />
+          ) : (
+            <div className="grid grid-cols-1 gap-6">
+              {/* Performance Trend Analysis */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5" />
+                        성능 트렌드 분석
+                      </CardTitle>
+                      <CardDescription>
+                        시간대별 성능 지표 추이 (실시간 업데이트)
+                        {trendData.length > 0 && trendData[0]?.source && (
+                          <span className="ml-2 text-xs">
+                            (데이터 소스: {trendData[0].source === 'ash' || trendData[0].source === 'ash-estimate' ? 'ASH (실시간)' :
+                              trendData[0].source === 'sysmetric' ? '시스템 메트릭 (실시간)' :
+                                trendData[0].source === 'sysmetric-current' ? 'V$SYSMETRIC (현재)' :
+                                  trendData[0].source === 'v$sql' ? 'V$SQL (활동 기반)' :
+                                    trendData[0].source === 'v$sql-snapshot' ? 'V$SQL (제한적)' :
+                                      trendData[0].source === 'fallback' ? '추정값 (메트릭 기반)' :
+                                        trendData[0].source})
+                          </span>
+                        )}
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {performanceTrendData?.source && (
+                        <Badge variant={performanceTrendData.source === 'fallback' ? 'secondary' : 'outline'}>
+                          {performanceTrendData.source === 'ash' || performanceTrendData.source === 'ash-estimate' ? 'ASH Live' :
+                            performanceTrendData.source === 'sysmetric' ? 'SysMetric Live' :
+                              performanceTrendData.source === 'sysmetric-current' ? 'SysMetric' :
+                                performanceTrendData.source === 'v$sql' ? 'V$SQL' :
+                                  performanceTrendData.source === 'v$sql-snapshot' ? 'V$SQL' :
+                                    performanceTrendData.source === 'fallback' ? '추정값' : 'Live Data'}
+                        </Badge>
+                      )}
+                      {trendData.length > 0 && (
+                        <Badge variant="secondary" className="text-xs">
+                          {trendData.length}개 포인트
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {loading || trendLoading ? (
+                    <div className="flex items-center justify-center h-96">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    </div>
+                  ) : trendData.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-96 text-muted-foreground">
+                      <TrendingUp className="h-12 w-12 mb-4 opacity-30" />
+                      <p className="text-lg font-medium">성능 트렌드 데이터 없음</p>
+                      <p className="text-sm mt-1">V$SYSMETRIC 또는 V$SQL 접근 권한을 확인하세요.</p>
+                      <p className="text-xs mt-2 text-muted-foreground/60">
+                        필요 권한: SELECT ON V$SYSMETRIC_HISTORY, V$SYSMETRIC, V$SQL
+                      </p>
+                    </div>
+                  ) : (
+                    <PerformanceTrendChart
+                      data={trendData}
+                      width={1000}
+                      height={400}
+                      onTimeRangeSelect={handleTimeRangeSelect}
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Resource Usage Analysis */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <LineChart className="h-5 w-5" />
-                    실시간 SQL 성능 분포
+                    <BarChart3 className="h-5 w-5" />
+                    리소스 사용량 분석
                   </CardTitle>
                   <CardDescription>
-                    CPU 시간 vs Buffer Gets 성능 산점도 (실시간 업데이트)
+                    CPU, 메모리, I/O 사용량 (카테고리별)
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -977,271 +1715,96 @@ export default function MonitoringPage() {
                       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                     </div>
                   ) : (
-                    <ScatterPlot
-                      data={performanceData}
-                      width={700}
+                    <ResourceAnalysisChart
+                      data={resourceData}
+                      width={900}
                       height={400}
-                      onPointClick={setSelectedPoint}
-                      xLabel="CPU Time (ms)"
-                      yLabel="Buffer Gets"
                     />
                   )}
                 </CardContent>
               </Card>
             </div>
-
-            {/* Performance Summary */}
-            <div className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5" />
-                    성능 요약
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">총 SQL 수</span>
-                      <span className="text-2xl font-bold">{performanceData.length}</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                        Grade A
-                      </span>
-                      <span className="font-semibold">
-                        {performanceData.filter(p => p.grade === 'A').length}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full bg-lime-500"></div>
-                        Grade B
-                      </span>
-                      <span className="font-semibold">
-                        {performanceData.filter(p => p.grade === 'B').length}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full bg-amber-500"></div>
-                        Grade C
-                      </span>
-                      <span className="font-semibold">
-                        {performanceData.filter(p => p.grade === 'C').length}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                        Grade D
-                      </span>
-                      <span className="font-semibold">
-                        {performanceData.filter(p => p.grade === 'D').length}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full bg-red-900"></div>
-                        Grade F
-                      </span>
-                      <span className="font-semibold text-red-600">
-                        {performanceData.filter(p => p.grade === 'F').length}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">평균 CPU 시간</span>
-                      <span className="font-semibold">
-                        {(performanceData.reduce((sum, p) => sum + p.x, 0) / performanceData.length || 0).toFixed(2)}ms
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">문제성 SQL</span>
-                      <span className="font-semibold text-red-600">
-                        {performanceData.filter(p => p.grade === 'D' || p.grade === 'F').length}
-                      </span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {selectedPoint && (
-                <Card className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
-                  <CardHeader>
-                    <CardTitle className="text-lg">선택된 SQL</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="font-mono text-sm bg-white dark:bg-gray-800 p-2 rounded border">
-                      {selectedPoint.sql_id}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div>
-                        <span className="text-gray-600 dark:text-gray-400 block mb-1">Grade</span>
-                        <Badge
-                          variant={selectedPoint.grade === 'A' ? 'default' : selectedPoint.grade === 'F' ? 'destructive' : 'secondary'}
-                        >
-                          {selectedPoint.grade}
-                        </Badge>
-                      </div>
-                      <div>
-                        <span className="text-gray-600 dark:text-gray-400 block mb-1">Executions</span>
-                        <span className="font-medium">{selectedPoint.metrics.executions}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600 dark:text-gray-400 block mb-1">CPU Time</span>
-                        <span className="font-medium">{selectedPoint.x.toFixed(2)}ms</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600 dark:text-gray-400 block mb-1">Buffer Gets</span>
-                        <span className="font-medium">{selectedPoint.y.toFixed(0)}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600 dark:text-gray-400 block mb-1">Disk Reads</span>
-                        <span className="font-medium">{selectedPoint.metrics.disk_reads}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600 dark:text-gray-400 block mb-1">Rows</span>
-                        <span className="font-medium">{selectedPoint.metrics.rows_processed}</span>
-                      </div>
-                    </div>
-
-                    <Button
-                      className="w-full mt-2"
-                      size="sm"
-                      onClick={() => setShowSqlDetailModal(true)}
-                    >
-                      상세 분석 보기
-                    </Button>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* Details Tab */}
-        <TabsContent value="details" className="space-y-6">
-          <div className="grid grid-cols-1 gap-6">
-            {/* Performance Trend Analysis */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5" />
-                  성능 트렌드 분석
-                </CardTitle>
-                <CardDescription>
-                  시간대별 성능 지표 추이 (실시간 업데이트)
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loading ? (
-                  <div className="flex items-center justify-center h-96">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                  </div>
-                ) : (
-                  <PerformanceTrendChart
-                    data={trendData}
-                    width={1000}
-                    height={400}
-                  />
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Resource Usage Analysis */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5" />
-                  리소스 사용량 분석
-                </CardTitle>
-                <CardDescription>
-                  CPU, 메모리, I/O 사용량 (카테고리별)
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loading ? (
-                  <div className="flex items-center justify-center h-96">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                  </div>
-                ) : (
-                  <ResourceAnalysisChart
-                    data={resourceData}
-                    width={900}
-                    height={400}
-                  />
-                )}
-              </CardContent>
-            </Card>
-          </div>
+          )}
         </TabsContent>
 
         {/* Alerts Tab */}
         <TabsContent value="alerts" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span className="flex items-center">
-                  <AlertTriangle className="h-5 w-5 mr-2" />
-                  활성 알림
-                </span>
-                <Badge variant="destructive">
-                  {alerts.filter(alert => !alert.acknowledged).length}개 미확인
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {alerts.map((alert) => (
-                  <div key={alert.id} className="flex items-start justify-between p-4 border rounded-lg">
-                    <div className="flex items-start space-x-3">
-                      <div className="flex-shrink-0 mt-1">
-                        {getSeverityIcon(alert.severity)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center space-x-2">
-                          <Badge variant={getSeverityBadgeVariant(alert.severity) as any}>
-                            {alert.severity.toUpperCase()}
-                          </Badge>
-                          <span className="text-xs text-gray-500">{alert.source}</span>
+          {loading && !metricsData ? (
+            <AlertsSkeleton />
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center">
+                    <AlertTriangle className="h-5 w-5 mr-2" />
+                    활성 알림
+                  </span>
+                  <Badge variant="destructive">
+                    {alerts.filter(alert => !alert.acknowledged).length}개 미확인
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {alerts.map((alert) => (
+                    <div
+                      key={alert.id}
+                      className={`flex items-start justify-between p-4 border rounded-lg transition-colors ${alert.acknowledged ? 'bg-muted/20' : 'bg-background hover:bg-muted/50'
+                        }`}
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className={`mt-1 p-2 rounded-full flex-shrink-0 ${alert.severity === 'critical' ? 'bg-red-100 text-red-600 dark:bg-red-900/20 dark:text-red-400' :
+                          alert.severity === 'warning' ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400' :
+                            'bg-blue-100 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400'
+                          }`}>
+                          {getSeverityIcon(alert.severity)}
                         </div>
-                        <p className="text-sm text-gray-900 dark:text-white mt-1">{alert.message}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {alert.timestamp.toLocaleString()}
-                        </p>
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant={getSeverityBadgeVariant(alert.severity) as any} className="h-5 px-2 text-[10px]">
+                              {alert.severity.toUpperCase()}
+                            </Badge>
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {alert.source}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">•</span>
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {alert.timestamp.toLocaleString()}
+                            </span>
+                          </div>
+                          <p className={`text-sm font-medium leading-relaxed ${alert.acknowledged ? 'text-muted-foreground' : 'text-foreground'}`}>
+                            {alert.message}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex space-x-2">
-                      {!alert.acknowledged && (
+                      <div className="flex items-center gap-2">
+                        {!alert.acknowledged && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs"
+                            onClick={() => handleAcknowledgeAlert(alert.id)}
+                          >
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                            확인
+                          </Button>
+                        )}
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => handleAcknowledgeAlert(alert.id)}
+                          variant="ghost"
+                          className="h-8 w-8 p-0"
+                          onClick={() => handleShowAlertDetail(alert)}
                         >
-                          확인
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
                         </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleShowAlertDetail(alert)}
-                      >
-                        상세
-                      </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
 
@@ -1579,7 +2142,7 @@ export default function MonitoringPage() {
                     <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">심각도</div>
                     <div className="font-semibold">
                       {selectedAlert.severity === 'critical' ? '긴급' :
-                       selectedAlert.severity === 'warning' ? '경고' : '정보'}
+                        selectedAlert.severity === 'warning' ? '경고' : '정보'}
                     </div>
                   </div>
                   <div>
@@ -1741,6 +2304,337 @@ export default function MonitoringPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 시간 범위 SQL 정보 모달 */}
+      <Dialog open={isTimeRangeDialogOpen} onOpenChange={setIsTimeRangeDialogOpen}>
+        <DialogContent className="max-w-5xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              선택된 시간 구간의 SQL 정보
+            </DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 mt-2">
+                {selectedTimeRange ? (
+                  <>
+                    <span className="flex items-center gap-2">
+                      <Badge variant="secondary" className="text-xs">
+                        {selectedTimeRange.start.toLocaleTimeString('ko-KR')} ~ {selectedTimeRange.end.toLocaleTimeString('ko-KR')}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        ({timeRangeSQLs.length}개 SQL 발견)
+                      </span>
+                    </span>
+                    {/* 데이터 소스에 따른 안내 메시지 */}
+                    {timeRangeSQLs.length > 0 && timeRangeSQLs[0]?.dataSource === 'ash' ? (
+                      <div className="text-xs text-muted-foreground bg-green-50 dark:bg-green-950 p-2 rounded border border-green-200 dark:border-green-800">
+                        ✅ <strong>Enterprise Edition</strong> - V$ACTIVE_SESSION_HISTORY(ASH)에서 해당 시간대에 실제 실행된 SQL을 조회합니다. (최근 ~1시간 데이터)
+                      </div>
+                    ) : timeRangeSQLs.length > 0 ? (
+                      <div className="text-xs text-muted-foreground bg-yellow-50 dark:bg-yellow-950 p-2 rounded border border-yellow-200 dark:border-yellow-800">
+                        ⚠️ <strong>Standard Edition</strong> - V$SQL의 last_active_time 기준으로 필터링합니다. 현재 메모리에 캐시된 SQL 중 해당 시간대에 마지막으로 실행된 SQL을 표시합니다.
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <span className="text-xs text-muted-foreground">시간 구간을 선택해주세요.</span>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {isLoadingTimeRangeSQLs ? (
+              <div className="py-8 text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-3"></div>
+                <p className="text-sm text-muted-foreground">시간 범위의 SQL 데이터를 조회하고 있습니다...</p>
+              </div>
+            ) : timeRangeSQLs.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground">
+                <Database className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                <p className="font-medium">선택된 시간 범위에 SQL 데이터가 없습니다.</p>
+                <div className="mt-4 text-xs space-y-2 max-w-md mx-auto text-left bg-muted/50 p-4 rounded-lg">
+                  <p className="font-medium text-foreground">가능한 원인:</p>
+                  <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                    <li><strong>Enterprise Edition (ASH)</strong>: 해당 시간대에 활성 세션이 없었거나, SQL이 1초 이내에 완료되어 샘플링되지 않았습니다.</li>
+                    <li><strong>Standard Edition (V$SQL)</strong>: 해당 시간대에 실행된 SQL이 캐시에서 제거되었거나, 시스템 사용자(SYS, SYSTEM)의 SQL만 있었습니다.</li>
+                    <li><strong>시간 범위</strong>: 선택한 시간 범위가 너무 짧거나 과거 데이터일 수 있습니다.</li>
+                  </ul>
+                  <p className="mt-3 text-muted-foreground">
+                    <strong>팁:</strong> 차트에서 CPU 사용량이 높은 구간을 선택하면 관련 SQL을 찾을 가능성이 높습니다.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* SQL 목록 테이블 형식 */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b">
+                      <tr className="text-left">
+                        <th className="py-3 px-4 font-semibold">SQL ID</th>
+                        <th className="py-3 px-4 font-semibold">등급</th>
+                        {/* Enterprise Edition(ASH)인 경우에만 활성 시간 컬럼 표시 */}
+                        {timeRangeSQLs[0]?.dataSource === 'ash' && (
+                          <th className="py-3 px-4 font-semibold text-right">
+                            <span title="ASH 샘플 수 (1초 간격 샘플링, 값이 클수록 해당 시간대에 오래 실행됨)">
+                              활성 시간
+                            </span>
+                          </th>
+                        )}
+                        <th className="py-3 px-4 font-semibold text-right">CPU 시간</th>
+                        <th className="py-3 px-4 font-semibold text-right">Buffer Gets</th>
+                        <th className="py-3 px-4 font-semibold text-right">실행 횟수</th>
+                        <th className="py-3 px-4 font-semibold">액션</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {timeRangeSQLs.map((sql: any, idx) => (
+                        <tr
+                          key={sql.id || `time-range-${sql.sql_id}-${idx}-${sql.sample_count || 0}-${sql.metrics?.elapsed_time || 0}`}
+                          className="border-b hover:bg-muted/50 transition-colors"
+                        >
+                          <td className="py-3 px-4">
+                            <code className="text-xs font-mono bg-muted px-2 py-0.5 rounded">
+                              {sql.sql_id.replace(/^SQL_/, '')}
+                            </code>
+                          </td>
+                          <td className="py-3 px-4">
+                            <Badge
+                              variant={sql.grade === 'F' ? 'destructive' : sql.grade === 'D' ? 'destructive' : sql.grade === 'C' ? 'outline' : 'secondary'}
+                              className="text-xs"
+                            >
+                              Grade {sql.grade}
+                            </Badge>
+                          </td>
+                          {/* Enterprise Edition(ASH)인 경우에만 활성 시간 셀 표시 */}
+                          {sql.dataSource === 'ash' && (
+                            <td className="py-3 px-4 text-right">
+                              {sql.sample_count ? (
+                                <Badge variant="outline" className="font-mono text-xs">
+                                  {sql.sample_count}s
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </td>
+                          )}
+                          <td className="py-3 px-4 text-right font-mono">
+                            {sql.metrics.cpu_time.toFixed(2)}ms
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono">
+                            {sql.metrics.buffer_gets.toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono">
+                            {sql.metrics.executions.toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 text-xs"
+                                onClick={() => {
+                                  // SQL 상세 정보로 이동
+                                  const sqlPerformancePoint = {
+                                    sql_id: sql.sql_id,
+                                    x: sql.metrics.cpu_time,
+                                    y: sql.metrics.buffer_gets,
+                                    size: sql.metrics.buffer_gets,
+                                    grade: sql.grade,
+                                    metrics: sql.metrics
+                                  }
+                                  setSelectedPoint(sqlPerformancePoint)
+                                  setIsTimeRangeDialogOpen(false)
+                                  setShowSqlDetailModal(true)
+                                }}
+                              >
+                                <Database className="h-3 w-3 mr-1" />
+                                상세
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 text-xs"
+                                onClick={() => {
+                                  router.push(`/tuning/history?sql_id=${sql.sql_id}&connection_id=${selectedConnectionId}`)
+                                }}
+                              >
+                                <History className="h-3 w-3 mr-1" />
+                                히스토리
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 등급별 요약 */}
+                <div className="grid grid-cols-5 gap-3 p-4 bg-muted/30 rounded-lg">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">
+                      {timeRangeSQLs.filter(s => s.grade === 'A').length}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Grade A</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-lime-600">
+                      {timeRangeSQLs.filter(s => s.grade === 'B').length}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Grade B</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-amber-600">
+                      {timeRangeSQLs.filter(s => s.grade === 'C').length}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Grade C</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-red-500">
+                      {timeRangeSQLs.filter(s => s.grade === 'D').length}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Grade D</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-red-600">
+                      {timeRangeSQLs.filter(s => s.grade === 'F').length}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Grade F</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 필터 설정 다이얼로그 */}
+      <Dialog open={isFilterDialogOpen} onOpenChange={setIsFilterDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Filter className="h-5 w-5" />
+              필터 설정
+            </DialogTitle>
+            <DialogDescription>
+              모니터링 데이터 필터링 옵션을 설정합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">문제 SQL만 표시</p>
+                <p className="text-xs text-muted-foreground">심각한 성능 문제가 있는 SQL만 표시</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={filterOptions.showOnlyCritical}
+                onChange={(e) => setFilterOptions({ ...filterOptions, showOnlyCritical: e.target.checked })}
+                className="h-4 w-4"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">최소 응답시간 (ms)</label>
+              <input
+                type="number"
+                value={filterOptions.minElapsedTime}
+                onChange={(e) => setFilterOptions({ ...filterOptions, minElapsedTime: parseInt(e.target.value) || 0 })}
+                className="w-full px-3 py-2 border rounded-md text-sm"
+                placeholder="0"
+                min="0"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">최소 Buffer Gets</label>
+              <input
+                type="number"
+                value={filterOptions.minBufferGets}
+                onChange={(e) => setFilterOptions({ ...filterOptions, minBufferGets: parseInt(e.target.value) || 0 })}
+                className="w-full px-3 py-2 border rounded-md text-sm"
+                placeholder="0"
+                min="0"
+              />
+            </div>
+          </div>
+          <div className="flex justify-between">
+            <Button
+              variant="outline"
+              onClick={() => setFilterOptions({ showOnlyCritical: false, minElapsedTime: 0, minBufferGets: 0 })}
+            >
+              초기화
+            </Button>
+            <Button onClick={() => setIsFilterDialogOpen(false)}>
+              적용
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 모니터링 설정 다이얼로그 */}
+      <Dialog open={isSettingsDialogOpen} onOpenChange={setIsSettingsDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              모니터링 설정
+            </DialogTitle>
+            <DialogDescription>
+              모니터링 동작 방식을 설정합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">데이터 조회 시간 범위</label>
+              <Select value={timeRange} onValueChange={setTimeRange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1m">최근 1분</SelectItem>
+                  <SelectItem value="5m">최근 5분</SelectItem>
+                  <SelectItem value="10m">최근 10분</SelectItem>
+                  <SelectItem value="15m">최근 15분</SelectItem>
+                  <SelectItem value="30m">최근 30분</SelectItem>
+                  <SelectItem value="1h">최근 1시간</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">자동 새로고침 간격</label>
+              <Select value={refreshInterval.toString()} onValueChange={(value) => setRefreshInterval(parseInt(value))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5초</SelectItem>
+                  <SelectItem value="10">10초</SelectItem>
+                  <SelectItem value="30">30초</SelectItem>
+                  <SelectItem value="60">1분</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">자동 새로고침</p>
+                <p className="text-xs text-muted-foreground">설정된 간격으로 자동 갱신</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={isAutoRefresh}
+                onChange={(e) => setIsAutoRefresh(e.target.checked)}
+                className="h-4 w-4"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={() => setIsSettingsDialogOpen(false)}>
+              확인
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

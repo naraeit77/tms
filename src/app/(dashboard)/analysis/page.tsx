@@ -1,16 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSelectedDatabase } from '@/hooks/use-selected-database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Search,
-  TrendingUp,
   AlertTriangle,
   Database,
   BarChart3,
@@ -21,8 +22,13 @@ import {
   GitCompare,
   Code,
   Layers,
-  RefreshCw
+  RefreshCw,
+  Sparkles
 } from 'lucide-react'
+
+// Clean Architecture Presentation Layer imports
+import { LLMStatusBadge, SmartSearchInput } from '@/presentation/analysis'
+import type { SearchFilters } from '@/domain/llm-analysis'
 
 // Quick action items - 고급 분석 도구로 업데이트
 const quickActions = [
@@ -94,73 +100,147 @@ const advancedToolsDefault = [
 
 export default function SQLAnalysisPage() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const { selectedConnectionId, selectedConnection } = useSelectedDatabase()
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFilter, setSelectedFilter] = useState('all')
-  const [loading, setLoading] = useState(false)
-  const [recentSQLs, setRecentSQLs] = useState<any[]>([])
   const [advancedTools, setAdvancedTools] = useState(advancedToolsDefault)
-  const [stats, setStats] = useState({
-    totalAnalyzed: 0,
-    issuesFound: 0,
-    avgImprovement: 0,
-    activeMonitoring: 0
-  })
 
-  useEffect(() => {
-    if (selectedConnectionId && selectedConnectionId !== 'all') {
-      loadAnalysisData()
-    }
-  }, [selectedConnectionId, selectedFilter])
-
-  const loadAnalysisData = async () => {
-    setLoading(true)
-    try {
+  // SQL 통계 조회 - React Query 사용
+  const { data: sqlStatsData, isLoading: sqlStatsLoading } = useQuery({
+    queryKey: ['analysis-sql-stats', selectedConnectionId, selectedFilter],
+    queryFn: async () => {
       if (!selectedConnectionId || selectedConnectionId === 'all') {
-        setRecentSQLs([])
-        setStats({
-          totalAnalyzed: 0,
-          issuesFound: 0,
-          avgImprovement: 0,
-          activeMonitoring: 0
-        })
-        return
+        return { data: [], total: 0 }
       }
-
-      const params = new URLSearchParams({
+      const res = await fetch(`/api/monitoring/sql-statistics?${new URLSearchParams({
         connection_id: selectedConnectionId,
         limit: '5',
         order_by: selectedFilter === 'critical' ? 'cpu_time_ms' :
                   selectedFilter === 'slow' ? 'elapsed_time_ms' :
                   selectedFilter === 'frequent' ? 'executions' : 'buffer_gets'
-      })
+      })}`)
+      if (!res.ok) throw new Error('Failed to fetch SQL statistics')
+      return res.json()
+    },
+    enabled: !!selectedConnectionId && selectedConnectionId !== 'all',
+    staleTime: 30 * 1000, // 30초간 캐시 유지
+    gcTime: 5 * 60 * 1000, // 5분간 가비지 컬렉션 방지
+  })
 
-      const response = await fetch(`/api/monitoring/sql-statistics?${params}`)
-      const data = await response.json()
-
-      if (data.data) {
-        setRecentSQLs(data.data)
-        setStats({
-          totalAnalyzed: data.total || 0,
-          issuesFound: data.data.filter((sql: any) =>
-            (sql.cpu_time_ms || 0) > 1000 ||
-            (sql.buffer_gets || 0) > 100000
-          ).length,
-          avgImprovement: 42,
-          activeMonitoring: 12
-        })
+  // 패턴 탐지 조회 - React Query 사용
+  const { data: patternData } = useQuery({
+    queryKey: ['analysis-pattern', selectedConnectionId],
+    queryFn: async () => {
+      if (!selectedConnectionId || selectedConnectionId === 'all') {
+        return { success: false, data: [] }
       }
-    } catch (error) {
-      console.error('Failed to load analysis data:', error)
-      setStats({
-        totalAnalyzed: 0,
-        issuesFound: 0,
-        avgImprovement: 42,
-        activeMonitoring: 12
-      })
-    } finally {
-      setLoading(false)
+      const res = await fetch(`/api/analysis/pattern-detection?${new URLSearchParams({
+        connection_id: selectedConnectionId
+      })}`)
+      if (!res.ok) return { success: false, data: [] }
+      return res.json()
+    },
+    enabled: !!selectedConnectionId && selectedConnectionId !== 'all',
+    staleTime: 60 * 1000, // 1분간 캐시 유지
+    retry: false, // 실패 시 재시도 안 함
+  })
+
+  // 실시간 모니터링 조회 - React Query 사용
+  const { data: realtimeData } = useQuery({
+    queryKey: ['analysis-realtime', selectedConnectionId],
+    queryFn: async () => {
+      if (!selectedConnectionId || selectedConnectionId === 'all') {
+        return { success: false, data: [] }
+      }
+      const res = await fetch(`/api/analysis/realtime-monitoring?${new URLSearchParams({
+        connection_id: selectedConnectionId
+      })}`)
+      if (!res.ok) return { success: false, data: [] }
+      return res.json()
+    },
+    enabled: !!selectedConnectionId && selectedConnectionId !== 'all',
+    staleTime: 30 * 1000, // 30초간 캐시 유지
+    refetchInterval: 60 * 1000, // 60초마다 자동 갱신
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+
+  // 리팩토링 제안 조회 - React Query 사용
+  const { data: refactoringData } = useQuery({
+    queryKey: ['analysis-refactoring', selectedConnectionId],
+    queryFn: async () => {
+      if (!selectedConnectionId || selectedConnectionId === 'all') {
+        return { success: false, data: [] }
+      }
+      const res = await fetch(`/api/analysis/refactoring-suggestions?${new URLSearchParams({
+        connection_id: selectedConnectionId
+      })}`)
+      if (!res.ok) return { success: false, data: [] }
+      return res.json()
+    },
+    enabled: !!selectedConnectionId && selectedConnectionId !== 'all',
+    staleTime: 60 * 1000, // 1분간 캐시 유지
+    retry: false,
+  })
+
+  // 데이터 처리 및 통계 계산 - useMemo로 최적화
+  const { recentSQLs, stats, toolStats } = useMemo(() => {
+    const sqls = sqlStatsData?.data || []
+    const totalAnalyzed = sqlStatsData?.total || sqls.length || 0
+    const issuesFound = sqls.filter((sql: any) =>
+      (sql.cpu_time_ms || 0) > 1000 ||
+      (sql.buffer_gets || 0) > 100000 ||
+      sql.status === 'CRITICAL' ||
+      sql.status === 'WARNING'
+    ).length
+
+    const patternCount = patternData?.success && patternData?.data ? patternData.data.length : 0
+    const activeMonitoring = realtimeData?.success && realtimeData?.data ? realtimeData.data.length : 0
+    
+    let avgImprovement = 0
+    let refactoringCount = 0
+    if (refactoringData?.success && refactoringData?.data && refactoringData.data.length > 0) {
+      refactoringCount = refactoringData.data.length
+      const improvements = refactoringData.data.map((s: any) => s.performance_gain || 0)
+      avgImprovement = Math.round(
+        improvements.reduce((sum: number, val: number) => sum + val, 0) / improvements.length
+      )
     }
+
+    return {
+      recentSQLs: sqls,
+      stats: {
+        totalAnalyzed,
+        issuesFound: Math.max(issuesFound, patternCount),
+        avgImprovement,
+        activeMonitoring
+      },
+      toolStats: {
+        'pattern-detection': {
+          count: patternCount,
+          status: selectedConnectionId && selectedConnectionId !== 'all' ? 'active' : 'inactive' as 'active' | 'inactive'
+        },
+        'sql-refactoring': {
+          count: refactoringCount,
+          status: selectedConnectionId && selectedConnectionId !== 'all' ? 'active' : 'inactive' as 'active' | 'inactive'
+        },
+        'realtime-monitoring': {
+          count: activeMonitoring,
+          status: selectedConnectionId && selectedConnectionId !== 'all' && realtimeData?.success ? 'active' : 'inactive' as 'active' | 'inactive'
+        }
+      }
+    }
+  }, [sqlStatsData, patternData, realtimeData, refactoringData, selectedConnectionId])
+
+  const loading = sqlStatsLoading
+
+  // 수동 새로고침 핸들러
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['analysis-sql-stats'] })
+    queryClient.invalidateQueries({ queryKey: ['analysis-pattern'] })
+    queryClient.invalidateQueries({ queryKey: ['analysis-realtime'] })
+    queryClient.invalidateQueries({ queryKey: ['analysis-refactoring'] })
   }
 
   const handleQuickSearch = () => {
@@ -168,6 +248,32 @@ export default function SQLAnalysisPage() {
       router.push(`/analysis/search?q=${encodeURIComponent(searchQuery)}`)
     }
   }
+
+  // AI Smart Search handlers - Clean Architecture integration
+  const handleSmartSearch = useCallback((filters: SearchFilters) => {
+    // Build query params from AI-interpreted filters
+    const params = new URLSearchParams()
+
+    if (filters.sqlPattern) params.set('pattern', filters.sqlPattern)
+    if (filters.schema) params.set('schema', filters.schema)
+    if (filters.minElapsedTime) params.set('min_elapsed', filters.minElapsedTime.toString())
+    if (filters.maxElapsedTime) params.set('max_elapsed', filters.maxElapsedTime.toString())
+    if (filters.minBufferGets) params.set('min_buffer', filters.minBufferGets.toString())
+    if (filters.maxBufferGets) params.set('max_buffer', filters.maxBufferGets.toString())
+    if (filters.timeRange) params.set('time_range', filters.timeRange)
+    if (filters.sortBy) params.set('order_by', filters.sortBy)
+    if (filters.sortOrder) params.set('order', filters.sortOrder)
+    if (filters.limit) params.set('limit', filters.limit.toString())
+    params.set('ai_search', 'true')
+
+    router.push(`/analysis/search?${params.toString()}`)
+  }, [router])
+
+  const handleTextSearch = useCallback((text: string) => {
+    if (text) {
+      router.push(`/analysis/search?q=${encodeURIComponent(text)}`)
+    }
+  }, [router])
 
   const toggleAdvancedTool = (toolId: string) => {
     setAdvancedTools(prevTools =>
@@ -203,15 +309,18 @@ export default function SQLAnalysisPage() {
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            고급 SQL 분석 도구
-          </h1>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+              고급 SQL 분석 도구
+            </h1>
+            <LLMStatusBadge showModel />
+          </div>
           <p className="text-gray-500 dark:text-gray-400">
             AI 기반 성능 분석과 최적화 제안으로 SQL 성능을 극대화하세요
           </p>
         </div>
         <Button
-          onClick={() => loadAnalysisData()}
+          onClick={handleRefresh}
           variant="outline"
           disabled={loading}
         >
@@ -221,7 +330,7 @@ export default function SQLAnalysisPage() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -274,41 +383,95 @@ export default function SQLAnalysisPage() {
             </div>
           </CardContent>
         </Card>
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">평균 개선율</p>
+                {loading ? (
+                  <div className="h-8 w-16 bg-gray-200 animate-pulse rounded" />
+                ) : (
+                  <p className="text-2xl font-bold text-blue-600">{stats.avgImprovement}%</p>
+                )}
+              </div>
+              <GitCompare className="h-8 w-8 text-blue-500" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">실시간 모니터링</p>
+                {loading ? (
+                  <div className="h-8 w-16 bg-gray-200 animate-pulse rounded" />
+                ) : (
+                  <p className="text-2xl font-bold text-purple-600">{stats.activeMonitoring}</p>
+                )}
+              </div>
+              <Activity className="h-8 w-8 text-purple-500" />
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Quick Search Bar */}
+      {/* Quick Search Bar with AI Smart Search */}
       <Card>
         <CardContent className="p-6">
-          <div className="flex space-x-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <Input
-                  placeholder="SQL ID, 텍스트, 스키마로 검색... (예: SELECT * FROM users)"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleQuickSearch()}
-                  className="pl-10"
-                />
+          <Tabs defaultValue="smart" className="w-full">
+            <TabsList className="mb-4">
+              <TabsTrigger value="smart" className="gap-2">
+                <Sparkles className="h-4 w-4" />
+                AI 스마트 검색
+              </TabsTrigger>
+              <TabsTrigger value="basic" className="gap-2">
+                <Search className="h-4 w-4" />
+                기본 검색
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="smart" className="space-y-4">
+              <SmartSearchInput
+                onSearch={handleSmartSearch}
+                onTextSearch={handleTextSearch}
+                placeholder="자연어로 검색 (예: '지난 주 느린 쿼리', 'CPU 사용량 높은 SELECT문')"
+                language="ko"
+              />
+            </TabsContent>
+
+            <TabsContent value="basic">
+              <div className="flex space-x-4">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <Input
+                      placeholder="SQL ID, 텍스트, 스키마로 검색... (예: SELECT * FROM users)"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleQuickSearch()}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+                <Select value={selectedFilter} onValueChange={setSelectedFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="필터 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">모든 SQL</SelectItem>
+                    <SelectItem value="critical">심각한 이슈</SelectItem>
+                    <SelectItem value="slow">느린 쿼리</SelectItem>
+                    <SelectItem value="frequent">자주 실행</SelectItem>
+                    <SelectItem value="recent">최근 실행</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button onClick={handleQuickSearch}>
+                  <Search className="h-4 w-4 mr-2" />
+                  검색
+                </Button>
               </div>
-            </div>
-            <Select value={selectedFilter} onValueChange={setSelectedFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="필터 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">모든 SQL</SelectItem>
-                <SelectItem value="critical">심각한 이슈</SelectItem>
-                <SelectItem value="slow">느린 쿼리</SelectItem>
-                <SelectItem value="frequent">자주 실행</SelectItem>
-                <SelectItem value="recent">최근 실행</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button onClick={handleQuickSearch}>
-              <Search className="h-4 w-4 mr-2" />
-              검색
-            </Button>
-          </div>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
@@ -317,12 +480,21 @@ export default function SQLAnalysisPage() {
         {quickActions.map((action) => (
           <Card
             key={action.href}
-            className="hover:shadow-lg transition-all cursor-pointer border-2 hover:border-blue-500"
+            className={`hover:shadow-lg transition-all cursor-pointer border-2 hover:border-blue-500 ${
+              'isNew' in action && action.isNew ? 'ring-2 ring-purple-400 ring-offset-2' : ''
+            }`}
             onClick={() => router.push(action.href)}
           >
             <CardContent className="p-6">
-              <div className={`inline-flex p-3 rounded-lg ${action.color} text-white mb-4`}>
-                <action.icon className="h-6 w-6" />
+              <div className="flex items-start justify-between mb-4">
+                <div className={`inline-flex p-3 rounded-lg ${action.color} text-white`}>
+                  <action.icon className="h-6 w-6" />
+                </div>
+                {'isNew' in action && action.isNew && (
+                  <Badge className="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs">
+                    NEW
+                  </Badge>
+                )}
               </div>
               <h3 className="font-semibold text-lg mb-2">{action.title}</h3>
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
@@ -330,7 +502,7 @@ export default function SQLAnalysisPage() {
               </p>
               <div className="space-y-1">
                 {action.features.map((feature, idx) => (
-                  <div key={idx} className="flex items-center text-xs text-gray-500">
+                  <div key={`action-feature-${action.title || ''}-${feature.substring(0, 20)}-${idx}`} className="flex items-center text-xs text-gray-500">
                     <div className="w-1 h-1 bg-gray-400 rounded-full mr-2" />
                     {feature}
                   </div>
@@ -422,93 +594,122 @@ export default function SQLAnalysisPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {advancedTools.map((tool) => (
-              <Card
-                key={tool.id}
-                className={`border-2 cursor-pointer transition-all duration-200 hover:shadow-lg ${
-                  tool.status === 'active'
-                    ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/20'
-                    : 'border-gray-300 bg-gray-50/50 dark:bg-gray-800/50 opacity-75'
-                }`}
-                onClick={() => {
-                  if (tool.id === 'pattern-detection') {
-                    router.push('/analysis/pattern-detection')
-                  } else if (tool.id === 'refactoring-assistant') {
-                    router.push('/analysis/refactoring-assistant')
-                  } else if (tool.id === 'realtime-monitoring') {
-                    router.push('/analysis/realtime-monitoring')
-                  } else {
-                    toggleAdvancedTool(tool.id)
-                  }
-                }}
-              >
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <tool.icon
-                      className={`h-8 w-8 transition-colors ${
-                        tool.status === 'active'
-                          ? 'text-blue-600'
-                          : 'text-gray-400'
-                      }`}
-                    />
-                    <Badge
-                      variant={tool.status === 'active' ? 'default' : 'secondary'}
-                      className={`text-xs cursor-pointer hover:scale-105 transition-transform ${
-                        tool.status === 'active'
-                          ? 'bg-green-600 hover:bg-green-700'
-                          : 'bg-gray-400 hover:bg-gray-500'
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        toggleAdvancedTool(tool.id)
-                      }}
-                    >
-                      {tool.status === 'active' ? '활성' : '비활성'}
-                    </Badge>
-                  </div>
-                  <h3 className={`font-semibold mb-2 transition-colors ${
-                    tool.status === 'active'
-                      ? 'text-gray-900 dark:text-white'
-                      : 'text-gray-500 dark:text-gray-400'
-                  }`}>
-                    {tool.title}
-                  </h3>
-                  <p className={`text-sm mb-4 transition-colors ${
-                    tool.status === 'active'
-                      ? 'text-gray-600 dark:text-gray-300'
-                      : 'text-gray-400 dark:text-gray-500'
-                  }`}>
-                    {tool.description}
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {tool.features.map((feature, idx) => (
-                      <div key={idx} className={`flex items-center text-xs transition-colors ${
-                        tool.status === 'active'
-                          ? 'text-gray-600 dark:text-gray-300'
-                          : 'text-gray-400 dark:text-gray-500'
-                      }`}>
-                        <div className={`w-1 h-1 rounded-full mr-1 transition-colors ${
-                          tool.status === 'active'
-                            ? 'bg-blue-500'
-                            : 'bg-gray-400'
-                        }`} />
-                        {feature}
+            {advancedTools.map((tool) => {
+              const toolStat = toolStats[tool.id as keyof typeof toolStats]
+              const isActive = toolStat?.status === 'active' && selectedConnectionId && selectedConnectionId !== 'all'
+              const count = toolStat?.count || 0
+
+              return (
+                <Card
+                  key={tool.id}
+                  className={`border-2 cursor-pointer transition-all duration-200 hover:shadow-lg ${
+                    isActive
+                      ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/20'
+                      : 'border-gray-300 bg-gray-50/50 dark:bg-gray-800/50 opacity-75'
+                  }`}
+                  onClick={() => {
+                    if (tool.id === 'pattern-detection') {
+                      router.push('/analysis/pattern-detection')
+                    } else if (tool.id === 'sql-refactoring') {
+                      router.push('/analysis/sql-refactoring')
+                    } else if (tool.id === 'realtime-monitoring') {
+                      router.push('/analysis/realtime-monitoring')
+                    } else {
+                      toggleAdvancedTool(tool.id)
+                    }
+                  }}
+                >
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <tool.icon
+                        className={`h-8 w-8 transition-colors ${
+                          isActive
+                            ? 'text-blue-600'
+                            : 'text-gray-400'
+                        }`}
+                      />
+                      <div className="flex items-center space-x-2">
+                        {isActive && count > 0 && (
+                          <Badge variant="outline" className="text-xs">
+                            {count}건
+                          </Badge>
+                        )}
+                        <Badge
+                          variant={isActive ? 'default' : 'secondary'}
+                          className={`text-xs cursor-pointer hover:scale-105 transition-transform ${
+                            isActive
+                              ? 'bg-green-600 hover:bg-green-700'
+                              : 'bg-gray-400 hover:bg-gray-500'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // 활성 버튼 클릭 시 해당 기능 페이지로 이동
+                            if (tool.id === 'pattern-detection') {
+                              router.push('/analysis/pattern-detection')
+                            } else if (tool.id === 'sql-refactoring') {
+                              router.push('/analysis/sql-refactoring')
+                            } else if (tool.id === 'realtime-monitoring') {
+                              router.push('/analysis/realtime-monitoring')
+                            }
+                          }}
+                        >
+                          {isActive ? '활성' : '비활성'}
+                        </Badge>
                       </div>
-                    ))}
-                  </div>
-                  {tool.status === 'active' && (
-                    <div className="mt-4 text-xs text-blue-600 dark:text-blue-400 font-medium animate-pulse">
-                      ● 실행 중
                     </div>
-                  )}
-                  {tool.status === 'inactive' && (
-                    <div className="mt-4 text-xs text-gray-400 font-medium">
-                      클릭하여 활성화
+                    <h3 className={`font-semibold mb-2 transition-colors ${
+                      isActive
+                        ? 'text-gray-900 dark:text-white'
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      {tool.title}
+                    </h3>
+                    <p className={`text-sm mb-4 transition-colors ${
+                      isActive
+                        ? 'text-gray-600 dark:text-gray-300'
+                        : 'text-gray-400 dark:text-gray-500'
+                    }`}>
+                      {tool.description}
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {tool.features.map((feature, idx) => (
+                        <div key={`tool-feature-${tool.id || ''}-${feature.substring(0, 20)}-${idx}`} className={`flex items-center text-xs transition-colors ${
+                          isActive
+                            ? 'text-gray-600 dark:text-gray-300'
+                            : 'text-gray-400 dark:text-gray-500'
+                        }`}>
+                          <div className={`w-1 h-1 rounded-full mr-1 transition-colors ${
+                            isActive
+                              ? 'bg-blue-500'
+                              : 'bg-gray-400'
+                          }`} />
+                          {feature}
+                        </div>
+                      ))}
                     </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
+                    {isActive && (
+                      <div className="mt-4 flex items-center justify-between">
+                        <div className="text-xs text-blue-600 dark:text-blue-400 font-medium animate-pulse">
+                          ● 실행 중
+                        </div>
+                        {selectedConnection && (
+                          <div className="text-xs text-gray-500">
+                            {selectedConnection.name}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {!isActive && (
+                      <div className="mt-4 text-xs text-gray-400 font-medium">
+                        {selectedConnectionId && selectedConnectionId !== 'all' 
+                          ? '데이터 로딩 중...' 
+                          : '데이터베이스를 선택해주세요'}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
         </CardContent>
       </Card>

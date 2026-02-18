@@ -1,7 +1,7 @@
 'use client'
 
-import { use } from 'react'
-import { useRouter } from 'next/navigation'
+import { use, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { useSelectedDatabase } from '@/hooks/use-selected-database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -33,7 +33,9 @@ export default function SQLDetailPage({ params }: SQLDetailPageProps) {
 
 function SQLDetailContent({ sqlId }: { sqlId: string }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { selectedConnectionId } = useSelectedDatabase()
+  const defaultTab = searchParams.get('tab') || 'overview'
 
   // SQL 상세 정보 조회
   const {
@@ -74,7 +76,7 @@ function SQLDetailContent({ sqlId }: { sqlId: string }) {
   const executionPlan = sqlDetail?.execution_plan
   // const bindVariables = sqlDetail?.bind_variables // 향후 사용 예정
 
-  // 성능 히스토리 데이터 조회
+  // 성능 히스토리 데이터 조회 - sql-history API 사용
   const { data: historyData, isLoading: isLoadingHistory } = useQuery({
     queryKey: ['sql-history', selectedConnectionId, sqlId],
     queryFn: async () => {
@@ -90,6 +92,29 @@ function SQLDetailContent({ sqlId }: { sqlId: string }) {
       const res = await fetch(`/api/monitoring/sql-history?${params}`)
       if (!res.ok) {
         console.error('Failed to fetch SQL history')
+        // 폴백: sql-detail API에서 performance_history 가져오기
+        const detailRes = await fetch(`/api/monitoring/sql-detail?${params}`)
+        if (detailRes.ok) {
+          const detailData = await detailRes.json()
+          const history = detailData.data?.performance_history || []
+          return history.map((item: any) => ({
+            timestamp: item.collected_at ? new Date(item.collected_at).toLocaleString('ko-KR', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false
+            }).replace(/,/g, '') : item.collection_date + ' ' + (item.collection_hour || '00:00:00'),
+            executions: item.executions || 0,
+            avg_elapsed_ms: item.elapsed_time_ms || 0,
+            avg_cpu_ms: item.cpu_time_ms || 0,
+            buffer_gets: item.buffer_gets || 0,
+            disk_reads: item.disk_reads || 0,
+            rows_processed: item.rows_processed || 0,
+          }))
+        }
         return []
       }
 
@@ -225,7 +250,7 @@ function SQLDetailContent({ sqlId }: { sqlId: string }) {
       </div>
 
       {/* Main Content Tabs */}
-      <Tabs defaultValue="overview" className="w-full">
+      <Tabs defaultValue={defaultTab} className="w-full">
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview">개요</TabsTrigger>
           <TabsTrigger value="sql-text">SQL 텍스트</TabsTrigger>
@@ -456,7 +481,7 @@ function SQLDetailContent({ sqlId }: { sqlId: string }) {
             <CardHeader>
               <CardTitle>성능 히스토리</CardTitle>
               <CardDescription>
-                최근 7일간의 성능 변화 추이 ({historyData?.length || 0}개 스냅샷)
+                최근 7일간의 성능 변화 추이 ({historyData?.length || 0}개 스냅샷) (Performance trend over the last 7 days ({historyData?.length || 0} snapshots))
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -471,72 +496,80 @@ function SQLDetailContent({ sqlId }: { sqlId: string }) {
                 <div className="space-y-6">
                   {/* Summary Stats */}
                   <div className="grid grid-cols-4 gap-4">
-                    <div className="p-4 border rounded-lg bg-blue-50 dark:bg-blue-900/10">
-                      <p className="text-xs text-gray-500 mb-1">평균 실행 시간</p>
-                      <p className="text-lg font-bold">
-                        {(historyData.reduce((acc: number, item: any) => acc + item.avg_elapsed_ms, 0) / historyData.length).toFixed(2)}ms
-                      </p>
-                    </div>
-                    <div className="p-4 border rounded-lg bg-orange-50 dark:bg-orange-900/10">
-                      <p className="text-xs text-gray-500 mb-1">평균 CPU 시간</p>
-                      <p className="text-lg font-bold">
-                        {(historyData.reduce((acc: number, item: any) => acc + item.avg_cpu_ms, 0) / historyData.length).toFixed(2)}ms
-                      </p>
-                    </div>
-                    <div className="p-4 border rounded-lg bg-green-50 dark:bg-green-900/10">
-                      <p className="text-xs text-gray-500 mb-1">총 실행 횟수</p>
-                      <p className="text-lg font-bold">
-                        {historyData.reduce((acc: number, item: any) => acc + item.executions, 0).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="p-4 border rounded-lg bg-purple-50 dark:bg-purple-900/10">
-                      <p className="text-xs text-gray-500 mb-1">총 처리 행</p>
-                      <p className="text-lg font-bold">
-                        {historyData.reduce((acc: number, item: any) => acc + item.rows_processed, 0).toLocaleString()}
-                      </p>
-                    </div>
+                    <Card>
+                      <CardContent className="p-4">
+                        <p className="text-xs text-gray-500 mb-1">평균 실행 시간 (Average Elapsed Time)</p>
+                        <p className="text-lg font-bold">
+                          {historyData.length > 0 
+                            ? (historyData.reduce((acc: number, item: any) => acc + (item.avg_elapsed_ms || 0), 0) / historyData.length).toFixed(2)
+                            : '0.00'}ms
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="p-4">
+                        <p className="text-xs text-gray-500 mb-1">평균 CPU 시간 (Average CPU Time)</p>
+                        <p className="text-lg font-bold">
+                          {historyData.length > 0
+                            ? (historyData.reduce((acc: number, item: any) => acc + (item.avg_cpu_ms || 0), 0) / historyData.length).toFixed(2)
+                            : '0.00'}ms
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="p-4">
+                        <p className="text-xs text-gray-500 mb-1">총 실행 횟수 (Total Executions)</p>
+                        <p className="text-lg font-bold">
+                          {historyData.reduce((acc: number, item: any) => acc + (item.executions || 0), 0).toLocaleString()}
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="p-4">
+                        <p className="text-xs text-gray-500 mb-1">총 처리 행 (Total Rows Processed)</p>
+                        <p className="text-lg font-bold">
+                          {historyData.reduce((acc: number, item: any) => acc + (item.rows_processed || 0), 0).toLocaleString()}
+                        </p>
+                      </CardContent>
+                    </Card>
                   </div>
 
                   {/* History Table */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm border-collapse">
+                  <div className="overflow-x-auto border rounded-lg">
+                    <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b bg-gray-50 dark:bg-gray-800">
-                          <th className="text-left p-3 font-semibold">스냅샷 시간</th>
-                          <th className="text-right p-3 font-semibold">실행 횟수</th>
-                          <th className="text-right p-3 font-semibold">평균 실행 시간</th>
-                          <th className="text-right p-3 font-semibold">평균 CPU 시간</th>
+                          <th className="text-left p-3 font-semibold">스냅샷 시간 (Snapshot Time)</th>
+                          <th className="text-right p-3 font-semibold">실행 횟수 (Execution Count)</th>
+                          <th className="text-right p-3 font-semibold">평균 실행 시간 (Average Elapsed Time)</th>
+                          <th className="text-right p-3 font-semibold">평균 CPU 시간 (Average CPU Time)</th>
                           <th className="text-right p-3 font-semibold">Buffer Gets</th>
                           <th className="text-right p-3 font-semibold">Disk Reads</th>
-                          <th className="text-right p-3 font-semibold">처리 행</th>
+                          <th className="text-right p-3 font-semibold">처리 행 (Rows Processed)</th>
                         </tr>
                       </thead>
                       <tbody>
                         {historyData.map((item: any, index: number) => (
-                          <tr key={index} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                            <td className="p-3 font-mono text-xs">{item.timestamp}</td>
-                            <td className="text-right p-3">{item.executions.toLocaleString()}</td>
+                          <tr key={`history-${item.timestamp || index}-${item.executions || 0}-${item.avg_elapsed_ms || 0}`} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                            <td className="p-3 font-mono text-xs">{item.timestamp || '-'}</td>
+                            <td className="text-right p-3">{item.executions?.toLocaleString() || '0'}</td>
                             <td className="text-right p-3">
                               <span className={`font-semibold ${
-                                item.avg_elapsed_ms > 1000 ? 'text-red-600' :
-                                item.avg_elapsed_ms > 500 ? 'text-orange-600' :
-                                'text-green-600'
+                                (item.avg_elapsed_ms || 0) > 1000 ? 'text-orange-600' : 'text-gray-900 dark:text-gray-100'
                               }`}>
-                                {item.avg_elapsed_ms.toFixed(2)}ms
+                                {(item.avg_elapsed_ms || 0).toFixed(2)}ms
                               </span>
                             </td>
                             <td className="text-right p-3">
                               <span className={`font-semibold ${
-                                item.avg_cpu_ms > 1000 ? 'text-red-600' :
-                                item.avg_cpu_ms > 500 ? 'text-orange-600' :
-                                'text-green-600'
+                                (item.avg_cpu_ms || 0) > 1000 ? 'text-orange-600' : 'text-gray-900 dark:text-gray-100'
                               }`}>
-                                {item.avg_cpu_ms.toFixed(2)}ms
+                                {(item.avg_cpu_ms || 0).toFixed(2)}ms
                               </span>
                             </td>
-                            <td className="text-right p-3">{item.buffer_gets.toLocaleString()}</td>
-                            <td className="text-right p-3">{item.disk_reads.toLocaleString()}</td>
-                            <td className="text-right p-3">{item.rows_processed.toLocaleString()}</td>
+                            <td className="text-right p-3">{(item.buffer_gets || 0).toLocaleString()}</td>
+                            <td className="text-right p-3">{(item.disk_reads || 0).toLocaleString()}</td>
+                            <td className="text-right p-3">{(item.rows_processed || 0).toLocaleString()}</td>
                           </tr>
                         ))}
                       </tbody>

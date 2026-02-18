@@ -6,32 +6,36 @@ import 'server-only';
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { db } from '@/db';
+import { oracleConnections } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+import { getOracleConfig } from '@/lib/oracle/utils';
+import { executeQuery } from '@/lib/oracle/client';
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    // 현재 사용자 확인
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    // 현재 사용자 확인 (Next-Auth 세션 사용)
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Oracle 연결 정보 조회
-    const { data: connections } = await supabase
-      .from('oracle_connections')
-      .select('id, is_active, health_status')
-      .eq('is_active', true);
+    const connections = await db
+      .select({
+        id: oracleConnections.id,
+        isActive: oracleConnections.isActive,
+        healthStatus: oracleConnections.healthStatus,
+      })
+      .from(oracleConnections)
+      .where(eq(oracleConnections.isActive, true));
 
     const activeConnections = connections || [];
-    const healthyConnections = activeConnections.filter((c) => c.health_status === 'HEALTHY');
+    const healthyConnections = activeConnections.filter((c) => c.healthStatus === 'HEALTHY');
 
-    // SQL 분석 통계 (Mock data - 실제로는 여러 소스에서 집계)
-    // 추후 v$sql 뷰에서 직접 쿼리하거나 Supabase에 저장된 데이터 활용
+    // SQL 분석 통계 - 실제 Oracle 데이터에서 수집
     const stats = {
       totalQueries: 0,
       slowQueries: 0,
@@ -41,23 +45,41 @@ export async function GET(request: NextRequest) {
       healthyConnections: healthyConnections.length,
     };
 
-    // 각 활성 연결에서 데이터 수집 시도 (간단한 집계)
+    // 각 활성 연결에서 실제 데이터 수집
     for (const conn of healthyConnections) {
       try {
-        // 실제 환경에서는 Oracle에서 직접 쿼리
-        // 여기서는 간단하게 Mock 데이터 사용
-        stats.totalQueries += 150; // Mock
-        stats.slowQueries += 45; // Mock
-        stats.criticalIssues += 12; // Mock
-        stats.avgResponseTime += 250; // Mock
+        const config = await getOracleConfig(conn.id);
+
+        // V$SQL에서 SQL 통계 조회
+        const sqlStatsQuery = `
+          SELECT
+            COUNT(DISTINCT sql_id) as total_queries,
+            COUNT(DISTINCT CASE WHEN elapsed_time/NULLIF(executions,0)/1000 > 1000 THEN sql_id END) as slow_queries,
+            COUNT(DISTINCT CASE WHEN elapsed_time/NULLIF(executions,0)/1000 > 5000 THEN sql_id END) as critical_issues,
+            ROUND(AVG(elapsed_time/NULLIF(executions,0)/1000), 2) as avg_response_time_ms
+          FROM v$sql
+          WHERE executions > 0
+            AND last_active_time > SYSDATE - 1
+        `;
+
+        const result = await executeQuery(config, sqlStatsQuery);
+
+        if (result.rows && result.rows.length > 0) {
+          const row = result.rows[0];
+          stats.totalQueries += Number(row.TOTAL_QUERIES) || 0;
+          stats.slowQueries += Number(row.SLOW_QUERIES) || 0;
+          stats.criticalIssues += Number(row.CRITICAL_ISSUES) || 0;
+          stats.avgResponseTime += Number(row.AVG_RESPONSE_TIME_MS) || 0;
+        }
       } catch (error) {
         console.error(`Failed to collect stats from connection ${conn.id}:`, error);
+        // 연결 실패 시 해당 연결은 건너뛰고 계속 진행
       }
     }
 
-    // 평균 계산
-    if (healthyConnections.length > 0) {
-      stats.avgResponseTime = Math.floor(stats.avgResponseTime / healthyConnections.length);
+    // 평균 계산 (여러 연결에서 수집한 경우)
+    if (healthyConnections.length > 0 && stats.avgResponseTime > 0) {
+      stats.avgResponseTime = Math.round(stats.avgResponseTime / healthyConnections.length);
     }
 
     return NextResponse.json(stats);

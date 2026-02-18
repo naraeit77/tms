@@ -30,6 +30,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'SID is required' }, { status: 400 });
     }
 
+    // privilege 값 정규화 (NORMAL이면 저장하지 않음)
+    const privilege = body.privilege === 'NORMAL' ? undefined : body.privilege;
+
     // 연결 테스트
     const testConfig: OracleConnectionConfig = {
       id: '',
@@ -41,11 +44,13 @@ export async function POST(request: NextRequest) {
       username: body.username,
       password: body.password,
       connectionType: body.connection_type,
+      privilege: privilege,
     };
 
     const healthCheckResult = await healthCheck(testConfig);
 
     if (!healthCheckResult.isHealthy) {
+      console.error('[Connection Test] Failed:', healthCheckResult.error);
       return NextResponse.json(
         {
           error: 'Connection test failed',

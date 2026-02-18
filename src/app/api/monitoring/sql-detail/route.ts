@@ -5,6 +5,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getOracleConfig } from '@/lib/oracle/utils';
 import { executeQuery } from '@/lib/oracle/client';
+import { db } from '@/db';
+import { sqlPerformanceHistory } from '@/db/schema';
+import { eq, and, gte, desc } from 'drizzle-orm';
 import oracledb from 'oracledb';
 
 /**
@@ -34,50 +37,19 @@ export async function GET(request: NextRequest) {
     // Oracle 연결 설정 가져오기
     const config = await getOracleConfig(connectionId);
 
-    // 1. SQL 기본 정보 조회 - v$sql에서 먼저 시도
-    let sqlInfoQuery = `
-      SELECT
-        sql_id,
-        sql_fulltext,
-        sql_text,
-        executions,
-        elapsed_time / 1000 as elapsed_time_ms,
-        cpu_time / 1000 as cpu_time_ms,
-        buffer_gets,
-        disk_reads,
-        rows_processed,
-        parsing_schema_name,
-        module,
-        last_active_time,
-        first_load_time,
-        optimizer_mode,
-        optimizer_cost,
-        elapsed_time / DECODE(executions, 0, 1, executions) / 1000 as avg_elapsed_ms,
-        cpu_time / DECODE(executions, 0, 1, executions) / 1000 as avg_cpu_ms,
-        buffer_gets / DECODE(executions, 0, 1, executions) as avg_buffer_gets,
-        disk_reads / DECODE(executions, 0, 1, executions) as avg_disk_reads,
-        rows_processed / DECODE(executions, 0, 1, executions) as avg_rows_processed,
-        parse_calls,
-        direct_writes
-      FROM
-        v$sql
-      WHERE
-        sql_id = :sql_id
-      FETCH FIRST 1 ROWS ONLY
-    `;
+    // SQL_ID 형식 검증 (SQL Injection 방지 - 13자의 영숫자만 허용)
+    const normalizedSqlId = sqlId.toLowerCase().trim();
+    if (!/^[a-z0-9]{13}$/.test(normalizedSqlId)) {
+      return NextResponse.json(
+        { error: 'Invalid SQL_ID format. Must be 13 alphanumeric characters.' },
+        { status: 400 }
+      );
+    }
 
-    let sqlInfoResult = await executeQuery(config, sqlInfoQuery, [sqlId], {
-      fetchInfo: {
-        SQL_FULLTEXT: { type: oracledb.STRING },
-        SQL_TEXT: { type: oracledb.STRING },
-      },
-    });
-
-    // v$sql에서 찾을 수 없으면 v$sqlarea 시도
-    if (!sqlInfoResult.rows || sqlInfoResult.rows.length === 0) {
-      console.log('[SQL Detail API] SQL not found in v$sql, trying v$sqlarea');
-
-      sqlInfoQuery = `
+    // 1. SQL 기본 정보 조회 - UNION ALL로 v$sql, v$sqlarea, dba_hist_sqltext를 한 번에 조회
+    // 직렬 쿼리 최적화: 3번의 라운드트립 → 1번으로 감소
+    const sqlInfoQuery = `
+      SELECT * FROM (
         SELECT
           sql_id,
           sql_fulltext,
@@ -100,27 +72,54 @@ export async function GET(request: NextRequest) {
           disk_reads / DECODE(executions, 0, 1, executions) as avg_disk_reads,
           rows_processed / DECODE(executions, 0, 1, executions) as avg_rows_processed,
           parse_calls,
-          0 as direct_writes
-        FROM
-          v$sqlarea
-        WHERE
-          sql_id = :sql_id
-        FETCH FIRST 1 ROWS ONLY
-      `;
+          direct_writes,
+          1 as source_priority
+        FROM v$sql
+        WHERE sql_id = :sql_id AND ROWNUM = 1
+        UNION ALL
+        SELECT
+          sql_id,
+          sql_fulltext,
+          sql_text,
+          executions,
+          elapsed_time / 1000 as elapsed_time_ms,
+          cpu_time / 1000 as cpu_time_ms,
+          buffer_gets,
+          disk_reads,
+          rows_processed,
+          parsing_schema_name,
+          module,
+          last_active_time,
+          first_load_time,
+          optimizer_mode,
+          optimizer_cost,
+          elapsed_time / DECODE(executions, 0, 1, executions) / 1000 as avg_elapsed_ms,
+          cpu_time / DECODE(executions, 0, 1, executions) / 1000 as avg_cpu_ms,
+          buffer_gets / DECODE(executions, 0, 1, executions) as avg_buffer_gets,
+          disk_reads / DECODE(executions, 0, 1, executions) as avg_disk_reads,
+          rows_processed / DECODE(executions, 0, 1, executions) as avg_rows_processed,
+          parse_calls,
+          0 as direct_writes,
+          2 as source_priority
+        FROM v$sqlarea
+        WHERE sql_id = :sql_id AND ROWNUM = 1
+      )
+      WHERE ROWNUM = 1
+      ORDER BY source_priority
+    `;
 
-      sqlInfoResult = await executeQuery(config, sqlInfoQuery, [sqlId], {
-        fetchInfo: {
-          SQL_FULLTEXT: { type: oracledb.STRING },
-          SQL_TEXT: { type: oracledb.STRING },
-        },
-      });
-    }
+    let sqlInfoResult = await executeQuery(config, sqlInfoQuery, [normalizedSqlId, normalizedSqlId], {
+      fetchInfo: {
+        SQL_FULLTEXT: { type: oracledb.STRING },
+        SQL_TEXT: { type: oracledb.STRING },
+      },
+    });
 
-    // v$sqlarea에서도 찾을 수 없으면 dba_hist_sqltext 시도
+    // 메모리 뷰에서 찾을 수 없으면 dba_hist_sqltext 시도 (별도 쿼리 - 권한 문제 가능)
     if (!sqlInfoResult.rows || sqlInfoResult.rows.length === 0) {
-      console.log('[SQL Detail API] SQL not found in v$sqlarea, trying dba_hist_sqltext');
+      console.log('[SQL Detail API] SQL not found in memory views, trying dba_hist_sqltext');
 
-      sqlInfoQuery = `
+      const histSqlInfoQuery = `
         SELECT
           sql_id,
           sql_text,
@@ -143,16 +142,15 @@ export async function GET(request: NextRequest) {
           0 as avg_disk_reads,
           0 as avg_rows_processed,
           0 as parse_calls,
-          0 as direct_writes
-        FROM
-          dba_hist_sqltext
-        WHERE
-          sql_id = :sql_id
-        FETCH FIRST 1 ROWS ONLY
+          0 as direct_writes,
+          3 as source_priority
+        FROM dba_hist_sqltext
+        WHERE sql_id = :sql_id
+        AND ROWNUM <= 1
       `;
 
       try {
-        sqlInfoResult = await executeQuery(config, sqlInfoQuery, [sqlId], {
+        sqlInfoResult = await executeQuery(config, histSqlInfoQuery, [normalizedSqlId], {
           fetchInfo: {
             SQL_FULLTEXT: { type: oracledb.STRING },
             SQL_TEXT: { type: oracledb.STRING },
@@ -249,7 +247,7 @@ export async function GET(request: NextRequest) {
         id
     `;
 
-    const executionPlanResult = await executeQuery(config, executionPlanQuery, [sqlId]);
+    const executionPlanResult = await executeQuery(config, executionPlanQuery, [normalizedSqlId]);
 
     // 실행계획 데이터 변환
     const executionPlan = executionPlanResult.rows.map((row: any) => {
@@ -299,7 +297,7 @@ export async function GET(request: NextRequest) {
 
     let bindVariables = [];
     try {
-      const bindVariablesResult = await executeQuery(config, bindVariablesQuery, [sqlId]);
+      const bindVariablesResult = await executeQuery(config, bindVariablesQuery, [normalizedSqlId]);
       bindVariables = bindVariablesResult.rows.map((row: any) => ({
         name: row.NAME,
         position: row.POSITION,
@@ -308,6 +306,41 @@ export async function GET(request: NextRequest) {
       }));
     } catch (err) {
       console.error('Failed to fetch bind variables:', err);
+    }
+
+    // 4. PostgreSQL에서 히스토리 데이터 조회 (최근 7일)
+    let performanceHistory: any[] = [];
+    try {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      const historyData = await db
+        .select()
+        .from(sqlPerformanceHistory)
+        .where(
+          and(
+            eq(sqlPerformanceHistory.oracleConnectionId, connectionId),
+            eq(sqlPerformanceHistory.sqlId, sqlId),
+            gte(sqlPerformanceHistory.collectedAt, sevenDaysAgo)
+          )
+        )
+        .orderBy(desc(sqlPerformanceHistory.collectedAt))
+        .limit(100);
+
+      performanceHistory = historyData.map((row) => ({
+        collected_at: row.collectedAt,
+        collection_date: row.collectionDate,
+        collection_hour: row.collectionHour,
+        executions: Number(row.executions) || 0,
+        elapsed_time_ms: Number(row.elapsedTimeMs) || 0,
+        cpu_time_ms: Number(row.cpuTimeMs) || 0,
+        buffer_gets: Number(row.bufferGets) || 0,
+        disk_reads: Number(row.diskReads) || 0,
+        rows_processed: Number(row.rowsProcessed) || 0,
+        performance_grade: row.performanceGrade,
+      }));
+    } catch (err) {
+      console.log('[SQL Detail API] Performance history query failed:', err);
     }
 
     // 결과 구성
@@ -338,6 +371,7 @@ export async function GET(request: NextRequest) {
       },
       execution_plan: executionPlan,
       bind_variables: bindVariables,
+      performance_history: performanceHistory,
     };
 
     console.log(`[SQL Detail API] Returning detail for SQL_ID: ${sqlId}`);

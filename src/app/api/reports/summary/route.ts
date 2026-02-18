@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createPureClient } from '@/lib/supabase/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { db } from '@/db';
+import { oracleConnections, sqlStatistics } from '@/db/schema';
+import { eq, and, gte, gt, inArray, desc } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    // Check authentication
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session?.user) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
@@ -29,18 +30,18 @@ export async function GET(request: NextRequest) {
     }
 
     // Get database connection to verify ownership
-    const pureSupabase = await createPureClient();
-    const { data: dbConnection, error: dbError } = await pureSupabase
-      .from('oracle_connections')
-      .select('*')
-      .eq('id', databaseId)
-      .eq('created_by', userId)
-      .eq('is_active', true)
-      .single();
+    const [dbConnection] = await db
+      .select()
+      .from(oracleConnections)
+      .where(and(
+        eq(oracleConnections.id, databaseId),
+        eq(oracleConnections.createdBy, userId),
+        eq(oracleConnections.isActive, true)
+      ))
+      .limit(1);
 
-    if (dbError || !dbConnection) {
-      console.log('[Reports Summary] Database not found or error:', { databaseId, dbError });
-      // Fall back to demo data
+    if (!dbConnection) {
+      console.log('[Reports Summary] Database not found or error:', { databaseId });
       return NextResponse.json({
         success: true,
         data: generateDemoSummary(period),
@@ -51,14 +52,12 @@ export async function GET(request: NextRequest) {
     console.log('[Reports Summary] Loading data for database:', { databaseId, dbName: dbConnection.name });
 
     try {
-      // Get real data from Supabase sql_statistics table
       const [sqlStats, performanceGrades, topProblematic] = await Promise.all([
-        getSQLStatisticsFromSupabase(pureSupabase, databaseId, period),
-        getPerformanceGradesFromSupabase(pureSupabase, databaseId, period),
-        getTopProblematicSQLFromSupabase(pureSupabase, databaseId)
+        getSQLStatisticsFromDB(databaseId, period),
+        getPerformanceGradesFromDB(databaseId, period),
+        getTopProblematicSQLFromDB(databaseId)
       ]);
 
-      // Check if we have any data
       const hasData = sqlStats.totalSQL > 0;
 
       console.log('[Reports Summary] Data loaded:', {
@@ -88,7 +87,7 @@ export async function GET(request: NextRequest) {
         topProblematicSQL: topProblematic,
         improvements: generateImprovements(sqlStats, performanceGrades),
         resourceUtilization: {
-          cpu: 67.3, // TODO: Get from actual monitoring data
+          cpu: 67.3,
           memory: 78.5,
           io: 45.2
         }
@@ -97,12 +96,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         data: summaryData,
-        metadata: { source: 'supabase', period, databaseId }
+        metadata: { source: 'database', period, databaseId }
       });
 
     } catch (error) {
-      console.error('Supabase query error:', error);
-      // Fall back to demo data on error
+      console.error('Database query error:', error);
       return NextResponse.json({
         success: true,
         data: generateDemoSummary(period),
@@ -119,39 +117,31 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function getSQLStatisticsFromSupabase(supabase: any, databaseId: string, period: string) {
+async function getSQLStatisticsFromDB(databaseId: string, period: string) {
   try {
     const cutoffDate = getPeriodCutoffDate(period);
 
-    // Get aggregate statistics
-    const { data, error } = await supabase
-      .from('sql_statistics')
-      .select('sql_id, executions, elapsed_time_ms, avg_elapsed_time_ms')
-      .eq('oracle_connection_id', databaseId)
-      .gte('collected_at', cutoffDate.toISOString());
-
-    if (error) {
-      console.error('Supabase query error:', error);
-      return {
-        totalSQL: 0,
-        totalExecutions: 0,
-        avgResponseTime: 0
-      };
-    }
+    const data = await db
+      .select({
+        sqlId: sqlStatistics.sqlId,
+        executions: sqlStatistics.executions,
+        elapsedTimeMs: sqlStatistics.elapsedTimeMs,
+        avgElapsedTimeMs: sqlStatistics.avgElapsedTimeMs,
+      })
+      .from(sqlStatistics)
+      .where(and(
+        eq(sqlStatistics.oracleConnectionId, databaseId),
+        gte(sqlStatistics.collectedAt, cutoffDate)
+      ));
 
     if (!data || data.length === 0) {
-      return {
-        totalSQL: 0,
-        totalExecutions: 0,
-        avgResponseTime: 0
-      };
+      return { totalSQL: 0, totalExecutions: 0, avgResponseTime: 0 };
     }
 
-    // Calculate aggregates
-    const uniqueSQLs = new Set(data.map((row: any) => row.sql_id));
-    const totalExecutions = data.reduce((sum: number, row: any) => sum + (row.executions || 0), 0);
-    const totalElapsedTime = data.reduce((sum: number, row: any) => sum + (row.elapsed_time_ms || 0), 0);
-    const avgResponseTime = totalExecutions > 0 ? totalElapsedTime / totalExecutions / 1000 : 0; // Convert to seconds
+    const uniqueSQLs = new Set(data.map((row) => row.sqlId));
+    const totalExecutions = data.reduce((sum, row) => sum + (row.executions || 0), 0);
+    const totalElapsedTime = data.reduce((sum, row) => sum + (row.elapsedTimeMs || 0), 0);
+    const avgResponseTime = totalExecutions > 0 ? totalElapsedTime / totalExecutions / 1000 : 0;
 
     return {
       totalSQL: uniqueSQLs.size,
@@ -160,33 +150,35 @@ async function getSQLStatisticsFromSupabase(supabase: any, databaseId: string, p
     };
   } catch (error) {
     console.error('SQL statistics error:', error);
-    return {
-      totalSQL: 0,
-      totalExecutions: 0,
-      avgResponseTime: 0
-    };
+    return { totalSQL: 0, totalExecutions: 0, avgResponseTime: 0 };
   }
 }
 
-async function getPerformanceGradesFromSupabase(supabase: any, databaseId: string, period: string) {
+async function getPerformanceGradesFromDB(databaseId: string, period: string) {
   try {
     const cutoffDate = getPeriodCutoffDate(period);
 
-    const { data, error } = await supabase
-      .from('sql_statistics')
-      .select('avg_elapsed_time_ms, avg_cpu_time_ms, gets_per_exec')
-      .eq('oracle_connection_id', databaseId)
-      .gte('collected_at', cutoffDate.toISOString())
-      .gt('executions', 0);
+    const data = await db
+      .select({
+        avgElapsedTimeMs: sqlStatistics.avgElapsedTimeMs,
+        avgCpuTimeMs: sqlStatistics.avgCpuTimeMs,
+        getsPerExec: sqlStatistics.getsPerExec,
+      })
+      .from(sqlStatistics)
+      .where(and(
+        eq(sqlStatistics.oracleConnectionId, databaseId),
+        gte(sqlStatistics.collectedAt, cutoffDate),
+        gt(sqlStatistics.executions, 0)
+      ));
 
-    if (error || !data || data.length === 0) {
+    if (!data || data.length === 0) {
       return { A: 0, B: 0, C: 0, D: 0, F: 0 };
     }
 
     const grades = { A: 0, B: 0, C: 0, D: 0, F: 0 };
 
-    data.forEach((row: any) => {
-      const grade = calculateGradeFromSupabase(row);
+    data.forEach((row) => {
+      const grade = calculateGrade(row);
       grades[grade as keyof typeof grades]++;
     });
 
@@ -197,22 +189,30 @@ async function getPerformanceGradesFromSupabase(supabase: any, databaseId: strin
   }
 }
 
-async function getTopProblematicSQLFromSupabase(supabase: any, databaseId: string) {
+async function getTopProblematicSQLFromDB(databaseId: string) {
   try {
-    const { data, error } = await supabase
-      .from('sql_statistics')
-      .select('sql_id, elapsed_time_ms, buffer_gets, status, priority')
-      .eq('oracle_connection_id', databaseId)
-      .in('status', ['WARNING', 'CRITICAL'])
-      .order('elapsed_time_ms', { ascending: false })
+    const data = await db
+      .select({
+        sqlId: sqlStatistics.sqlId,
+        elapsedTimeMs: sqlStatistics.elapsedTimeMs,
+        bufferGets: sqlStatistics.bufferGets,
+        status: sqlStatistics.status,
+        priority: sqlStatistics.priority,
+      })
+      .from(sqlStatistics)
+      .where(and(
+        eq(sqlStatistics.oracleConnectionId, databaseId),
+        inArray(sqlStatistics.status, ['WARNING', 'CRITICAL'])
+      ))
+      .orderBy(desc(sqlStatistics.elapsedTimeMs))
       .limit(10);
 
-    if (error || !data || data.length === 0) {
+    if (!data || data.length === 0) {
       return [];
     }
 
-    return data.slice(0, 4).map((row: any, index: number) => ({
-      sql_id: row.sql_id,
+    return data.slice(0, 4).map((row, index) => ({
+      sql_id: row.sqlId,
       issues: row.status === 'CRITICAL' ? 5 : 3,
       impact: (index < 2 ? 'high' : index < 3 ? 'medium' : 'low') as 'high' | 'medium' | 'low'
     }));
@@ -222,26 +222,23 @@ async function getTopProblematicSQLFromSupabase(supabase: any, databaseId: strin
   }
 }
 
-function calculateGradeFromSupabase(row: any): string {
-  const avgElapsed = Number(row.avg_elapsed_time_ms) || 0;
-  const avgCpu = Number(row.avg_cpu_time_ms) || 0;
-  const avgBufferGets = Number(row.gets_per_exec) || 0;
+function calculateGrade(row: any): string {
+  const avgElapsed = Number(row.avgElapsedTimeMs) || 0;
+  const avgCpu = Number(row.avgCpuTimeMs) || 0;
+  const avgBufferGets = Number(row.getsPerExec) || 0;
 
   let score = 0;
 
-  // Elapsed time scoring (milliseconds)
-  if (avgElapsed < 10) score += 20; // < 10ms
-  else if (avgElapsed < 100) score += 15; // < 100ms
-  else if (avgElapsed < 1000) score += 10; // < 1s
-  else if (avgElapsed < 10000) score += 5; // < 10s
+  if (avgElapsed < 10) score += 20;
+  else if (avgElapsed < 100) score += 15;
+  else if (avgElapsed < 1000) score += 10;
+  else if (avgElapsed < 10000) score += 5;
 
-  // CPU time scoring (milliseconds)
   if (avgCpu < 5) score += 20;
   else if (avgCpu < 50) score += 15;
   else if (avgCpu < 500) score += 10;
   else if (avgCpu < 5000) score += 5;
 
-  // Buffer gets scoring
   if (avgBufferGets < 100) score += 20;
   else if (avgBufferGets < 1000) score += 15;
   else if (avgBufferGets < 10000) score += 10;

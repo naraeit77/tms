@@ -70,12 +70,7 @@ function SignUpContent() {
         throw new Error(data.error || '회원가입에 실패했습니다.');
       }
 
-      // 이메일 확인이 필요한 경우
-      if (data.emailConfirmationRequired) {
-        setSuccessMessage('회원가입이 완료되었습니다. 이메일 확인 후 로그인해주세요.');
-      } else {
-        setSuccessMessage('회원가입이 완료되었습니다. 로그인 페이지로 이동합니다...');
-      }
+      setSuccessMessage('회원가입이 완료되었습니다. 로그인 페이지로 이동합니다...');
 
       // 3초 후 로그인 페이지로 이동
       setTimeout(() => {

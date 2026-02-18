@@ -22,6 +22,7 @@ COPY . .
 # Environment variables for build
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+ENV BUILD_STANDALONE=true
 
 # Build the application
 RUN npm run build

@@ -1,13 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createPureClient } from '@/lib/supabase/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { db } from '@/db';
+import { reports, reportActivities } from '@/db/schema';
+import { eq, and, desc, ilike, or, gte, lte, arrayOverlaps, sql, count } from 'drizzle-orm';
+import { oracleConnections } from '@/db/schema';
 import { ReportConfiguration } from '@/types/reports';
 
 export async function GET(request: NextRequest) {
   try {
-    // Check authentication first
-    const supabase = await createClient();
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session?.user) {
+    const session = await getServerSession(authOptions);
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[Reports API] Session check:', {
+        hasSession: !!session,
+        hasUser: !!session?.user,
+        userId: session?.user?.id,
+        userEmail: session?.user?.email
+      });
+    }
+
+    if (!session?.user?.id) {
+      console.log('[Reports API] Unauthorized - no session or user id');
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
@@ -15,12 +29,10 @@ export async function GET(request: NextRequest) {
     }
 
     const userId = session.user.id;
+    console.log('[Reports API] Authenticated user:', userId);
 
-    // Use pure client to bypass RLS for server-side operations
-    const pureSupabase = await createPureClient();
     const { searchParams } = new URL(request.url);
 
-    // Get query parameters
     const type = searchParams.get('type');
     const status = searchParams.get('status');
     const search = searchParams.get('search');
@@ -32,71 +44,64 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    // Build query with enhanced filtering using pure client
-    let query = pureSupabase
-      .from('reports')
-      .select(`
-        id,
-        user_id,
-        template_id,
-        name,
-        description,
-        type,
-        config,
-        status,
-        file_path,
-        file_size,
-        generated_at,
-        error_message,
-        tags,
-        created_at,
-        updated_at
-      `, { count: 'exact' })
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+    // Build conditions
+    const conditions = [eq(reports.userId, userId)];
 
-    // Apply filters
     if (type && type !== 'all') {
-      query = query.eq('type', type);
+      conditions.push(eq(reports.type, type));
     }
     if (status && status !== 'all') {
-      query = query.eq('status', status);
+      conditions.push(eq(reports.status, status));
     }
     if (search) {
-      query = query.or(`name.ilike.%${search}%,description.ilike.%${search}%`);
+      conditions.push(
+        or(
+          ilike(reports.name, `%${search}%`),
+          ilike(reports.description, `%${search}%`)
+        )!
+      );
     }
     if (tags.length > 0) {
-      query = query.overlaps('tags', tags);
+      conditions.push(arrayOverlaps(reports.tags, tags));
     }
     if (dateFrom) {
-      query = query.gte('created_at', dateFrom);
+      conditions.push(gte(reports.createdAt, new Date(dateFrom)));
     }
     if (dateTo) {
-      query = query.lte('created_at', dateTo);
+      conditions.push(lte(reports.createdAt, new Date(dateTo)));
     }
     if (sizeMin) {
-      query = query.gte('file_size', parseInt(sizeMin));
+      conditions.push(gte(reports.fileSize, parseInt(sizeMin)));
     }
     if (sizeMax) {
-      query = query.lte('file_size', parseInt(sizeMax));
+      conditions.push(lte(reports.fileSize, parseInt(sizeMax)));
     }
 
-    const { data, error, count } = await query;
+    const whereClause = and(...conditions);
 
-    console.log('[Reports API] Query result:', {
-      dataCount: data?.length,
-      totalCount: count,
-      userId,
-      error: error?.message
-    });
+    // Get total count
+    const [countResult] = await db
+      .select({ total: count() })
+      .from(reports)
+      .where(whereClause);
 
-    if (error) {
-      console.error('Database query error:', error);
-      return NextResponse.json(
-        { success: false, error: 'Failed to fetch reports' },
-        { status: 500 }
-      );
+    const total = countResult?.total || 0;
+
+    // Get paginated data
+    const data = await db
+      .select()
+      .from(reports)
+      .where(whereClause)
+      .orderBy(desc(reports.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[Reports API] Query result:', {
+        dataCount: data?.length,
+        totalCount: total,
+        userId,
+      });
     }
 
     // Transform data for frontend
@@ -105,15 +110,15 @@ export async function GET(request: NextRequest) {
       title: report.name,
       description: report.description || '',
       type: report.type,
-      period: report.config?.period || '7d',
-      generatedAt: report.generated_at ? new Date(report.generated_at) : new Date(report.created_at),
-      size: formatFileSize(report.file_size || 0),
+      period: (report.config as any)?.period || '7d',
+      generatedAt: report.generatedAt ? new Date(report.generatedAt) : new Date(report.createdAt),
+      size: formatFileSize(report.fileSize || 0),
       status: report.status,
       tags: report.tags || [],
       author: 'System',
       config: report.config,
-      filePath: report.file_path,
-      errorMessage: report.error_message
+      filePath: report.filePath,
+      errorMessage: report.errorMessage
     }));
 
     return NextResponse.json({
@@ -122,15 +127,22 @@ export async function GET(request: NextRequest) {
       pagination: {
         limit,
         offset,
-        total: count || 0,
-        hasMore: (offset + limit) < (count || 0)
+        total,
+        hasMore: (offset + limit) < total
       }
     });
 
   } catch (error) {
-    console.error('API error:', error);
+    console.error('[Reports API] Error:', error);
+    if (error instanceof Error) {
+      console.error('[Reports API] Error stack:', error.stack);
+    }
     return NextResponse.json(
-      { success: false, error: 'Internal server error' },
+      {
+        success: false,
+        error: 'Internal server error',
+        details: process.env.NODE_ENV === 'development' && error instanceof Error ? error.message : undefined
+      },
       { status: 500 }
     );
   }
@@ -138,11 +150,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    // Check authentication
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session?.user) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
@@ -164,7 +173,6 @@ export async function POST(request: NextRequest) {
       config: ReportConfiguration;
     } = body;
 
-    // Validate required fields
     if (!name || !type || !config) {
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
@@ -172,14 +180,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate Oracle connections exist and user has access (if databases specified)
+    // Validate Oracle connections exist (if databases specified)
     if (config.databases && config.databases.length > 0) {
-      const { data: connections, error: connectionError } = await supabase
-        .from('oracle_connections')
-        .select('id')
-        .in('id', config.databases);
+      const connections = await db
+        .select({ id: oracleConnections.id })
+        .from(oracleConnections)
+        .where(
+          sql`${oracleConnections.id} IN ${config.databases}`
+        );
 
-      if (connectionError || !connections || connections.length !== config.databases.length) {
+      if (!connections || connections.length !== config.databases.length) {
         return NextResponse.json(
           { success: false, error: 'Invalid database connections' },
           { status: 400 }
@@ -188,59 +198,87 @@ export async function POST(request: NextRequest) {
     }
 
     // Create report metadata
-    const reportData = {
-      user_id: userId,
-      template_id: type,
-      name,
-      description,
-      type,
-      config,
-      status: 'draft' as const,
-      tags: extractTagsFromConfig(config)
-    };
-
-    const { data: report, error: insertError } = await supabase
-      .from('reports')
-      .insert([reportData])
-      .select()
-      .single();
-
-    if (insertError) {
+    let report;
+    try {
+      const [inserted] = await db
+        .insert(reports)
+        .values({
+          userId,
+          templateId: type,
+          name,
+          description: description || null,
+          type,
+          config: config as any,
+          status: 'draft',
+          tags: extractTagsFromConfig(config),
+        })
+        .returning();
+      report = inserted;
+    } catch (insertError: any) {
       console.error('Failed to create report:', insertError);
+
+      // Handle foreign key constraint violation
+      if (insertError.code === '23503' && insertError.message?.includes('user_id')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: '사용자 인증 정보를 찾을 수 없습니다. 다시 로그인해주세요.',
+            code: 'USER_NOT_FOUND'
+          },
+          { status: 401 }
+        );
+      }
+
       return NextResponse.json(
-        { success: false, error: 'Failed to create report' },
+        {
+          success: false,
+          error: insertError.code === '23503'
+            ? '데이터베이스 제약 조건 오류가 발생했습니다. 관리자에게 문의해주세요.'
+            : '보고서 생성에 실패했습니다.',
+          code: insertError.code,
+          details: insertError.message
+        },
         { status: 500 }
       );
     }
 
-    // Complete report generation immediately (simulated)
-    const mockFileSize = Math.floor(Math.random() * 50000000) + 1000000;
+    // Calculate estimated file size
+    const baseSize = 50000;
+    const perDatabaseSize = 20000;
+    const chartOverhead = config.include_charts ? 100000 : 0;
+    const recommendationsOverhead = config.include_recommendations ? 30000 : 0;
+    const rawDataOverhead = config.include_raw_data ? 200000 : 0;
+    const periodMultiplier = config.period === '90d' ? 3 : config.period === '30d' ? 2 : 1;
 
-    const { error: updateError } = await supabase
-      .from('reports')
-      .update({
+    const estimatedFileSize = Math.round(
+      (baseSize +
+       (config.databases?.length || 1) * perDatabaseSize +
+       chartOverhead +
+       recommendationsOverhead +
+       rawDataOverhead) * periodMultiplier
+    );
+
+    await db
+      .update(reports)
+      .set({
         status: 'completed',
-        generated_at: new Date().toISOString(),
-        file_path: `/reports/${report.id}.${config.format || 'pdf'}`,
-        file_size: mockFileSize
+        generatedAt: new Date(),
+        filePath: `/reports/${report.id}.${config.format || 'pdf'}`,
+        fileSize: estimatedFileSize,
       })
-      .eq('id', report.id);
-
-    if (updateError) {
-      console.error('Failed to update report status:', updateError);
-    }
+      .where(eq(reports.id, report.id));
 
     // Log generation activity
-    await supabase.from('report_activities').insert({
-      report_id: report.id,
-      user_id: userId,
+    await db.insert(reportActivities).values({
+      reportId: report.id,
+      userId,
       action: 'generated',
       details: {
         type,
         config: { period: config.period, databases: config.databases?.length || 0 },
-        file_size: mockFileSize,
+        file_size: estimatedFileSize,
         format: config.format || 'pdf'
-      }
+      },
     });
 
     return NextResponse.json({
@@ -259,11 +297,8 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    // Check authentication
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session?.user) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
@@ -281,24 +316,21 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Use pure client to bypass RLS
-    const pureSupabase = await createPureClient();
-
     // Verify report belongs to user
-    const { data: report, error: fetchError } = await pureSupabase
-      .from('reports')
-      .select('id, user_id')
-      .eq('id', reportId)
-      .single();
+    const [report] = await db
+      .select({ id: reports.id, userId: reports.userId })
+      .from(reports)
+      .where(eq(reports.id, reportId))
+      .limit(1);
 
-    if (fetchError || !report) {
+    if (!report) {
       return NextResponse.json(
         { success: false, error: 'Report not found' },
         { status: 404 }
       );
     }
 
-    if (report.user_id !== userId) {
+    if (report.userId !== userId) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized to delete this report' },
         { status: 403 }
@@ -306,32 +338,26 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete report activities first (foreign key constraint)
-    await pureSupabase
-      .from('report_activities')
-      .delete()
-      .eq('report_id', reportId);
+    await db
+      .delete(reportActivities)
+      .where(eq(reportActivities.reportId, reportId));
 
     // Delete report
-    const { error: deleteError } = await pureSupabase
-      .from('reports')
-      .delete()
-      .eq('id', reportId);
+    await db
+      .delete(reports)
+      .where(eq(reports.id, reportId));
 
-    if (deleteError) {
-      console.error('Failed to delete report:', deleteError);
-      return NextResponse.json(
-        { success: false, error: 'Failed to delete report' },
-        { status: 500 }
-      );
+    // Log deletion activity (after delete, so FK won't block)
+    try {
+      await db.insert(reportActivities).values({
+        reportId,
+        userId,
+        action: 'deleted',
+        details: { deleted_at: new Date().toISOString() },
+      });
+    } catch {
+      // Ignore if FK constraint prevents logging after deletion
     }
-
-    // Log deletion activity
-    await pureSupabase.from('report_activities').insert({
-      report_id: reportId,
-      user_id: userId,
-      action: 'deleted',
-      details: { deleted_at: new Date().toISOString() }
-    });
 
     return NextResponse.json({
       success: true,
@@ -350,18 +376,15 @@ export async function DELETE(request: NextRequest) {
 function extractTagsFromConfig(config: ReportConfiguration): string[] {
   const tags: string[] = [];
 
-  // Add period-based tags
   if (config.period === '24h') tags.push('실시간');
   if (config.period === '7d') tags.push('주간');
   if (config.period === '30d') tags.push('월간');
   if (config.period === '90d') tags.push('분기');
 
-  // Add content-based tags
   if (config.include_charts) tags.push('차트');
   if (config.include_recommendations) tags.push('권장사항');
   if (config.include_raw_data) tags.push('원시데이터');
 
-  // Add filter-based tags
   if (config.filters?.performance_grade && config.filters.performance_grade.length > 0) {
     tags.push('성능필터');
   }
@@ -369,12 +392,11 @@ function extractTagsFromConfig(config: ReportConfiguration): string[] {
     tags.push('실행횟수필터');
   }
 
-  // Add database count tag
   if (config.databases && config.databases.length > 1) {
     tags.push('다중DB');
   }
 
-  return tags.slice(0, 5); // Limit to 5 tags
+  return tags.slice(0, 5);
 }
 
 function formatFileSize(bytes: number): string {

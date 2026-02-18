@@ -519,39 +519,52 @@ export default function ReportDetailPage() {
                       </div>
                     </div>
 
-                    {/* Mock Data Sections */}
+                    {/* Report Preview Info */}
                     <div>
-                      <h4 className="text-md font-semibold mb-3">주요 발견사항</h4>
+                      <h4 className="text-md font-semibold mb-3">보고서 구성</h4>
                       <div className="space-y-2">
-                        <div className="flex items-start p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                          <span className="text-yellow-600 mr-2">⚠️</span>
-                          <div>
-                            <div className="font-medium text-sm">높은 CPU 사용률 감지</div>
-                            <div className="text-xs text-gray-600 dark:text-gray-400">
-                              일부 SQL 쿼리에서 평균 이상의 CPU 사용률이 감지되었습니다.
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-start p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                          <span className="text-green-600 mr-2">✓</span>
-                          <div>
-                            <div className="font-medium text-sm">인덱스 최적화 양호</div>
-                            <div className="text-xs text-gray-600 dark:text-gray-400">
-                              대부분의 쿼리가 적절한 인덱스를 사용하고 있습니다.
-                            </div>
-                          </div>
-                        </div>
-                        {report.config.include_recommendations && (
+                        {report.config.include_charts && (
                           <div className="flex items-start p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                            <span className="text-blue-600 mr-2">💡</span>
+                            <span className="text-blue-600 mr-2">📊</span>
                             <div>
-                              <div className="font-medium text-sm">권장사항</div>
+                              <div className="font-medium text-sm">성능 차트 포함</div>
                               <div className="text-xs text-gray-600 dark:text-gray-400">
-                                상세한 최적화 권장사항은 전체 보고서를 다운로드하여 확인하세요.
+                                CPU 사용률, 응답 시간, 실행 횟수 등의 시각화 차트가 포함되어 있습니다.
                               </div>
                             </div>
                           </div>
                         )}
+                        {report.config.include_recommendations && (
+                          <div className="flex items-start p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                            <span className="text-green-600 mr-2">💡</span>
+                            <div>
+                              <div className="font-medium text-sm">최적화 권장사항 포함</div>
+                              <div className="text-xs text-gray-600 dark:text-gray-400">
+                                SQL 성능 개선을 위한 구체적인 권장사항이 포함되어 있습니다.
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {report.config.include_raw_data && (
+                          <div className="flex items-start p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                            <span className="text-purple-600 mr-2">📋</span>
+                            <div>
+                              <div className="font-medium text-sm">원시 데이터 포함</div>
+                              <div className="text-xs text-gray-600 dark:text-gray-400">
+                                상세 SQL 실행 통계 및 원본 데이터가 포함되어 있습니다.
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex items-start p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                          <span className="text-gray-600 mr-2">ℹ️</span>
+                          <div>
+                            <div className="font-medium text-sm">분석 대상</div>
+                            <div className="text-xs text-gray-600 dark:text-gray-400">
+                              {report.config.databases.length}개 데이터베이스, {getPeriodText(report.config.period)} 데이터 분석
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
 

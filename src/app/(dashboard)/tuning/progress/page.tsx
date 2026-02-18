@@ -61,12 +61,14 @@ export default function TuningProgressPage() {
       const data = await res.json();
       return data.data || [];
     },
-    refetchInterval: 30000,
+    refetchInterval: 60000, // 60초로 증가
+    staleTime: 30 * 1000, // 30초간 캐시 유지
+    refetchOnWindowFocus: false,
   });
 
   // 진행률 계산
   const calculateProgress = (task: TuningTask) => {
-    const statusProgress = {
+    const statusProgress: Record<string, number> = {
       IDENTIFIED: 10,
       ASSIGNED: 25,
       IN_PROGRESS: 50,
@@ -74,7 +76,7 @@ export default function TuningProgressPage() {
       COMPLETED: 100,
       CANCELLED: 0,
     };
-    return statusProgress[task.status];
+    return statusProgress[task.status] ?? 0;
   };
 
   // 상태별 통계
@@ -166,14 +168,14 @@ export default function TuningProgressPage() {
       {/* 진행 현황 목록 */}
       <div className="grid gap-4">
         {isLoading ? (
-          [...Array(5)].map((_, i) => <Skeleton key={i} className="h-64" />)
+          [...Array(5)].map((_, i) => <Skeleton key={`skeleton-progress-${i}`} className="h-64" />)
         ) : tasks && tasks.length > 0 ? (
           tasks.map((task) => (
             <ProgressCard
               key={task.id}
               task={task}
               progress={calculateProgress(task)}
-              onClick={() => router.push(`/tuning/tasks/${task.id}`)}
+              onClick={() => router.push(`/tuning/${task.id}`)}
             />
           ))
         ) : (

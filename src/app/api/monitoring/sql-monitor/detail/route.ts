@@ -68,14 +68,13 @@ export async function GET(request: NextRequest) {
         V$SQL_MONITOR m
         LEFT JOIN V$SQL s ON m.SQL_ID = s.SQL_ID
       WHERE
-        m.SQL_ID = :sql_id
-        AND m.SQL_EXEC_ID = :sql_exec_id
+        m.SQL_ID = :1
+        AND m.SQL_EXEC_ID = :2
     `;
 
-    const monitorResult = await executeQuery(config, monitorDetailQuery, {
-      sql_id: sqlId,
-      sql_exec_id: Number(sqlExecId),
-    }, {
+    const bindParams = [sqlId, Number(sqlExecId)];
+
+    const monitorResult = await executeQuery(config, monitorDetailQuery, bindParams, {
       fetchInfo: {
         SQL_TEXT: { type: oracledb.STRING },
         SQL_FULLTEXT: { type: oracledb.STRING }
@@ -99,18 +98,15 @@ export async function GET(request: NextRequest) {
       const reportQuery = `
         SELECT
           DBMS_SQLTUNE.REPORT_SQL_MONITOR(
-            sql_id => :sql_id,
-            sql_exec_id => :sql_exec_id,
+            sql_id => :1,
+            sql_exec_id => :2,
             type => 'TEXT',
             report_level => 'ALL'
           ) AS REPORT
         FROM DUAL
       `;
 
-      const reportResult = await executeQuery(config, reportQuery, {
-        sql_id: sqlId,
-        sql_exec_id: Number(sqlExecId),
-      }, {
+      const reportResult = await executeQuery(config, reportQuery, bindParams, {
         fetchInfo: {
           REPORT: { type: oracledb.STRING }
         }
@@ -146,18 +142,15 @@ export async function GET(request: NextRequest) {
       FROM
         V$SQL_PLAN_MONITOR p
       WHERE
-        p.SQL_ID = :sql_id
-        AND p.SQL_EXEC_ID = :sql_exec_id
+        p.SQL_ID = :1
+        AND p.SQL_EXEC_ID = :2
       ORDER BY
         p.PLAN_LINE_ID
     `;
 
     let activityData = [];
     try {
-      const activityResult = await executeQuery(config, activityQuery, {
-        sql_id: sqlId,
-        sql_exec_id: Number(sqlExecId),
-      });
+      const activityResult = await executeQuery(config, activityQuery, bindParams);
       activityData = activityResult.rows || [];
     } catch (error) {
       console.error('Failed to fetch SQL Monitor activity data:', error);

@@ -182,17 +182,28 @@ export default function ReportsPage() {
       const response = await fetch(`/api/reports?${params}`);
       const result = await response.json();
 
-      console.log('API Response:', result);
-      console.log('Reports data:', result.data);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Reports Page] API response:', {
+          status: response.status,
+          success: result.success,
+          dataCount: result.data?.length,
+          error: result.error,
+          details: result.details
+        });
+      }
 
       if (result.success) {
         setReports(result.data);
-        console.log('Reports set:', result.data);
       } else {
-        console.error('Failed to load reports:', result.error);
+        console.error('Failed to load reports:', result.error, result.details);
+        // 401 Unauthorized 인 경우 빈 배열로 설정 (로그인 필요)
+        if (response.status === 401) {
+          setReports([]);
+        }
       }
     } catch (error) {
       console.error('Failed to load reports:', error);
+      setReports([]);
     } finally {
       setLoading(false);
     }
@@ -201,6 +212,16 @@ export default function ReportsPage() {
   const loadSummaryData = useCallback(async () => {
     try {
       const response = await fetch('/api/reports/analytics?days=30');
+
+      if (!response.ok) {
+        console.error('Analytics API error:', response.status, response.statusText);
+        // 401은 인증 오류이므로 무시 (로그인 필요)
+        if (response.status === 401) {
+          console.log('User not authenticated, skipping analytics load');
+          return;
+        }
+      }
+
       const result = await response.json();
 
       if (result.success) {
@@ -208,7 +229,10 @@ export default function ReportsPage() {
         setAnalyticsData(result.data.analytics || []);
         setInsightsData(result.data.insights || null);
       } else {
-        console.error('Failed to load summary data:', result.error);
+        // 인증 에러는 조용히 처리
+        if (result.error !== 'Unauthorized') {
+          console.error('Failed to load summary data:', result.error);
+        }
       }
     } catch (error) {
       console.error('Failed to load summary data:', error);
@@ -480,7 +504,7 @@ export default function ReportsPage() {
               <CardContent>
                 <div className="space-y-4">
                   {summaryData?.popularReportTypes.map((type, index) => (
-                    <div key={index} className="flex items-center justify-between">
+                    <div key={`report-type-${type.type}-${index}`} className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
                         <div className="text-sm font-medium">{type.type}</div>
                         <div className="text-xs text-gray-500">{type.count}개</div>
@@ -513,7 +537,7 @@ export default function ReportsPage() {
               <CardContent>
                 <div className="space-y-3">
                   {summaryData?.recentActivity.map((activity, index) => (
-                    <div key={index} className="flex items-start space-x-3">
+                    <div key={`activity-${activity.action}-${activity.date}-${index}`} className="flex items-start space-x-3">
                       <div className="flex-shrink-0">
                         {activity.action === '보고서 생성' && (
                           <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
@@ -665,7 +689,7 @@ export default function ReportsPage() {
                         {report.tags.length > 0 && (
                           <div className="flex items-center space-x-2 mt-3">
                             {report.tags.map((tag, index) => (
-                              <Badge key={index} variant="outline" className="text-xs">
+                              <Badge key={`tag-${report.id}-${tag}-${index}`} variant="outline" className="text-xs">
                                 {tag}
                               </Badge>
                             ))}

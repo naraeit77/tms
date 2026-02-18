@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { createPureClient } from '@/lib/supabase/server';
+import { db } from '@/db';
+import { users } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 
 /**
@@ -32,22 +34,19 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const supabase = await createPureClient();
-
     // 현재 사용자 정보 조회
-    const { data: user, error: fetchError } = await supabase
-      .from('users')
-      .select('password')
-      .eq('email', session.user.email)
-      .single();
+    const userResult = await db
+      .select({ passwordHash: users.passwordHash })
+      .from(users)
+      .where(eq(users.email, session.user.email))
+      .limit(1);
 
-    if (fetchError || !user) {
-      console.error('Failed to fetch user:', fetchError);
+    if (userResult.length === 0) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
     // 현재 비밀번호 확인
-    const isPasswordValid = await bcrypt.compare(current_password, user.password);
+    const isPasswordValid = await bcrypt.compare(current_password, userResult[0].passwordHash);
     if (!isPasswordValid) {
       return NextResponse.json({ error: 'Current password is incorrect' }, { status: 400 });
     }
@@ -56,16 +55,16 @@ export async function PATCH(request: NextRequest) {
     const hashedPassword = await bcrypt.hash(new_password, 10);
 
     // 비밀번호 업데이트
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({
-        password: hashedPassword,
-        updated_at: new Date().toISOString()
+    const updated = await db
+      .update(users)
+      .set({
+        passwordHash: hashedPassword,
+        updatedAt: new Date(),
       })
-      .eq('email', session.user.email);
+      .where(eq(users.email, session.user.email))
+      .returning({ id: users.id });
 
-    if (updateError) {
-      console.error('Failed to update password:', updateError);
+    if (updated.length === 0) {
       return NextResponse.json({ error: 'Failed to update password' }, { status: 500 });
     }
 

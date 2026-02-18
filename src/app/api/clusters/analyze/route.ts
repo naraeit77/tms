@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { connection_id, algorithm = 'kmeans', k = 5 } = await request.json();
+    const { connection_id, algorithm = 'kmeans', k = 5, minutes = 60 } = await request.json();
 
     if (!connection_id) {
       return NextResponse.json({ error: 'Connection ID is required' }, { status: 400 });
@@ -27,26 +27,33 @@ export async function POST(request: NextRequest) {
     // Oracle에서 실제 SQL 성능 데이터 가져오기
     const config = await getOracleConfig(connection_id);
 
+    // 분석 시간 구간에 해당하는 SQL만 조회 (Last Active Time 기준)
+    const timeFilter = minutes ? `AND last_active_time >= SYSDATE - ${minutes}/1440` : '';
+
+    // Oracle 11g 호환: FETCH FIRST 대신 서브쿼리 + ROWNUM 사용
     const query = `
-      SELECT
-        sql_id,
-        elapsed_time,
-        cpu_time,
-        buffer_gets,
-        disk_reads,
-        executions,
-        rows_processed
-      FROM
-        v$sql
-      WHERE
-        parsing_schema_name NOT IN ('SYS', 'SYSTEM')
-        AND sql_text NOT LIKE '%v$%'
-        AND sql_text NOT LIKE '%V$%'
-        AND executions > 0
-        AND elapsed_time > 0
-      ORDER BY
-        elapsed_time DESC
-      FETCH FIRST 200 ROWS ONLY
+      SELECT * FROM (
+        SELECT
+          sql_id,
+          elapsed_time,
+          cpu_time,
+          buffer_gets,
+          disk_reads,
+          executions,
+          rows_processed,
+          last_active_time
+        FROM
+          v$sql
+        WHERE
+          parsing_schema_name NOT IN ('SYS', 'SYSTEM')
+          AND sql_text NOT LIKE '%v$%'
+          AND sql_text NOT LIKE '%V$%'
+          AND executions > 0
+          AND elapsed_time > 0
+          ${timeFilter}
+        ORDER BY
+          elapsed_time DESC
+      ) WHERE ROWNUM <= 200
     `;
 
     const result = await executeQuery(config, query);

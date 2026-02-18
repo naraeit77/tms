@@ -12,6 +12,7 @@ export interface OracleConnectionConfig {
   username: string;
   password: string;
   connectionType: 'SERVICE_NAME' | 'SID';
+  privilege?: 'SYSDBA' | 'SYSOPER' | 'NORMAL';
   maxConnections?: number;
   connectionTimeout?: number;
 }
@@ -28,6 +29,7 @@ export interface OracleQueryResult<T = any> {
   rows: T[];
   rowsAffected?: number;
   metadata?: any[];
+  outBinds?: any;
 }
 
 export interface SQLStatisticsRow {

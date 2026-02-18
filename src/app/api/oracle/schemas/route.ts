@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeQuery } from '@/lib/oracle/client';
-import { createPureClient } from '@/lib/supabase/server';
+import { db } from '@/db';
+import { oracleConnections } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import { decrypt } from '@/lib/crypto';
 
 /**
@@ -18,18 +20,12 @@ export async function GET(request: NextRequest) {
 
     console.log('[Schemas API] Fetching schemas for connection:', connectionId);
 
-    // Fetch connection details from Supabase
-    const supabase = await createPureClient();
-    const { data: connection, error: connectionError } = await supabase
-      .from('oracle_connections')
-      .select('*')
-      .eq('id', connectionId)
-      .single();
-
-    if (connectionError) {
-      console.error('[Schemas API] Supabase error:', connectionError);
-      return NextResponse.json({ error: 'Failed to fetch connection details' }, { status: 500 });
-    }
+    // Fetch connection details from DB
+    const [connection] = await db
+      .select()
+      .from(oracleConnections)
+      .where(eq(oracleConnections.id, connectionId))
+      .limit(1);
 
     if (!connection) {
       console.error('[Schemas API] Connection not found:', connectionId);
@@ -39,7 +35,7 @@ export async function GET(request: NextRequest) {
     console.log('[Schemas API] Connection found:', connection.name);
 
     // Decrypt password
-    const password = decrypt(connection.password_encrypted);
+    const password = decrypt(connection.passwordEncrypted);
 
     // Query to get all schemas (users)
     // Use simple query that works with all Oracle versions
@@ -59,9 +55,10 @@ export async function GET(request: NextRequest) {
       port: connection.port,
       username: connection.username,
       password,
-      serviceName: connection.service_name,
+      serviceName: connection.serviceName,
       sid: connection.sid,
-      connectionType: connection.connection_type as 'SERVICE_NAME' | 'SID',
+      connectionType: connection.connectionType as 'SERVICE_NAME' | 'SID',
+      privilege: connection.privilege || undefined,
     };
 
     console.log('[Schemas API] Executing query...');

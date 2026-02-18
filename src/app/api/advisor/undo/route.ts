@@ -26,29 +26,44 @@ export async function GET(request: NextRequest) {
     const config = await getOracleConfig(connectionId);
 
     // Undo 테이블스페이스 현재 상태 조회
-    const undoStatsQuery = `
-      SELECT
-        SUM(BYTES) as CURRENT_SIZE,
-        SUM(BYTES) - SUM(NVL(FREE_BYTES, 0)) as CURRENT_USAGE,
-        SUM(MAXBYTES) as MAX_SIZE
-      FROM (
+    // DBA_DATA_FILES 뷰 사용 시도, 실패시 V$ 뷰 기반 대안 사용
+    let undoStats;
+    try {
+      const undoStatsQuery = `
         SELECT
-          d.BYTES,
-          d.MAXBYTES,
-          NVL(f.FREE_BYTES, 0) as FREE_BYTES
-        FROM DBA_DATA_FILES d
-        LEFT JOIN (
-          SELECT TABLESPACE_NAME, SUM(BYTES) as FREE_BYTES
-          FROM DBA_FREE_SPACE
-          GROUP BY TABLESPACE_NAME
-        ) f ON d.TABLESPACE_NAME = f.TABLESPACE_NAME
-        WHERE d.TABLESPACE_NAME IN (
-          SELECT VALUE FROM V$PARAMETER WHERE NAME = 'undo_tablespace'
+          SUM(BYTES) as CURRENT_SIZE,
+          SUM(BYTES) - SUM(NVL(FREE_BYTES, 0)) as CURRENT_USAGE,
+          SUM(MAXBYTES) as MAX_SIZE
+        FROM (
+          SELECT
+            d.BYTES,
+            d.MAXBYTES,
+            NVL(f.FREE_BYTES, 0) as FREE_BYTES
+          FROM DBA_DATA_FILES d
+          LEFT JOIN (
+            SELECT TABLESPACE_NAME, SUM(BYTES) as FREE_BYTES
+            FROM DBA_FREE_SPACE
+            GROUP BY TABLESPACE_NAME
+          ) f ON d.TABLESPACE_NAME = f.TABLESPACE_NAME
+          WHERE d.TABLESPACE_NAME IN (
+            SELECT VALUE FROM V$PARAMETER WHERE NAME = 'undo_tablespace'
+          )
         )
-      )
-    `;
-
-    const undoStats = await executeQuery(config, undoStatsQuery);
+      `;
+      undoStats = await executeQuery(config, undoStatsQuery);
+    } catch (dbaError) {
+      console.log('[Undo Advisor] DBA views not accessible, using V$UNDOSTAT fallback');
+      // V$UNDOSTAT 기반 대안 쿼리
+      const fallbackQuery = `
+        SELECT
+          NVL(SUM(UNDOBLKS) * 8192, 0) as CURRENT_SIZE,
+          NVL(SUM(ACTIVEBLKS) * 8192, 0) as CURRENT_USAGE,
+          NVL(SUM(UNDOBLKS) * 8192, 0) as MAX_SIZE
+        FROM V$UNDOSTAT
+        WHERE BEGIN_TIME >= SYSDATE - 1
+      `;
+      undoStats = await executeQuery(config, fallbackQuery);
+    }
 
     // Undo Retention 설정 조회
     const retentionQuery = `
@@ -60,31 +75,36 @@ export async function GET(request: NextRequest) {
     const retentionResult = await executeQuery(config, retentionQuery);
 
     // Retention Guarantee 설정 조회
-    const guaranteeQuery = `
-      SELECT RETENTION
-      FROM DBA_TABLESPACES
-      WHERE TABLESPACE_NAME IN (
-        SELECT VALUE FROM V$PARAMETER WHERE NAME = 'undo_tablespace'
-      )
-    `;
-
-    const guaranteeResult = await executeQuery(config, guaranteeQuery);
+    // DBA_TABLESPACES 접근 실패시 기본값 사용
+    let guaranteeResult = { rows: [{ RETENTION: 'NOGUARANTEE' }] };
+    try {
+      const guaranteeQuery = `
+        SELECT RETENTION
+        FROM DBA_TABLESPACES
+        WHERE TABLESPACE_NAME IN (
+          SELECT VALUE FROM V$PARAMETER WHERE NAME = 'undo_tablespace'
+        )
+      `;
+      guaranteeResult = await executeQuery(config, guaranteeQuery);
+    } catch (dbaError) {
+      console.log('[Undo Advisor] DBA_TABLESPACES not accessible, using default retention guarantee');
+    }
 
     // Snapshot Too Old 오류 횟수 조회 (최근 7일)
-    const snapshotErrorQuery = `
-      SELECT COUNT(*) as ERROR_COUNT
-      FROM DBA_HIST_ACTIVE_SESS_HISTORY
-      WHERE EVENT = 'snapshot too old'
-        AND SAMPLE_TIME >= SYSDATE - 7
-    `;
-
+    // DBA_HIST_ACTIVE_SESS_HISTORY 접근 불가 시 0으로 처리
     let snapshotErrorCount = 0;
     try {
+      const snapshotErrorQuery = `
+        SELECT COUNT(*) as ERROR_COUNT
+        FROM DBA_HIST_ACTIVE_SESS_HISTORY
+        WHERE EVENT = 'snapshot too old'
+          AND SAMPLE_TIME >= SYSDATE - 7
+      `;
       const snapshotResult = await executeQuery(config, snapshotErrorQuery);
       snapshotErrorCount = snapshotResult.rows[0]?.ERROR_COUNT || 0;
     } catch (error) {
-      // AWR이 없는 경우 무시
-      console.log('AWR data not available for snapshot too old errors');
+      // AWR이 없거나 DBA 권한이 없는 경우 무시
+      console.log('[Undo Advisor] AWR data not available for snapshot too old errors');
     }
 
     // 최대 Undo 사용량 분석 (V$UNDOSTAT에서 최근 24시간)

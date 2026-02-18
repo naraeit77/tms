@@ -24,27 +24,10 @@ export async function GET(request: NextRequest) {
 
     const config = await getOracleConfig(connectionId);
 
-    // Enterprise Edition 확인
-    const editionCheckQuery = `
-      SELECT BANNER
-      FROM V$VERSION
-      WHERE BANNER LIKE 'Oracle%Enterprise Edition%'
-    `;
-
-    try {
-      await executeQuery(config, editionCheckQuery);
-    } catch (error) {
-      return NextResponse.json(
-        {
-          error: 'SQL Access Advisor requires Oracle Enterprise Edition with Tuning Pack license',
-          isEnterprise: false,
-        },
-        { status: 403 }
-      );
-    }
-
-    // SQL Access Advisor 작업 목록 조회
-    const query = `
+    // SQL Access Advisor 작업 목록 + 권장사항 개수 조회
+    // DBA_ADVISOR_TASKS 먼저 시도하고 실패 시 USER_ADVISOR_TASKS로 폴백
+    // 현재 사용자 소유의 작업만 표시 (삭제 가능한 작업만 보여주기 위해)
+    const dbaQuery = `
       SELECT
         t.TASK_ID,
         t.TASK_NAME,
@@ -52,37 +35,77 @@ export async function GET(request: NextRequest) {
         t.OWNER,
         t.CREATED,
         t.STATUS,
-        'CURRENT' as WORKLOAD_TYPE
+        'CURRENT' as WORKLOAD_TYPE,
+        NVL(r.REC_COUNT, 0) as REC_COUNT
       FROM DBA_ADVISOR_TASKS t
+      LEFT JOIN (
+        SELECT TASK_NAME, OWNER, COUNT(*) as REC_COUNT
+        FROM DBA_ADVISOR_RECOMMENDATIONS
+        GROUP BY TASK_NAME, OWNER
+      ) r ON t.TASK_NAME = r.TASK_NAME AND t.OWNER = r.OWNER
+      WHERE t.ADVISOR_NAME = 'SQL Access Advisor'
+        AND t.OWNER = USER
+      ORDER BY t.CREATED DESC
+    `;
+
+    const userQuery = `
+      SELECT
+        t.TASK_ID,
+        t.TASK_NAME,
+        t.DESCRIPTION,
+        USER as OWNER,
+        t.CREATED,
+        t.STATUS,
+        'CURRENT' as WORKLOAD_TYPE,
+        NVL(r.REC_COUNT, 0) as REC_COUNT
+      FROM USER_ADVISOR_TASKS t
+      LEFT JOIN (
+        SELECT TASK_NAME, COUNT(*) as REC_COUNT
+        FROM USER_ADVISOR_RECOMMENDATIONS
+        GROUP BY TASK_NAME
+      ) r ON t.TASK_NAME = r.TASK_NAME
       WHERE t.ADVISOR_NAME = 'SQL Access Advisor'
       ORDER BY t.CREATED DESC
     `;
 
-    const result = await executeQuery(config, query);
+    let result;
+    try {
+      result = await executeQuery(config, dbaQuery, [], { timeout: 15000 });
+    } catch (dbaError) {
+      // DBA 뷰 실패 시 USER 뷰로 폴백
+      try {
+        result = await executeQuery(config, userQuery, [], { timeout: 15000 });
+      } catch (userError) {
+        // 둘 다 실패하면 빈 결과 반환 (권한 부족이거나 Enterprise Edition이 아님)
+        const errorMessage = userError instanceof Error ? userError.message : 'Unknown error';
+        if (errorMessage.includes('ORA-00942') || errorMessage.includes('does not exist')) {
+          return NextResponse.json({
+            success: true,
+            data: [],
+            isEnterprise: false,
+            message: 'SQL Access Advisor 작업을 조회할 권한이 없거나 Enterprise Edition이 아닙니다.',
+          });
+        }
+        console.warn('[SQL Access Advisor] Failed to query tasks:', dbaError, userError);
+        return NextResponse.json({
+          success: true,
+          data: [],
+          isEnterprise: true,
+          message: '작업 목록을 조회하는 중 오류가 발생했습니다.',
+        });
+      }
+    }
 
-    // 각 작업의 권장사항 개수 조회
-    const tasksWithRecommendations = await Promise.all(
-      result.rows.map(async (task: any) => {
-        const recommendationQuery = `
-          SELECT COUNT(*) as REC_COUNT
-          FROM DBA_ADVISOR_RECOMMENDATIONS
-          WHERE TASK_NAME = :task_name
-        `;
-
-        const recResult = await executeQuery(config, recommendationQuery, [task.TASK_NAME]);
-
-        return {
-          task_id: task.TASK_ID,
-          task_name: task.TASK_NAME,
-          description: task.DESCRIPTION,
-          owner: task.OWNER,
-          created: task.CREATED,
-          status: task.STATUS,
-          workload_type: task.WORKLOAD_TYPE,
-          recommendation_count: recResult.rows[0]?.REC_COUNT || 0,
-        };
-      })
-    );
+    const tasksWithRecommendations = result.rows.map((task: any) => ({
+      task_id: task.TASK_ID,
+      task_name: task.TASK_NAME,
+      description: task.DESCRIPTION,
+      owner: task.OWNER,
+      created: task.CREATED,
+      status: task.STATUS,
+      workload_type: task.WORKLOAD_TYPE,
+      recommendation_count: task.REC_COUNT || 0,
+    }));
 
     return NextResponse.json({
       success: true,

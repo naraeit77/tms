@@ -5,6 +5,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getOracleConfig } from '@/lib/oracle/utils';
 import { executeQuery } from '@/lib/oracle/client';
+import { createEnterpriseFeatureResponse } from '@/lib/oracle/edition-guard';
+import { getConnectionEdition } from '@/lib/oracle/edition-guard-server';
 
 /**
  * GET /api/awr/snapshots
@@ -24,6 +26,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Connection ID is required' }, { status: 400 });
     }
 
+    // Enterprise Edition 체크 (AWR은 Diagnostics Pack 필요)
+    const edition = await getConnectionEdition(connectionId);
+    const enterpriseCheck = createEnterpriseFeatureResponse('AWR', edition);
+    if (enterpriseCheck) {
+      return NextResponse.json(enterpriseCheck, { status: 403 });
+    }
+
     // Oracle 연결 설정 가져오기
     const config = await getOracleConfig(connectionId);
 
@@ -31,6 +40,7 @@ export async function GET(request: NextRequest) {
     // end_interval_time: 스냅샷이 실제로 생성된 시간
     // begin_interval_time: 이전 스냅샷의 종료 시간 (수집 구간의 시작)
     const query = `
+      SELECT * FROM (
       SELECT
         snap_id,
         end_interval_time as snap_time,
@@ -40,7 +50,7 @@ export async function GET(request: NextRequest) {
         dba_hist_snapshot
       ORDER BY
         snap_id DESC
-      FETCH FIRST 100 ROWS ONLY
+      ) WHERE ROWNUM <= 100
     `;
 
     const result = await executeQuery(config, query);

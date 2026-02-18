@@ -7,7 +7,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { executeQuery } from '@/lib/oracle/client';
-import { createPureClient } from '@/lib/supabase/server';
+import { db } from '@/db';
+import { oracleConnections } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import { decrypt } from '@/lib/crypto';
 import oracledb from 'oracledb';
 
@@ -28,23 +30,22 @@ export async function POST(request: NextRequest) {
 
     console.log('[Explain API] Getting explain plan for connection:', connectionId);
 
-    // Fetch connection details from Supabase
-    const supabase = await createPureClient();
-    const { data: connection, error: connectionError } = await supabase
-      .from('oracle_connections')
-      .select('*')
-      .eq('id', connectionId)
-      .single();
+    // Fetch connection details from DB
+    const [connection] = await db
+      .select()
+      .from(oracleConnections)
+      .where(eq(oracleConnections.id, connectionId))
+      .limit(1);
 
-    if (connectionError || !connection) {
-      console.error('[Explain API] Connection error:', connectionError);
+    if (!connection) {
+      console.error('[Explain API] Connection not found:', connectionId);
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 });
     }
 
     console.log('[Explain API] Connection found:', connection.name);
 
     // Decrypt password
-    const password = decrypt(connection.password_encrypted);
+    const password = decrypt(connection.passwordEncrypted);
 
     const config = {
       id: connection.id,
@@ -53,34 +54,36 @@ export async function POST(request: NextRequest) {
       port: connection.port,
       username: connection.username,
       password,
-      serviceName: connection.service_name,
+      serviceName: connection.serviceName,
       sid: connection.sid,
-      connectionType: connection.connection_type as 'SERVICE_NAME' | 'SID',
+      connectionType: connection.connectionType as 'SERVICE_NAME' | 'SID',
+      privilege: connection.privilege || undefined,
     };
 
     try {
       // 쿼리 정리: 세미콜론 제거 및 공백 정리
       const cleanQuery = query.trim().replace(/;+\s*$/, '');
 
-      // PLAN_TABLE 존재 확인 및 생성
-      await ensurePlanTable(config);
-
       // 고유한 statement_id 생성
       const statementId = `STMT_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
       console.log('[Explain API] Statement ID:', statementId);
 
-      // 기존 실행계획 삭제
-      await executeQuery(
-        config,
-        `DELETE FROM PLAN_TABLE WHERE STATEMENT_ID = :sid`,
-        { sid: statementId },
-        { autoCommit: true }
-      );
-
-      // EXPLAIN PLAN 실행
+      // EXPLAIN PLAN 실행 (낙관적 수행: PLAN_TABLE이 있다고 가정)
       const explainSql = `EXPLAIN PLAN SET STATEMENT_ID = '${statementId}' FOR ${cleanQuery}`;
-      await executeQuery(config, explainSql, [], { autoCommit: true });
+
+      try {
+        await executeQuery(config, explainSql, [], { autoCommit: true, timeout: 60000 });
+      } catch (error: any) {
+        // ORA-00942: table or view does not exist (PLAN_TABLE이 없는 경우)
+        if (error.message?.includes('ORA-00942')) {
+          console.log('[Explain API] PLAN_TABLE missing, creating and retrying...');
+          await ensurePlanTable(config);
+          await executeQuery(config, explainSql, [], { autoCommit: true, timeout: 60000 });
+        } else {
+          throw error;
+        }
+      }
 
       console.log('[Explain API] Explain plan executed');
 
@@ -114,6 +117,7 @@ export async function POST(request: NextRequest) {
 
       const result = await executeQuery<any>(config, planQuery, { sid: statementId }, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
+        timeout: 30000,
       });
 
       console.log('[Explain API] Plan retrieved, rows:', result.rows?.length || 0);
@@ -123,7 +127,7 @@ export async function POST(request: NextRequest) {
         config,
         `DELETE FROM PLAN_TABLE WHERE STATEMENT_ID = :sid`,
         { sid: statementId },
-        { autoCommit: true }
+        { autoCommit: true, timeout: 30000 }
       );
 
       // 실행계획을 트리 구조로 변환
@@ -170,6 +174,7 @@ async function ensurePlanTable(config: any) {
 
     const checkResult = await executeQuery<any>(config, checkQuery, [], {
       outFormat: oracledb.OUT_FORMAT_OBJECT,
+      timeout: 30000,
     });
 
     const exists = checkResult.rows?.[0]?.CNT > 0;
@@ -219,7 +224,7 @@ async function ensurePlanTable(config: any) {
         )
       `;
 
-      await executeQuery(config, createTableSql, [], { autoCommit: true });
+      await executeQuery(config, createTableSql, [], { autoCommit: true, timeout: 30000 });
       console.log('[Explain API] PLAN_TABLE created successfully');
     } else {
       console.log('[Explain API] PLAN_TABLE already exists');

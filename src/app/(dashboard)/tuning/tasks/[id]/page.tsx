@@ -84,7 +84,9 @@ export default function TuningTaskDetailPage({ params }: { params: Promise<{ id:
       const data = await res.json();
       return data.data || [];
     },
-    refetchInterval: 30000,
+    refetchInterval: 60000, // 60초로 증가
+    staleTime: 30 * 1000, // 30초간 캐시 유지
+    refetchOnWindowFocus: false,
   });
 
   // 코멘트 추가 Mutation

@@ -3,11 +3,14 @@
 /**
  * SQL Monitoring - Top SQL Page
  * SQL 모니터링 - Top SQL 조회 화면
+ * 성능 최적화: ExcelJS 지연 로딩
  */
 
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, RefreshCw, Database, Download, Plus, TrendingUp, Activity, Cpu, Clock, Zap, Info } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Search, RefreshCw, Database, Download, Plus, TrendingUp, Activity, Cpu, Clock, Zap, Info, Wrench, BarChart3 } from 'lucide-react';
+// ExcelJS는 필요 시 동적 임포트로 로드 (초기 번들 크기 감소)
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -38,6 +41,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import ConnectionInfo from '@/components/dashboard/ConnectionInfo';
 import { useSelectedDatabase } from '@/hooks/use-selected-database';
+import { PageHeader } from '@/components/ui/page-header';
+import { DataCard, DataCardGrid } from '@/components/ui/data-card';
+import { ConnectionRequired, EmptyState } from '@/components/ui/empty-state';
+import { GradeBadge } from '@/components/ui/status-badge';
 
 interface SQLStatistic {
   id: string;
@@ -83,8 +90,10 @@ interface DashboardMetrics {
 }
 
 export default function TopSQLPage() {
+  const router = useRouter();
   const { toast } = useToast();
   const { selectedConnectionId, selectedConnection: globalConnection } = useSelectedDatabase();
+  const [mounted, setMounted] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [orderBy, setOrderBy] = useState<string>('buffer_gets');
@@ -95,6 +104,11 @@ export default function TopSQLPage() {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [isCollecting, setIsCollecting] = useState(false);
   const [selectedSqlId, setSelectedSqlId] = useState<string | null>(null);
+
+  // 클라이언트 마운트 감지 (Hydration 에러 방지)
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Use the global selected connection ID or 'all'
   const effectiveConnectionId = selectedConnectionId || 'all';
@@ -119,9 +133,13 @@ export default function TopSQLPage() {
       }
       const res = await fetch(`/api/dashboard/metrics?${params}`);
       if (!res.ok) throw new Error('Failed to fetch metrics');
-      return res.json();
+      const result = await res.json();
+      // API 응답이 직접 메트릭 객체인 경우와 { data: {...} } 형식인 경우 모두 처리
+      return result.data || result;
     },
-    refetchInterval: 30000,
+    refetchInterval: 60000, // 60초로 증가
+    staleTime: 30 * 1000, // 30초간 캐시 유지
+    refetchOnWindowFocus: false,
   });
 
   const metrics: DashboardMetrics = metricsData || {};
@@ -168,14 +186,12 @@ export default function TopSQLPage() {
       if (!res.ok) throw new Error('Failed to fetch SQL statistics');
       return res.json();
     },
-    refetchInterval: 60000,
+    refetchInterval: 90000, // 90초로 증가
+    staleTime: 60 * 1000, // 60초간 캐시 유지
+    refetchOnWindowFocus: false,
   });
 
   const sqlStats: SQLStatistic[] = sqlData?.data || [];
-
-  // 디버깅을 위한 로그
-  console.log('Top SQL Data:', sqlData);
-  console.log('Selected Connection ID:', selectedConnectionId);
 
   // 실제 데이터에서 고유한 모듈 목록 추출
   const uniqueModules = Array.from(
@@ -252,7 +268,19 @@ export default function TopSQLPage() {
     }
   };
 
-  // 튜닝 대상 등록
+  // 튜닝 대상 등록 - 단일 SQL
+  const handleRegisterSingleSQL = (sql: SQLStatistic) => {
+    const params = new URLSearchParams({
+      sql_id: sql.sql_id,
+      sql_text: encodeURIComponent(sql.sql_text),
+      connection_id: sql.oracle_connection_id,
+      elapsed_time_ms: sql.elapsed_time_ms.toString(),
+      buffer_gets: sql.buffer_gets.toString(),
+    });
+    router.push(`/tuning/register?${params}`);
+  };
+
+  // 튜닝 대상 등록 - 복수 SQL (첫 번째 SQL만 직접 등록, 나머지는 안내)
   const handleAddToTuning = async () => {
     if (selectedRows.size === 0) {
       toast({
@@ -263,21 +291,18 @@ export default function TopSQLPage() {
       return;
     }
 
-    try {
-      const selectedSQLs = filteredStats.filter((sql) => selectedRows.has(sql.id));
+    const selectedSQLs = filteredStats.filter((sql) => selectedRows.has(sql.id));
 
+    if (selectedSQLs.length === 1) {
+      // 단일 선택 시 바로 등록 페이지로 이동
+      handleRegisterSingleSQL(selectedSQLs[0]);
+    } else {
+      // 복수 선택 시 첫 번째 SQL로 이동하고 안내
       toast({
-        title: '튜닝 대상 등록',
-        description: `${selectedRows.size}개의 SQL을 튜닝 대상에 추가했습니다.`,
+        title: '튜닝 등록',
+        description: `${selectedSQLs.length}개 중 첫 번째 SQL을 먼저 등록합니다. 나머지는 순차적으로 등록해주세요.`,
       });
-
-      setSelectedRows(new Set());
-    } catch (error: any) {
-      toast({
-        title: '등록 실패',
-        description: error.message,
-        variant: 'destructive',
-      });
+      handleRegisterSingleSQL(selectedSQLs[0]);
     }
   };
 
@@ -292,11 +317,203 @@ export default function TopSQLPage() {
   };
 
   // Excel 내보내기
-  const handleExportExcel = () => {
-    toast({
-      title: 'Excel 내보내기',
-      description: '곧 지원 예정입니다.',
-    });
+  const handleExportExcel = async () => {
+    if (filteredStats.length === 0) {
+      toast({
+        title: '내보낼 데이터가 없습니다',
+        description: 'SQL 데이터가 없어 Excel 파일을 생성할 수 없습니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      // ExcelJS 동적 임포트 (초기 번들 크기 감소)
+      const ExcelJS = await import('exceljs');
+      // Excel 워크북 생성
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Narae TMS';
+      workbook.created = new Date();
+      workbook.modified = new Date();
+
+      // 워크시트 추가
+      const worksheet = workbook.addWorksheet('Top SQL', {
+        properties: { tabColor: { argb: '2563EB' } }
+      });
+
+      // 헤더 스타일 정의
+      const headerStyle = {
+        font: { bold: true, size: 11, color: { argb: 'FFFFFF' } },
+        fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: '2563EB' } },
+        alignment: { vertical: 'middle' as const, horizontal: 'center' as const, wrapText: true },
+        border: {
+          top: { style: 'thin' as const },
+          left: { style: 'thin' as const },
+          bottom: { style: 'thin' as const },
+          right: { style: 'thin' as const }
+        }
+      };
+
+      // 데이터 행 스타일
+      const dataStyle = {
+        border: {
+          top: { style: 'thin' as const },
+          left: { style: 'thin' as const },
+          bottom: { style: 'thin' as const },
+          right: { style: 'thin' as const }
+        }
+      };
+
+      // 헤더 행 추가
+      const headers = [
+        '순위',
+        'SQL ID',
+        'Module',
+        'Schema',
+        '상태',
+        'Elapsed Time (ms)',
+        'CPU Time (ms)',
+        'Buffer Gets',
+        'Disk Reads',
+        'Executions',
+        'Gets/Exec',
+        'SQL Text'
+      ];
+
+      worksheet.addRow(headers);
+      const headerRow = worksheet.getRow(1);
+      headerRow.height = 25;
+      headers.forEach((_, index) => {
+        const cell = headerRow.getCell(index + 1);
+        cell.style = headerStyle;
+      });
+
+      // 데이터 행 추가
+      filteredStats.forEach((sql, index) => {
+        const row = worksheet.addRow([
+          index + 1,
+          sql.sql_id,
+          sql.module || '-',
+          sql.schema_name || '-',
+          sql.status,
+          sql.elapsed_time_ms,
+          sql.cpu_time_ms,
+          sql.buffer_gets,
+          sql.disk_reads,
+          sql.executions,
+          sql.gets_per_exec?.toFixed(0) || 'N/A',
+          sql.sql_text.substring(0, 500) // SQL 텍스트는 500자로 제한
+        ]);
+
+        // 데이터 행 스타일 적용
+        row.eachCell((cell) => {
+          cell.style = dataStyle;
+        });
+
+        // SQL Text 열은 왼쪽 정렬, 나머지는 오른쪽 정렬 (숫자 열)
+        const sqlTextCell = row.getCell(12);
+        sqlTextCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+
+        // 숫자 열 오른쪽 정렬
+        [6, 7, 8, 9, 10, 11].forEach(colIndex => {
+          const cell = row.getCell(colIndex);
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+          cell.numFmt = '#,##0';
+        });
+      });
+
+      // 열 너비 설정
+      worksheet.columns = [
+        { width: 8 },   // 순위
+        { width: 20 },  // SQL ID
+        { width: 15 },  // Module
+        { width: 15 },  // Schema
+        { width: 12 },  // 상태
+        { width: 15 },  // Elapsed Time
+        { width: 15 },  // CPU Time
+        { width: 15 },  // Buffer Gets
+        { width: 15 },  // Disk Reads
+        { width: 15 },  // Executions
+        { width: 12 },  // Gets/Exec
+        { width: 60 }   // SQL Text
+      ];
+
+      // 필터 정보 추가 (두 번째 시트)
+      const infoSheet = workbook.addWorksheet('필터 정보', {
+        properties: { tabColor: { argb: '10B981' } }
+      });
+
+      infoSheet.columns = [
+        { key: 'label', width: 25 },
+        { key: 'value', width: 50 }
+      ];
+
+      const filterInfo = [
+        { label: '연결', value: globalConnection?.name || '전체' },
+        { label: '정렬 기준', value: orderBy === 'buffer_gets' ? 'Buffer Gets' : 
+                                     orderBy === 'elapsed_time_ms' ? 'Elapsed Time' :
+                                     orderBy === 'cpu_time_ms' ? 'CPU Time' :
+                                     orderBy === 'disk_reads' ? 'Disk Reads' : 'Executions' },
+        { label: '상태 필터', value: statusFilter === 'all' ? '전체' : statusFilter },
+        { label: 'Module 필터', value: moduleFilter === 'all' ? '전체' : moduleFilter },
+        { label: '최소 Elapsed Time', value: minElapsedTime || '미설정' },
+        { label: '최소 Buffer Gets', value: minBufferGets || '미설정' },
+        { label: '최소 Executions', value: minExecutions || '미설정' },
+        { label: '검색어', value: searchTerm || '없음' },
+        { label: '총 SQL 수', value: filteredStats.length.toString() },
+        { label: '내보내기 일시', value: new Date().toLocaleString('ko-KR') }
+      ];
+
+      infoSheet.addRow({ label: '필터 정보', value: '' });
+      infoSheet.getRow(1).style = headerStyle;
+      infoSheet.getRow(1).getCell(1).style = headerStyle;
+      infoSheet.getRow(1).getCell(2).style = headerStyle;
+
+      filterInfo.forEach(info => {
+        const row = infoSheet.addRow(info);
+        row.getCell(1).style = {
+          font: { bold: true },
+          fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F3F4F6' } },
+          border: dataStyle.border
+        };
+        row.getCell(2).style = {
+          border: dataStyle.border
+        };
+      });
+
+      // Excel 파일 생성 및 다운로드
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+
+      // 파일명 생성
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const connectionName = globalConnection?.name || 'all';
+      const filename = `TopSQL_${connectionName}_${timestamp}.xlsx`;
+
+      // 다운로드 링크 생성
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: 'Excel 내보내기 완료',
+        description: `${filteredStats.length}개의 SQL 데이터가 Excel 파일로 다운로드되었습니다.`,
+      });
+    } catch (error) {
+      console.error('Excel export error:', error);
+      toast({
+        title: 'Excel 내보내기 실패',
+        description: 'Excel 파일 생성 중 오류가 발생했습니다.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -308,7 +525,7 @@ export default function TopSQLPage() {
           <p className="text-sm sm:text-base text-muted-foreground mt-1">
             성능이 낮은 SQL 및 리소스 사용량이 많은 SQL 조회
           </p>
-          {globalConnection && (
+          {mounted && globalConnection && (
             <p className="text-sm text-muted-foreground mt-1">
               연결: <span className="font-medium">{globalConnection.name}</span> ({globalConnection.host}:{globalConnection.port})
             </p>
@@ -591,6 +808,7 @@ export default function TopSQLPage() {
                     <TableHead className="text-right">Executions</TableHead>
                     <TableHead className="text-right">Gets/Exec</TableHead>
                     <TableHead className="min-w-[300px]">SQL Text</TableHead>
+                    <TableHead className="w-[80px]">액션</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -641,6 +859,19 @@ export default function TopSQLPage() {
                       <TableCell className="max-w-[400px] truncate" title={sql.sql_text}>
                         {sql.sql_text.substring(0, 100)}
                         {sql.sql_text.length > 100 ? '...' : ''}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRegisterSingleSQL(sql);
+                          }}
+                          title="튜닝 대상으로 등록"
+                        >
+                          <Wrench className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -881,7 +1112,7 @@ function SQLDetailDialog({
                     </thead>
                     <tbody>
                       {detailData.bind_variables.map((bind: any, idx: number) => (
-                        <tr key={idx} className="border-b">
+                        <tr key={`bind-var-${bind.name || ''}-${bind.position || idx}-${bind.datatype || ''}-${idx}`} className="border-b">
                           <td className="py-2 px-2 font-mono">{bind.name}</td>
                           <td className="py-2 px-2">{bind.position}</td>
                           <td className="py-2 px-2">{bind.datatype}</td>

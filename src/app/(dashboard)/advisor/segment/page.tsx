@@ -219,7 +219,7 @@ export default function SegmentAdvisorPage() {
               {isLoading ? (
                 <div className="space-y-3">
                   {[...Array(3)].map((_, i) => (
-                    <Skeleton key={i} className="h-32 w-full" />
+                    <Skeleton key={`skeleton-segment-${i}`} className="h-32 w-full" />
                   ))}
                 </div>
               ) : recommendations.length > 0 ? (
@@ -240,7 +240,7 @@ export default function SegmentAdvisorPage() {
                     const source = rec.source || 'ESTIMATED';
 
                     return (
-                      <div key={index} className="border rounded-lg p-4 space-y-3">
+                      <div key={`segment-rec-${segmentOwner}-${segmentName}-${segmentType}-${index}`} className="border rounded-lg p-4 space-y-3">
                         <div className="flex items-start justify-between">
                           <div>
                             <h3 className="font-semibold flex items-center gap-2">
