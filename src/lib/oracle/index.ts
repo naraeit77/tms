@@ -63,6 +63,26 @@ export async function getSQLFullText(
 }
 
 /**
+ * SQL Full Text 일괄 조회
+ */
+export async function getSQLFullTextBatch(
+  config: OracleConnectionConfig,
+  sqlIds: string[]
+): Promise<Map<string, string>> {
+  if (USE_MOCK_ORACLE) {
+    const result = new Map<string, string>();
+    for (const sqlId of sqlIds) {
+      const text = await getSQLFullText(config, sqlId);
+      if (text) result.set(sqlId, text);
+    }
+    return result;
+  } else {
+    const { getSQLFullTextBatch: realGetBatch } = await import('./client');
+    return await realGetBatch(config, sqlIds);
+  }
+}
+
+/**
  * Wait Events 수집
  */
 export async function collectWaitEvents(

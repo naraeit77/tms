@@ -22,6 +22,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getOracleConfig } from '@/lib/oracle/utils';
 import { executeQuery } from '@/lib/oracle/client';
+import { getConnectionEdition } from '@/lib/oracle/edition-guard-server';
 
 /**
  * Oracle Edition 확인 및 ASH 사용 가능 여부 체크
@@ -612,30 +613,39 @@ export async function GET(request: NextRequest) {
     const config = await getOracleConfig(connectionId);
 
     let result;
-    
+
+    // 에디션 확인 (ASH 사용 가능 여부 결정)
+    const edition = await getConnectionEdition(connectionId);
+    const isStandardEdition = edition !== 'Enterprise';
+
     // SQL_ID로 직접 조회하는 경우
     if (sqlId) {
       result = await getSqlById(config, connectionId, sqlId);
     } else if (startTime && endTime) {
-      // 시간 범위가 지정된 경우: ASH 사용 가능 여부 확인 후 적절한 방법 선택
+      // 시간 범위가 지정된 경우: 에디션에 따라 적절한 방법 선택
       try {
-        const ashAvailable = await checkAshAvailability(config);
+        if (!isStandardEdition) {
+          // Enterprise Edition: ASH 사용 가능 여부 확인
+          const ashAvailable = await checkAshAvailability(config);
 
-        if (ashAvailable) {
-          // Enterprise Edition: ASH 사용
-          result = await getTimeRangeSqlStats(config, connectionId, startTime, endTime, limit, orderBy);
+          if (ashAvailable) {
+            result = await getTimeRangeSqlStats(config, connectionId, startTime, endTime, limit, orderBy);
 
-          // ASH 결과가 비어있으면 V$SQL 폴백 시도
-          if (result.data.length === 0) {
-            console.log('[sql-statistics] ASH 결과 없음, V$SQL 폴백 시도');
-            const fallbackResult = await getTimeRangeSqlStatsFallback(config, connectionId, startTime, endTime, limit, orderBy);
-            if (fallbackResult.data.length > 0) {
-              result = fallbackResult;
-              result.source = 'v$sql_fallback_from_ash';
+            // ASH 결과가 비어있으면 V$SQL 폴백 시도
+            if (result.data.length === 0) {
+              console.log('[sql-statistics] ASH 결과 없음, V$SQL 폴백 시도');
+              const fallbackResult = await getTimeRangeSqlStatsFallback(config, connectionId, startTime, endTime, limit, orderBy);
+              if (fallbackResult.data.length > 0) {
+                result = fallbackResult;
+                result.source = 'v$sql_fallback_from_ash';
+              }
             }
+          } else {
+            result = await getTimeRangeSqlStatsFallback(config, connectionId, startTime, endTime, limit, orderBy);
           }
         } else {
-          // Standard Edition: V$SQL 폴백 사용
+          // Standard Edition: ASH 프로빙 없이 바로 V$SQL 사용
+          console.log('[sql-statistics] Standard Edition: V$SQL 직접 사용');
           result = await getTimeRangeSqlStatsFallback(config, connectionId, startTime, endTime, limit, orderBy);
         }
       } catch (timeRangeError) {

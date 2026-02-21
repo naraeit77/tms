@@ -11,8 +11,9 @@ module.exports = {
       args: 'start',
       cwd: '/Users/nit/tms',
 
-      // 클러스터 모드 - CPU 코어 수만큼 인스턴스 생성
-      instances: 'max', // 또는 구체적인 숫자 (예: 4)
+      // 클러스터 모드 - Oracle Standard Edition 환경에서는 인스턴스 수 제한 필요
+      // (인스턴스당 poolMin 연결 × instances = 최소 Oracle 커넥션 수)
+      instances: 4,
       exec_mode: 'cluster',
 
       // 기본 환경 변수

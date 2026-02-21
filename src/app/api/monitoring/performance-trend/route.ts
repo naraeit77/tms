@@ -35,15 +35,29 @@ export async function GET(request: NextRequest) {
 
     // 에디션 정보를 먼저 조회하여 폴백 전략 결정에 사용
     const edition = await getConnectionEdition(connectionId);
+    const isStandardEdition = edition !== 'Enterprise';
+    if (isStandardEdition) {
+      console.log(`[Performance Trend] Standard Edition detected (${edition}), skipping ASH-based strategies`);
+    }
 
     // 1. V$SYSMETRIC_HISTORY 가용성 및 최근 데이터 확인 (Realtime Metric)
     // 최근 60분 데이터는 V$SYSMETRIC_HISTORY가 가장 정확함 (1분 간격 집계됨)
+    // Standard Edition에서도 V$SYSMETRIC_HISTORY 사용 가능하지만, 권한 부족 시 빈 결과 반환 가능
     let useSysMetric = false;
     if (minutes <= 60) {
       try {
-        const checkMetric = await executeQuery(config, `SELECT 1 FROM v$sysmetric_history WHERE ROWNUM = 1`, [], { timeout: 2000 });
+        // 단순 존재 여부 대신 실제 시간 범위 데이터 존재 확인
+        const checkMetric = await executeQuery(config, `
+          SELECT 1 FROM v$sysmetric_history
+          WHERE begin_time >= SYSDATE - :minutes/1440
+            AND ROWNUM = 1
+        `, [minutes], { timeout: 2000 });
         useSysMetric = !!checkMetric.rows && checkMetric.rows.length > 0;
+        if (!useSysMetric) {
+          console.log('[Performance Trend] V$SYSMETRIC_HISTORY has no data for requested time range');
+        }
       } catch (e) {
+        console.log('[Performance Trend] V$SYSMETRIC_HISTORY not accessible:', e instanceof Error ? e.message : e);
         useSysMetric = false;
       }
     }
@@ -80,26 +94,49 @@ export async function GET(request: NextRequest) {
       try {
         const result = await executeQuery(config, metricQuery, [minutes], queryOpts);
 
-        // 문제 SQL 카운트를 위한 보조 쿼리 (ASH 사용)
-        // ASH가 없으면 0으로 처리
+        // 문제 SQL 카운트를 위한 보조 쿼리
         let problemSqlMap = new Map<string, number>();
-        try {
-          const ashQuery = `
-             SELECT 
-               TO_CHAR(TRUNC(sample_time, 'MI'), 'YYYY-MM-DD HH24:MI:SS') as time_bucket,
-               COUNT(DISTINCT sql_id) as problem_count
-             FROM v$active_session_history
-             WHERE sample_time >= SYSDATE - :minutes/1440
-               AND session_state = 'WAITING' 
-               AND wait_class NOT IN ('Idle')
-             GROUP BY TRUNC(sample_time, 'MI')
-           `;
-          const ashResult = await executeQuery(config, ashQuery, [minutes], { timeout: 3000 });
-          ashResult.rows.forEach((r: any) => {
-            problemSqlMap.set(r.TIME_BUCKET, Number(r.PROBLEM_COUNT));
-          });
-        } catch (e) {
-          // ASH unavailable, ignore
+        if (!isStandardEdition) {
+          // Enterprise Edition: ASH 사용
+          try {
+            const ashQuery = `
+               SELECT
+                 TO_CHAR(TRUNC(sample_time, 'MI'), 'YYYY-MM-DD HH24:MI:SS') as time_bucket,
+                 COUNT(DISTINCT sql_id) as problem_count
+               FROM v$active_session_history
+               WHERE sample_time >= SYSDATE - :minutes/1440
+                 AND session_state = 'WAITING'
+                 AND wait_class NOT IN ('Idle')
+               GROUP BY TRUNC(sample_time, 'MI')
+             `;
+            const ashResult = await executeQuery(config, ashQuery, [minutes], { timeout: 3000 });
+            ashResult.rows.forEach((r: any) => {
+              problemSqlMap.set(r.TIME_BUCKET, Number(r.PROBLEM_COUNT));
+            });
+          } catch (e) {
+            // ASH unavailable, ignore
+          }
+        } else {
+          // Standard Edition: V$SQL 기반 문제 SQL 카운트 (elapsed_time > 1초인 SQL 수)
+          try {
+            const problemQuery = `
+              SELECT
+                TO_CHAR(TRUNC(last_active_time, 'MI'), 'YYYY-MM-DD HH24:MI:SS') as time_bucket,
+                COUNT(DISTINCT sql_id) as problem_count
+              FROM v$sql
+              WHERE last_active_time >= SYSDATE - :minutes/1440
+                AND parsing_schema_name NOT IN ('SYS', 'SYSTEM', 'DBSNMP', 'SYSMAN')
+                AND executions > 0
+                AND elapsed_time / DECODE(executions, 0, 1, executions) > 1000000
+              GROUP BY TRUNC(last_active_time, 'MI')
+            `;
+            const problemResult = await executeQuery(config, problemQuery, [minutes], { timeout: 3000 });
+            problemResult.rows.forEach((r: any) => {
+              problemSqlMap.set(r.TIME_BUCKET, Number(r.PROBLEM_COUNT));
+            });
+          } catch (e) {
+            // V$SQL problem count unavailable, ignore
+          }
         }
 
         trendData = result.rows.map((row: any) => {
@@ -147,7 +184,8 @@ export async function GET(request: NextRequest) {
     // 폴백 전략: V$SYSMETRIC_HISTORY에서 데이터를 얻지 못한 경우
     if (trendData.length === 0) {
       // 전략 B: V$ACTIVE_SESSION_HISTORY (Enterprise Edition + Diagnostics Pack 전용)
-      if (edition === 'Enterprise') {
+      // Standard Edition에서는 ASH가 없으므로 완전히 건너뛰기
+      if (!isStandardEdition) {
         try {
           const ashAvailable = await executeQuery(config, `SELECT 1 FROM v$active_session_history WHERE ROWNUM = 1`, [], { timeout: 2000 })
             .then(() => true).catch(() => false);
@@ -199,24 +237,23 @@ export async function GET(request: NextRequest) {
     // 전략 C: V$SYSMETRIC 현재 메트릭 (모든 에디션, 현재 시점의 실시간 시스템 메트릭)
     if (trendData.length === 0) {
       try {
+        // group_id = 2: 60초 간격 메트릭 (V$SYSMETRIC은 최근 1-2개 time window만 보유)
+        // metric_name 필터 없이 CASE WHEN으로 처리하여 빈 결과 방지
         const sysmetricQuery = `
           SELECT
             TO_CHAR(end_time, 'YYYY-MM-DD HH24:MI:SS') as timestamp,
-            AVG(CASE WHEN metric_name = 'Executions Per Sec' THEN value END) as exec_per_sec,
-            AVG(CASE WHEN metric_name = 'Logical Reads Per Sec' THEN value END) as logical_reads_per_sec,
-            AVG(CASE WHEN metric_name = 'Physical Reads Per Sec' THEN value END) as physical_reads_per_sec,
-            AVG(CASE WHEN metric_name = 'CPU Usage Per Sec' THEN value END) as cpu_usage_per_sec,
-            AVG(CASE WHEN metric_name = 'Database Time Per Sec' THEN value END) as db_time_per_sec
+            MAX(CASE WHEN metric_name = 'Executions Per Sec' THEN value END) as exec_per_sec,
+            MAX(CASE WHEN metric_name = 'Logical Reads Per Sec' THEN value END) as logical_reads_per_sec,
+            MAX(CASE WHEN metric_name = 'Physical Reads Per Sec' THEN value END) as physical_reads_per_sec,
+            MAX(CASE WHEN metric_name = 'CPU Usage Per Sec' THEN value END) as cpu_usage_per_sec,
+            MAX(CASE WHEN metric_name = 'Database Time Per Sec' THEN value END) as db_time_per_sec
           FROM v$sysmetric
           WHERE group_id = 2
-            AND metric_name IN (
-              'Executions Per Sec', 'Logical Reads Per Sec', 'Physical Reads Per Sec',
-              'CPU Usage Per Sec', 'Database Time Per Sec'
-            )
           GROUP BY end_time
           ORDER BY end_time DESC
         `;
         const sysmetricResult = await executeQuery(config, sysmetricQuery, [], { timeout: 3000 });
+        console.log(`[Performance Trend] V$SYSMETRIC query returned ${sysmetricResult.rows?.length || 0} rows`);
         if (sysmetricResult.rows && sysmetricResult.rows.length > 0) {
           dataSource = 'sysmetric-current';
           trendData = sysmetricResult.rows.map((row: any) => {
@@ -249,8 +286,11 @@ export async function GET(request: NextRequest) {
     // 전략 D: V$SQL 시간 버킷별 집계 (모든 에디션, 최후 수단)
     if (trendData.length === 0) {
       dataSource = 'v$sql';
-      console.log('[Performance Trend] Using V$SQL time-bucketed fallback');
+      // SE에서는 시간 범위를 넉넉하게 확장 (최소 60분, 최대 요청 범위)
+      const sqlMinutes = Math.max(minutes, 60);
+      console.log(`[Performance Trend] Using V$SQL time-bucketed fallback (${sqlMinutes} minutes)`);
       try {
+        // parsing_schema_name 필터를 완화하여 더 많은 데이터 포함
         const sqlBucketQuery = `
           SELECT * FROM (
             SELECT
@@ -264,13 +304,14 @@ export async function GET(request: NextRequest) {
               COUNT(CASE WHEN executions > 0 AND elapsed_time / executions > 1000000 THEN 1 END) as problem_count
             FROM v$sql
             WHERE last_active_time >= SYSDATE - :minutes/1440
-              AND parsing_schema_name NOT IN ('SYS', 'SYSTEM', 'DBSNMP', 'SYSMAN')
+              AND last_active_time IS NOT NULL
               AND executions > 0
             GROUP BY TRUNC(last_active_time, 'MI')
             ORDER BY TRUNC(last_active_time, 'MI') DESC
           ) WHERE ROWNUM <= 60
         `;
-        const bucketResult = await executeQuery(config, sqlBucketQuery, [minutes], queryOpts);
+        const bucketResult = await executeQuery(config, sqlBucketQuery, [sqlMinutes], queryOpts);
+        console.log(`[Performance Trend] V$SQL bucket query returned ${bucketResult.rows?.length || 0} rows`);
 
         if (bucketResult.rows && bucketResult.rows.length > 0) {
           trendData = bucketResult.rows.map((row: any) => ({

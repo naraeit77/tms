@@ -94,6 +94,8 @@ import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { parseOracleEdition, checkFeatureAvailability } from '@/lib/oracle/edition-guard';
+import { EnterpriseFeatureAlert } from '@/components/ui/enterprise-feature-alert';
 
 // ============================================================================
 // Types & Interfaces
@@ -698,6 +700,37 @@ export default function SQLAccessAdvisorPage() {
       setSortOrder(field === 'benefit' ? 'desc' : 'asc');
     }
   };
+
+  // ============================================================================
+  // Standard Edition Guard
+  // ============================================================================
+  const currentEdition = parseOracleEdition(selectedConnection?.oracleEdition);
+  const featureAvailability = checkFeatureAvailability('SQL_ACCESS_ADVISOR', currentEdition);
+
+  if (selectedConnection && !featureAvailability.available) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">SQL Access Advisor</h1>
+            <Badge variant="secondary" className="gap-1">
+              <Crown className="h-3 w-3" />
+              Enterprise Only
+            </Badge>
+          </div>
+          <p className="text-sm sm:text-base text-muted-foreground mt-1">
+            워크로드 기반 인덱스, 머티리얼라이즈드 뷰, 파티셔닝 권장 (DBMS_ADVISOR)
+          </p>
+        </div>
+        <EnterpriseFeatureAlert
+          featureName="SQL Access Advisor (DBMS_ADVISOR)"
+          requiredPack="Tuning Pack"
+          alternative={featureAvailability.alternative}
+          currentEdition={currentEdition}
+        />
+      </div>
+    );
+  }
 
   // ============================================================================
   // Render

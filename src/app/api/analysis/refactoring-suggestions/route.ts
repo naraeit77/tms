@@ -254,10 +254,13 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
-    console.error('Refactoring suggestions API error:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate refactoring suggestions' },
-      { status: 500 }
-    )
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.warn('[Refactoring Suggestions API] Error, returning empty result:', errorMessage)
+    return NextResponse.json({
+      success: true,
+      data: [],
+      timestamp: new Date().toISOString(),
+      warning: errorMessage,
+    })
   }
 }

@@ -248,6 +248,7 @@ interface DatabaseConnection {
   service_name: string | null
   sid: string | null
   oracle_version: string
+  oracle_edition?: string | null
   health_status: 'healthy' | 'warning' | 'error' | 'degraded' | 'unhealthy' | 'unknown'
   is_active: boolean
 }
@@ -340,6 +341,7 @@ export default function MonitoringPage() {
         service_name: conn.service_name,
         sid: conn.sid,
         oracle_version: conn.oracle_version,
+        oracle_edition: conn.oracle_edition,
         is_active: conn.is_active === true,
         health_status: (conn.health_status || 'unknown').toLowerCase(),
       })) || []
@@ -1085,6 +1087,19 @@ export default function MonitoringPage() {
               </div>
             </div>
             <div className="mt-4 flex items-center gap-2">
+              {selectedDbInfo.oracle_edition && (
+                <Badge
+                  variant={selectedDbInfo.oracle_edition?.toLowerCase().includes('enterprise') ? 'default' : 'secondary'}
+                  className={selectedDbInfo.oracle_edition?.toLowerCase().includes('enterprise')
+                    ? 'bg-purple-500 hover:bg-purple-600 text-white border-0'
+                    : 'bg-sky-100 text-sky-700 dark:bg-sky-900 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+                  }
+                >
+                  {selectedDbInfo.oracle_edition}
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
               {effectiveHealthStatus === 'healthy' && (
                 <Badge className="bg-green-500 hover:bg-green-600 text-white border-0">
                   정상
@@ -1457,6 +1472,11 @@ export default function MonitoringPage() {
                     </CardTitle>
                     <CardDescription>
                       CPU 시간 vs Buffer Gets 성능 산점도 (실시간 업데이트)
+                      {selectedDbInfo?.oracle_edition && !selectedDbInfo.oracle_edition.toLowerCase().includes('enterprise') && (
+                        <span className="ml-1 text-xs text-sky-600 dark:text-sky-400">
+                          [V$SQL 기반 - Standard Edition]
+                        </span>
+                      )}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>

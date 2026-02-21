@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getOracleConfig } from '@/lib/oracle/utils';
 import { executeQuery } from '@/lib/oracle/client';
+import { getConnectionEdition } from '@/lib/oracle/edition-guard-server';
 import { db } from '@/db';
 import { sqlPerformanceDailySummary } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
@@ -82,7 +83,11 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. PostgreSQL에 데이터가 없으면 AWR에서 요약 통계 조회 시도
-    if (!summaryData) {
+    // Standard Edition에서는 AWR(DBA_HIST_*) 사용 불가 → 건너뛰기
+    const edition = await getConnectionEdition(connectionId);
+    const isStandardEdition = edition !== 'Enterprise';
+
+    if (!summaryData && !isStandardEdition) {
     // 시간 필터가 있는 경우와 없는 경우 분리
     const awrSummaryQuery = hasTimeFilter ? `
       SELECT

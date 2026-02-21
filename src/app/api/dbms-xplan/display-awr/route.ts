@@ -12,6 +12,8 @@ import { eq, and } from 'drizzle-orm';
 import { executeQuery } from '@/lib/oracle/client';
 import type { OracleConnectionConfig } from '@/lib/oracle/types';
 import { decrypt } from '@/lib/crypto';
+import { getConnectionEdition } from '@/lib/oracle/edition-guard-server';
+import { createEnterpriseFeatureResponse } from '@/lib/oracle/edition-guard';
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,6 +36,13 @@ export async function GET(request: NextRequest) {
         { error: 'connection_id and sql_id are required' },
         { status: 400 }
       );
+    }
+
+    // Enterprise Edition 확인 (AWR은 Diagnostics Pack 필요)
+    const edition = await getConnectionEdition(connectionId);
+    const featureResponse = createEnterpriseFeatureResponse('AWR', edition);
+    if (featureResponse) {
+      return NextResponse.json(featureResponse, { status: 403 });
     }
 
     // DB에서 연결 정보 조회

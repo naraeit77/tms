@@ -58,6 +58,8 @@ import { useSelectedDatabase } from '@/hooks/use-selected-database';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
+import { parseOracleEdition, checkFeatureAvailability } from '@/lib/oracle/edition-guard';
+import { EnterpriseFeatureAlert } from '@/components/ui/enterprise-feature-alert';
 
 interface TuningTask {
   task_id: number;
@@ -639,6 +641,36 @@ ${taskNames.map((name: string) => `EXEC DBMS_SQLTUNE.DROP_TUNING_TASK('${name}')
     setSelectedTask(task);
     setRecommendationsDialogOpen(true);
   }, []);
+
+  // Standard Edition 체크
+  const currentEdition = parseOracleEdition(selectedConnection?.oracleEdition);
+  const featureAvailability = checkFeatureAvailability('SQL_TUNING_ADVISOR', currentEdition);
+
+  // Standard Edition인 경우 대안 안내
+  if (selectedConnection && !featureAvailability.available) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">SQL Tuning Advisor</h1>
+            <Badge variant="secondary" className="gap-1">
+              <Crown className="h-3 w-3" />
+              Enterprise Only
+            </Badge>
+          </div>
+          <p className="text-sm sm:text-base text-muted-foreground mt-1">
+            특정 SQL 성능 분석 및 자동 튜닝 권장사항 제공 (DBMS_SQLTUNE)
+          </p>
+        </div>
+        <EnterpriseFeatureAlert
+          featureName="SQL Tuning Advisor (DBMS_SQLTUNE)"
+          requiredPack="Tuning Pack"
+          alternative={featureAvailability.alternative}
+          currentEdition={currentEdition}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

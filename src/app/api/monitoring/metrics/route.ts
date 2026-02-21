@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getOracleConfig } from '@/lib/oracle/utils';
 import { executeQuery } from '@/lib/oracle/client';
+import { getConnectionEdition } from '@/lib/oracle/edition-guard-server';
 
 /**
  * 쿼리 실행 + 에러 추적 헬퍼
@@ -48,6 +49,9 @@ export async function GET(request: NextRequest) {
     const config = await getOracleConfig(connectionId);
     const queryOpts = { timeout: 5000 };
     const failures: string[] = [];
+
+    // 에디션 확인 (프론트엔드에서 기능 분기에 사용)
+    const edition = await getConnectionEdition(connectionId);
 
     // ── Batch 1: 핵심 정보 (DB정보, 세션, SQL통계, 메모리, 성능통계) ──
     const [dbInfoResult, sessionResult, sqlStatsResult, memoryResult, perfStatsResult] = await Promise.all([
@@ -132,22 +136,23 @@ export async function GET(request: NextRequest) {
       `, [], queryOpts), { rows: [] }, failures),
 
       trackedQuery('topSql', () => executeQuery(config, `
-        SELECT sql_id, substr(sql_text, 1, 50) as sql_snippet, executions,
-               ROUND(elapsed_time / NULLIF(executions, 0) / 1000, 0) as avg_elapsed_ms,
-               ROUND(cpu_time / NULLIF(executions, 0) / 1000, 0) as avg_cpu_ms,
-               ROUND(buffer_gets / NULLIF(executions, 0), 0) as avg_buffer_gets,
-               last_active_time
-        FROM (
-          SELECT sql_id, sql_text, executions, elapsed_time, cpu_time, buffer_gets, last_active_time
+        SELECT * FROM (
+          SELECT /*+ FIRST_ROWS(50) */
+            sql_id,
+            SUBSTR(sql_text, 1, 50) as sql_snippet,
+            executions,
+            ROUND(elapsed_time / NULLIF(executions, 0) / 1000, 0) as avg_elapsed_ms,
+            ROUND(cpu_time / NULLIF(executions, 0) / 1000, 0) as avg_cpu_ms,
+            ROUND(buffer_gets / NULLIF(executions, 0), 0) as avg_buffer_gets,
+            last_active_time
           FROM v$sql
           WHERE parsing_schema_name NOT IN ('SYS', 'SYSTEM', 'DBSNMP', 'SYSMAN')
             AND executions > 0
             AND elapsed_time > 0
-            AND last_active_time >= SYSDATE - 10/1440
+            AND last_active_time >= SYSDATE - 1
           ORDER BY elapsed_time DESC
-        )
-        WHERE ROWNUM <= 50
-      `, [], queryOpts), { rows: [] }, failures),
+        ) WHERE ROWNUM <= 50
+      `, [], { timeout: 10000 }), { rows: [] }, failures),
 
       // 테이블스페이스 (Oracle 12c+ 시도 → 11g 폴백)
       trackedQuery('tablespace', async () => {
@@ -391,6 +396,7 @@ export async function GET(request: NextRequest) {
         db_cpu_usage: systemStats.db_cpu_usage,
       },
       timestamp: new Date().toISOString(),
+      edition,
     };
 
     console.log(`[Metrics API] Total response time: ${queryTime}ms`);
@@ -399,6 +405,7 @@ export async function GET(request: NextRequest) {
       success: true,
       data: metrics,
       source: 'oracle_direct',
+      edition,
       responseTime: queryTime,
       // 쿼리 실패 정보 전달 (프론트엔드에서 부분 데이터 표시 가능)
       ...(failures.length > 0 && { warnings: failures, partial: true }),

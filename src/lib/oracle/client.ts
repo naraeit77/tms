@@ -118,10 +118,10 @@ export async function getOraclePool(config: OracleConnectionConfig): Promise<ora
       user: config.username,
       password: config.password,
       connectString,
-      poolMin: 2,
-      poolMax: 30,
-      poolIncrement: 2,
-      poolTimeout: 120,
+      poolMin: 1,
+      poolMax: 8,
+      poolIncrement: 1,
+      poolTimeout: 60,
       queueTimeout: 30000,
       enableStatistics: true,
       stmtCacheSize: 30,
@@ -475,7 +475,7 @@ export async function collectSQLStatistics(
   try {
     const sql = `
       SELECT * FROM (
-        SELECT
+        SELECT /*+ FIRST_ROWS(${limit}) */
           sql_id as SQL_ID,
           plan_hash_value as PLAN_HASH_VALUE,
           module as MODULE,
@@ -498,8 +498,6 @@ export async function collectSQLStatistics(
         FROM v$sql
         WHERE
           parsing_schema_name NOT IN ('SYS', 'DBSNMP', 'SYSMAN', 'WMSYS')
-          AND sql_text NOT LIKE '%v$%'
-          AND sql_text NOT LIKE '%V$%'
           AND command_type NOT IN (47)
           AND executions > 0
         ORDER BY elapsed_time DESC
@@ -508,7 +506,7 @@ export async function collectSQLStatistics(
     `;
 
     console.log('Executing SQL statistics query with limit:', limit);
-    const result = await executeQuery<SQLStatisticsRow>(config, sql, [limit]);
+    const result = await executeQuery<SQLStatisticsRow>(config, sql, [limit], { timeout: 60000 });
     console.log(`Query executed successfully, returned ${result.rows.length} rows`);
 
     return result.rows;
@@ -570,8 +568,50 @@ export async function getSQLFullText(
     AND rownum = 1
   `;
 
-  const result = await executeQuery<{ SQL_FULLTEXT: string }>(config, sql, [sqlId]);
+  const result = await executeQuery<{ SQL_FULLTEXT: string }>(config, sql, [sqlId], { timeout: 15000 });
   return result.rows[0]?.SQL_FULLTEXT || '';
+}
+
+/**
+ * SQL Full Text 일괄 조회 (여러 SQL_ID를 한번에)
+ */
+export async function getSQLFullTextBatch(
+  config: OracleConnectionConfig,
+  sqlIds: string[]
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (sqlIds.length === 0) return result;
+
+  // Oracle IN 절 최대 1000개 제한 -> 배치 처리
+  const batchSize = 500;
+  for (let i = 0; i < sqlIds.length; i += batchSize) {
+    const batch = sqlIds.slice(i, i + batchSize);
+    const placeholders = batch.map((_, idx) => `:b${idx}`).join(', ');
+    const sql = `
+      SELECT sql_id as SQL_ID, sql_fulltext as SQL_FULLTEXT
+      FROM v$sql
+      WHERE sql_id IN (${placeholders})
+      AND rownum <= ${batch.length}
+    `;
+
+    const binds: Record<string, string> = {};
+    batch.forEach((id, idx) => { binds[`b${idx}`] = id; });
+
+    try {
+      const queryResult = await executeQuery<{ SQL_ID: string; SQL_FULLTEXT: string }>(
+        config, sql, binds, { timeout: 30000 }
+      );
+      for (const row of queryResult.rows) {
+        if (row.SQL_ID && !result.has(row.SQL_ID)) {
+          result.set(row.SQL_ID, typeof row.SQL_FULLTEXT === 'string' ? row.SQL_FULLTEXT : String(row.SQL_FULLTEXT || ''));
+        }
+      }
+    } catch (err) {
+      console.error(`Error fetching SQL full text batch (offset ${i}):`, err);
+    }
+  }
+
+  return result;
 }
 
 /**

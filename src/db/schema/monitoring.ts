@@ -51,6 +51,7 @@ export const sqlStatistics = pgTable('sql_statistics', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, (table) => [
+  unique('uq_sql_statistics_conn_sql').on(table.oracleConnectionId, table.sqlId),
   index('idx_sql_statistics_oracle_conn').on(table.oracleConnectionId),
   index('idx_sql_statistics_sql_id').on(table.oracleConnectionId, table.sqlId),
   index('idx_sql_statistics_collected').on(table.collectedAt),

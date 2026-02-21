@@ -10,7 +10,7 @@ import { db } from '@/db';
 import { oracleConnections, systemSettings, sqlStatistics, auditLogs } from '@/db/schema';
 import { eq, and, desc, sql, ne, inArray } from 'drizzle-orm';
 import { decrypt } from '@/lib/crypto';
-import { collectSQLStatistics, getSQLFullText } from '@/lib/oracle';
+import { collectSQLStatistics, getSQLFullText, getSQLFullTextBatch } from '@/lib/oracle';
 import { processAutoTuning } from '@/lib/services/auto-tuning';
 import type { OracleConnectionConfig, SQLStatisticsRow } from '@/lib/oracle/types';
 
@@ -125,11 +125,22 @@ export async function POST(request: NextRequest) {
     let collected = 0;
     let errors = 0;
 
+    // SQL Full Text 일괄 조회 (개별 쿼리 대신 배치로 처리)
+    const sqlIds = [...new Set(sqlStats.map(row => row.SQL_ID))];
+    let sqlTextMap: Map<string, string>;
+    try {
+      sqlTextMap = await getSQLFullTextBatch(config, sqlIds);
+      console.log(`Batch fetched SQL text for ${sqlTextMap.size}/${sqlIds.length} SQL IDs`);
+    } catch (batchError) {
+      console.warn('Batch SQL text fetch failed, will use empty text:', batchError);
+      sqlTextMap = new Map();
+    }
+
     // SQL 통계 저장
     for (const row of sqlStats) {
       try {
-        // SQL Full Text 조회
-        const sqlTextRaw = await getSQLFullText(config, row.SQL_ID);
+        // 배치에서 SQL Full Text 가져오기
+        const sqlTextRaw = sqlTextMap.get(row.SQL_ID) || '';
 
         // sqlText를 문자열로 변환 (Buffer나 다른 타입일 수 있음)
         const sqlText = typeof sqlTextRaw === 'string'
