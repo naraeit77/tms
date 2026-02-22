@@ -50760,3 +50760,122 @@ Help: https://docs.oracle.com/error-help/db/ora-01013/
 2026-02-23T00:25:09: [Execute API] Schema changed to: SH
 2026-02-23T00:25:09: [Execute API] Query type: SELECT
 2026-02-23T00:25:09: [Execute API] Success! Execution time: 558 ms
+2026-02-23T00:27:22: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:27:22: [Execute API] Connection found: TMSDB
+2026-02-23T00:27:22: [Execute API] Schema changed to: SH
+2026-02-23T00:27:22: [Execute API] Query type: SELECT
+2026-02-23T00:27:58: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:27:58: [Execute API] Connection found: TMSDB
+2026-02-23T00:27:58: [Execute API] Schema changed to: SH
+2026-02-23T00:27:58: [Execute API] Query type: SELECT
+2026-02-23T00:27:58: [Execute API] Success! Execution time: 248 ms
+2026-02-23T00:29:41: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:29:41: [Execute API] Connection found: TMSDB
+2026-02-23T00:29:42: [Execute API] Schema changed to: SH
+2026-02-23T00:29:42: [Execute API] Query type: SELECT
+2026-02-23T00:29:43: [Execute API] Success! Execution time: 1899 ms
+2026-02-23T00:30:05: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:30:05: [Execute API] Connection found: TMSDB
+2026-02-23T00:30:05: [Execute API] Schema changed to: SH
+2026-02-23T00:30:05: [Execute API] Query type: SELECT
+2026-02-23T00:30:06: [Execute API] Success! Execution time: 462 ms
+2026-02-23T00:30:42: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:30:42: [Execute API] Connection found: TMSDB
+2026-02-23T00:30:42: [Execute API] Schema changed to: SH
+2026-02-23T00:30:42: [Execute API] Query type: SELECT
+2026-02-23T00:30:43: [Execute API] Success! Execution time: 485 ms
+2026-02-23T00:30:57: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:30:57: [Execute API] Connection found: TMSDB
+2026-02-23T00:30:57: [Execute API] Schema changed to: SH
+2026-02-23T00:30:57: [Execute API] Query type: SELECT
+2026-02-23T00:30:58: [Execute API] Success! Execution time: 832 ms
+2026-02-23T00:31:06: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:31:06: [Execute API] Connection found: TMSDB
+2026-02-23T00:31:06: [Execute API] Schema changed to: SH
+2026-02-23T00:31:06: [Execute API] Query type: SELECT
+2026-02-23T00:31:07: [Execute API] Success! Execution time: 589 ms
+2026-02-23T00:31:31: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:31:31: [Execute API] Connection found: TMSDB
+2026-02-23T00:31:31: [Execute API] Schema changed to: SH
+2026-02-23T00:31:31: [Execute API] Query type: SELECT
+2026-02-23T00:31:32: [Execute API] Success! Execution time: 1369 ms
+2026-02-23T00:31:51: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:31:51: [Execute API] Connection found: TMSDB
+2026-02-23T00:31:51: [Execute API] Schema changed to: SH
+2026-02-23T00:31:51: [Execute API] Query type: SELECT
+2026-02-23T00:31:52: [Execute API] Success! Execution time: 791 ms
+2026-02-23T00:32:11: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:32:11: [Execute API] Connection found: TMSDB
+2026-02-23T00:32:12: [Execute API] Schema changed to: SH
+2026-02-23T00:32:12: [Execute API] Query type: SELECT
+2026-02-23T00:32:13: [Execute API] Success! Execution time: 1408 ms
+2026-02-23T00:32:59: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:32:59: [Execute API] Connection found: TMSDB
+2026-02-23T00:33:00: [Execute API] Schema changed to: SH
+2026-02-23T00:33:00: [Execute API] Query type: SELECT
+2026-02-23T00:33:00: [Execute API] Success! Execution time: 785 ms
+2026-02-23T00:34:02: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:34:02: [Execute API] Connection found: TMSDB
+2026-02-23T00:34:02: [Execute API] Schema changed to: SH
+2026-02-23T00:34:02: [Execute API] Query type: SELECT
+2026-02-23T00:34:02: [Execute API] Success! Execution time: 872 ms
+2026-02-23T00:36:19: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH type: TABLE
+2026-02-23T00:36:19: [Objects API] Connection found: TMSDB
+2026-02-23T00:36:28: [Columns API] Fetching columns for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH table: BENCHMARK_RESULTS
+2026-02-23T00:36:28: [Columns API] Connection found: TMSDB
+2026-02-23T00:36:28: [Columns API] Executing query...
+2026-02-23T00:36:30: [Columns API] Success! Found 4 columns
+2026-02-23T00:36:41: [Columns API] Fetching columns for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH table: CHANNELS
+2026-02-23T00:36:41: [Columns API] Connection found: TMSDB
+2026-02-23T00:36:41: [Columns API] Executing query...
+2026-02-23T00:36:42: [Columns API] Success! Found 6 columns
+2026-02-23T00:36:48: [Columns API] Fetching columns for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH table: COUNTRIES
+2026-02-23T00:36:48: [Columns API] Connection found: TMSDB
+2026-02-23T00:36:48: [Columns API] Executing query...
+2026-02-23T00:36:48: [Columns API] Success! Found 10 columns
+2026-02-23T00:36:53: [Columns API] Fetching columns for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH table: CUSTOMERS
+2026-02-23T00:36:53: [Columns API] Connection found: TMSDB
+2026-02-23T00:36:53: [Columns API] Executing query...
+2026-02-23T00:36:54: [Columns API] Success! Found 23 columns
+2026-02-23T00:37:01: [Columns API] Fetching columns for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH table: PRODUCTS
+2026-02-23T00:37:01: [Columns API] Connection found: TMSDB
+2026-02-23T00:37:01: [Columns API] Executing query...
+2026-02-23T00:37:01: [Columns API] Success! Found 22 columns
+2026-02-23T00:37:05: [Columns API] Fetching columns for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH table: PROMOTIONS
+2026-02-23T00:37:05: [Columns API] Connection found: TMSDB
+2026-02-23T00:37:05: [Columns API] Executing query...
+2026-02-23T00:37:06: [Columns API] Success! Found 11 columns
+2026-02-23T00:37:09: [Columns API] Fetching columns for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH table: SALES
+2026-02-23T00:37:09: [Columns API] Connection found: TMSDB
+2026-02-23T00:37:09: [Columns API] Executing query...
+2026-02-23T00:37:09: [Columns API] Success! Found 12 columns
+2026-02-23T00:37:13: [Columns API] Fetching columns for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH table: SUPPLEMENTARY_DEMOGRAPHICS
+2026-02-23T00:37:13: [Columns API] Connection found: TMSDB
+2026-02-23T00:37:13: [Columns API] Executing query...
+2026-02-23T00:37:13: [Columns API] Success! Found 14 columns
+2026-02-23T00:37:17: [Columns API] Fetching columns for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH table: TIMES
+2026-02-23T00:37:17: [Columns API] Connection found: TMSDB
+2026-02-23T00:37:17: [Columns API] Executing query...
+2026-02-23T00:37:18: [Columns API] Success! Found 10 columns
+2026-02-23T00:37:25: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH type: INDEX
+2026-02-23T00:37:25: [Objects API] Connection found: TMSDB
+2026-02-23T00:39:55: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:39:55: [Execute API] Connection found: TMSDB
+2026-02-23T00:39:55: [Execute API] Schema changed to: SH
+2026-02-23T00:39:55: [Execute API] Query type: SELECT
+2026-02-23T00:39:56: [Execute API] Success! Execution time: 966 ms
+2026-02-23T00:40:33: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:40:33: [Execute API] Connection found: TMSDB
+2026-02-23T00:40:33: [Execute API] Schema changed to: SH
+2026-02-23T00:40:33: [Execute API] Query type: SELECT
+2026-02-23T00:40:33: [Execute API] Success! Execution time: 310 ms
+2026-02-23T00:40:41: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:40:41: [Execute API] Connection found: TMSDB
+2026-02-23T00:40:41: [Execute API] Schema changed to: SH
+2026-02-23T00:40:41: [Execute API] Query type: SELECT
+2026-02-23T00:40:41: [Execute API] Success! Execution time: 320 ms
+2026-02-23T00:40:52: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:40:52: [Execute API] Connection found: TMSDB
+2026-02-23T00:40:52: [Execute API] Schema changed to: SH
+2026-02-23T00:40:52: [Execute API] Query type: SELECT
+2026-02-23T00:40:52: [Execute API] Success! Execution time: 247 ms

@@ -1880,7 +1880,8 @@ function SQLEditorContent() {
                   )}
 
                   {!isExecuting && queryResults.length > 0 && (
-                    <table className="w-full text-sm border-collapse bg-white">
+                    <div className="overflow-x-auto overflow-y-auto h-full">
+                      <table className="text-sm border-collapse bg-white">
                         <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-20">
                           <tr>
                             <th className="px-4 py-2 text-left font-medium text-slate-700 bg-slate-50 sticky left-0 z-30 border-r border-slate-200">
@@ -1915,6 +1916,7 @@ function SQLEditorContent() {
                           ))}
                         </tbody>
                       </table>
+                    </div>
                   )}
                 </div>
               </TabsContent>
