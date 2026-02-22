@@ -178,13 +178,15 @@ export default function ASHPage() {
   const {
     data: ashData,
     isLoading,
+    error: queryError,
+    isError,
     refetch,
     isFetching,
   } = useQuery({
     queryKey: ['ash-samples', effectiveConnectionId, startDateTime, endDateTime],
     queryFn: async () => {
       if (effectiveConnectionId === 'all') {
-        throw new Error('Please select a database connection');
+        throw new Error('데이터베이스를 선택해주세요.');
       }
 
       const params = new URLSearchParams({
@@ -195,18 +197,28 @@ export default function ASHPage() {
 
       const res = await fetch(`/api/awr/ash?${params}`);
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to fetch ASH data');
+        const errorData = await res.json();
+        throw new Error(errorData.details || errorData.error || 'ASH 데이터 조회에 실패했습니다.');
       }
       return res.json();
     },
     enabled: effectiveConnectionId !== 'all' && !!startDate && !!endDate,
-    staleTime: 30000, // 30초
+    staleTime: 30000,
+    retry: false,
   });
 
   const samples: ASHSample[] = ashData?.data || [];
   const metrics: ASHMetrics | undefined = ashData?.metrics;
   const dataSource: string | undefined = ashData?.source;
+  const strategyErrors: Array<{ strategy: string; error: string }> | undefined = ashData?.errors;
+  const diagnostic: {
+    server_time?: string;
+    ash_min_time?: string | null;
+    ash_max_time?: string | null;
+    ash_available?: boolean;
+    edition?: string;
+    requested_range?: { start: string; end: string };
+  } | undefined = ashData?.diagnostic;
 
   // ASH 리포트 생성
   const handleGenerateReport = async () => {
@@ -559,7 +571,7 @@ export default function ASHPage() {
                 {metrics.top_wait_events[0]?.event || 'N/A'}
               </div>
               <div className="text-xs text-muted-foreground">
-                {metrics.top_wait_events[0]?.percentage.toFixed(1)}%
+                {metrics.top_wait_events[0] ? `${metrics.top_wait_events[0].percentage.toFixed(1)}%` : ''}
               </div>
             </CardContent>
           </Card>
@@ -576,11 +588,41 @@ export default function ASHPage() {
                 {metrics.top_sql[0]?.sql_id || 'N/A'}
               </div>
               <div className="text-xs text-muted-foreground">
-                {metrics.top_sql[0]?.percentage.toFixed(1)}%
+                {metrics.top_sql[0] ? `${metrics.top_sql[0].percentage.toFixed(1)}%` : ''}
               </div>
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* API 에러 표시 */}
+      {isError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            <strong>ASH 데이터 조회 실패</strong>
+            <p className="mt-1 text-sm">
+              {queryError instanceof Error ? queryError.message : 'Oracle 데이터베이스 연결 또는 쿼리 실행에 실패했습니다.'}
+            </p>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* 전략 폴백 경고 */}
+      {strategyErrors && strategyErrors.length > 0 && (
+        <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
+          <AlertCircle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-700 dark:text-amber-300">
+            <strong>일부 데이터 소스 접근 실패</strong>
+            <ul className="mt-2 space-y-1 text-sm list-disc list-inside">
+              {strategyErrors.map((err, idx) => (
+                <li key={`strategy-err-${idx}`}>
+                  <span className="font-medium">{err.strategy}</span>: {err.error}
+                </li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* 데이터 소스 표시 */}
@@ -690,8 +732,58 @@ export default function ASHPage() {
               ) : (
                 <div className="text-center py-12 text-muted-foreground">
                   <Database className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                  <p>조회된 ASH 샘플이 없습니다.</p>
-                  <p className="text-sm mt-2">시간 범위를 변경하거나 데이터 수집을 확인해주세요.</p>
+                  <p className="font-medium">조회된 ASH 샘플이 없습니다.</p>
+
+                  {/* 진단 정보 표시 */}
+                  {diagnostic && (
+                    <div className="mt-4 max-w-lg mx-auto text-left bg-muted/50 rounded-lg p-4 text-sm space-y-2">
+                      <p className="font-semibold text-foreground">진단 정보</p>
+                      {diagnostic.edition && (
+                        <p>Oracle: <span className="font-mono">{diagnostic.edition}</span></p>
+                      )}
+                      {diagnostic.server_time && (
+                        <p>DB 서버 시간: <span className="font-mono">{diagnostic.server_time}</span></p>
+                      )}
+                      {diagnostic.ash_available !== false ? (
+                        diagnostic.ash_min_time ? (
+                          <p>ASH 보유 데이터: <span className="font-mono">{diagnostic.ash_min_time}</span> ~ <span className="font-mono">{diagnostic.ash_max_time}</span></p>
+                        ) : (
+                          <p className="text-amber-600 dark:text-amber-400">ASH 버퍼에 데이터가 없습니다 (데이터베이스 활동이 없었음).</p>
+                        )
+                      ) : (
+                        <p className="text-amber-600 dark:text-amber-400">V$ACTIVE_SESSION_HISTORY 접근 불가 (Standard Edition 또는 권한 부족)</p>
+                      )}
+                      {diagnostic.requested_range && (
+                        <p>요청 범위: <span className="font-mono">{diagnostic.requested_range.start}</span> ~ <span className="font-mono">{diagnostic.requested_range.end}</span></p>
+                      )}
+                      {/* 시간대 불일치 경고 */}
+                      {diagnostic.server_time && diagnostic.requested_range && (() => {
+                        const serverHour = parseInt(diagnostic.server_time!.split(' ')[1]?.split(':')[0] || '0');
+                        const reqEndHour = parseInt(diagnostic.requested_range!.end.split(' ')[1]?.split(':')[0] || '0');
+                        const diff = Math.abs(serverHour - reqEndHour);
+                        return diff > 1 && diff < 23;
+                      })() && (
+                        <p className="text-red-600 dark:text-red-400 font-medium">
+                          브라우저 시간과 DB 서버 시간이 다릅니다. 시간대(timezone) 차이를 확인하세요.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {!diagnostic && dataSource === 'v$session' ? (
+                    <div className="text-sm mt-3 space-y-1 max-w-lg mx-auto text-left">
+                      <p>V$SESSION 스냅샷 모드에서는 조회 시점에 활성 중인 세션만 표시됩니다.</p>
+                      <p className="font-medium">해결 방법:</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li>데이터베이스에 활성 작업이 실행 중일 때 다시 조회</li>
+                        <li>Enterprise Edition + Diagnostics Pack 라이선스로 히스토리 ASH 활성화</li>
+                      </ul>
+                    </div>
+                  ) : !diagnostic && strategyErrors && strategyErrors.length > 0 ? (
+                    <p className="text-sm mt-2">위 오류 메시지를 확인해주세요. 권한 또는 라이선스 문제일 수 있습니다.</p>
+                  ) : !diagnostic ? (
+                    <p className="text-sm mt-2">선택한 시간 범위에 해당하는 세션 히스토리가 없습니다. 시간 범위를 조정해보세요.</p>
+                  ) : null}
                 </div>
               )}
             </CardContent>

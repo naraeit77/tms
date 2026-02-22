@@ -49067,3 +49067,1530 @@ Help: https://docs.oracle.com/error-help/db/ora-01013/
 2026-02-21T10:15:32:   Library directory: /opt/oracle/instantclient
 2026-02-21T10:15:32: ✓ Oracle Thick mode initialized
 2026-02-21T10:15:32:   Library directory: /opt/oracle/instantclient
+2026-02-21T12:35:27: [Metrics API] Fetching from Oracle directly
+2026-02-21T12:35:29: [Metrics API] Oracle queries completed in 2507ms (failures: none)
+2026-02-21T12:35:29: [Metrics API] Total response time: 2507ms
+2026-02-21T12:35:30: [OS Stats] 조회 완료: {
+  cpu_usage: 99.45,
+  memory_usage: 98.41,
+  io_mbps: 24.35,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T12:38:18: [Metrics API] Fetching from Oracle directly
+2026-02-21T12:38:20: [Metrics API] Oracle queries completed in 2184ms (failures: none)
+2026-02-21T12:38:20: [Metrics API] Total response time: 2184ms
+2026-02-21T12:38:21: [OS Stats] 조회 완료: {
+  cpu_usage: 99.63,
+  memory_usage: 98.42,
+  io_mbps: 0.08,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:43:23: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:43:25: [Metrics API] Oracle queries completed in 2484ms (failures: none)
+2026-02-21T23:43:25: [Metrics API] Total response time: 2484ms
+2026-02-21T23:43:26: [OS Stats] 조회 완료: {
+  cpu_usage: 99.61,
+  memory_usage: 97.95,
+  io_mbps: 0.07,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:43:56: [Pattern Detection API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-21T23:43:56: [Realtime Monitoring API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-21T23:43:56: [Refactoring Suggestions API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-21T23:43:56: [Realtime Monitoring API] Found 30 active SQLs
+2026-02-21T23:43:57: [Refactoring Suggestions API] Found 10 suggestions
+2026-02-21T23:43:57: [Pattern Detection API] Found 1 issues
+2026-02-21T23:43:58: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:44:00: [Metrics API] Oracle queries completed in 2390ms (failures: none)
+2026-02-21T23:44:00: [Metrics API] Total response time: 2390ms
+2026-02-21T23:44:07: [sql-statistics] ASH 시간 범위 쿼리: {
+  startTime: '2026-02-21 09:40:00',
+  endTime: '2026-02-21 09:42:00',
+  limit: 100,
+  orderBy: 'elapsed_time_ms'
+}
+2026-02-21T23:44:08: [sql-statistics] ASH 쿼리 결과: { rowCount: 100 }
+2026-02-21T23:44:28: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:44:28: [OS Stats] 조회 완료: {
+  cpu_usage: 99.59,
+  memory_usage: 97.68,
+  io_mbps: 0.08,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:44:30: [Metrics API] Oracle queries completed in 2356ms (failures: none)
+2026-02-21T23:44:30: [Metrics API] Total response time: 2356ms
+2026-02-21T23:44:59: [OS Stats] 조회 완료: {
+  cpu_usage: 99.62,
+  memory_usage: 97.34,
+  io_mbps: 0.08,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:45:00: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:45:03: [Metrics API] Oracle queries completed in 2520ms (failures: none)
+2026-02-21T23:45:03: [Metrics API] Total response time: 2520ms
+2026-02-21T23:45:30: [OS Stats] 조회 완료: {
+  cpu_usage: 99.62,
+  memory_usage: 97.38,
+  io_mbps: 0.08,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:45:30: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:45:32: [Metrics API] Oracle queries completed in 2120ms (failures: none)
+2026-02-21T23:45:32: [Metrics API] Total response time: 2120ms
+2026-02-21T23:46:00: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:46:01: [OS Stats] 조회 완료: {
+  cpu_usage: 99.61,
+  memory_usage: 97.25,
+  io_mbps: 0.13,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:46:03: [Metrics API] Oracle queries completed in 2442ms (failures: none)
+2026-02-21T23:46:03: [Metrics API] Total response time: 2442ms
+2026-02-21T23:46:31: [OS Stats] 조회 완료: {
+  cpu_usage: 99.61,
+  memory_usage: 97.65,
+  io_mbps: 0.13,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:46:33: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:46:35: [Metrics API] Oracle queries completed in 2251ms (failures: none)
+2026-02-21T23:46:35: [Metrics API] Total response time: 2251ms
+2026-02-21T23:47:02: [OS Stats] 조회 완료: {
+  cpu_usage: 99.61,
+  memory_usage: 97.17,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:47:03: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:47:05: [Metrics API] Oracle queries completed in 2219ms (failures: none)
+2026-02-21T23:47:05: [Metrics API] Total response time: 2219ms
+2026-02-21T23:47:33: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:47:33: [OS Stats] 조회 완료: {
+  cpu_usage: 99.61,
+  memory_usage: 97.63,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:47:35: [Metrics API] Oracle queries completed in 2212ms (failures: none)
+2026-02-21T23:47:35: [Metrics API] Total response time: 2212ms
+2026-02-21T23:48:03: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:48:03: [OS Stats] 조회 완료: {
+  cpu_usage: 99.6,
+  memory_usage: 97.36,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:48:05: [Metrics API] Oracle queries completed in 2043ms (failures: none)
+2026-02-21T23:48:05: [Metrics API] Total response time: 2043ms
+2026-02-21T23:48:33: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:48:34: [OS Stats] 조회 완료: {
+  cpu_usage: 99.6,
+  memory_usage: 97.37,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:48:35: [Metrics API] Oracle queries completed in 2224ms (failures: none)
+2026-02-21T23:48:35: [Metrics API] Total response time: 2224ms
+2026-02-21T23:49:05: [OS Stats] 조회 완료: {
+  cpu_usage: 99.56,
+  memory_usage: 97.97,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:49:05: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:49:07: [Metrics API] Oracle queries completed in 2209ms (failures: none)
+2026-02-21T23:49:07: [Metrics API] Total response time: 2209ms
+2026-02-21T23:49:35: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:49:36: [OS Stats] 조회 완료: {
+  cpu_usage: 99.6,
+  memory_usage: 97.68,
+  io_mbps: 0.08,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:49:37: [Metrics API] Oracle queries completed in 2237ms (failures: none)
+2026-02-21T23:49:37: [Metrics API] Total response time: 2237ms
+2026-02-21T23:50:05: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:50:06: [OS Stats] 조회 완료: {
+  cpu_usage: 99.6,
+  memory_usage: 97.97,
+  io_mbps: 0.08,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:50:07: [Metrics API] Oracle queries completed in 2305ms (failures: none)
+2026-02-21T23:50:07: [Metrics API] Total response time: 2305ms
+2026-02-21T23:50:37: [OS Stats] 조회 완료: {
+  cpu_usage: 99.58,
+  memory_usage: 98.06,
+  io_mbps: 0.13,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:50:37: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:50:40: [Metrics API] Oracle queries completed in 2268ms (failures: none)
+2026-02-21T23:50:40: [Metrics API] Total response time: 2268ms
+2026-02-21T23:51:07: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:51:08: [OS Stats] 조회 완료: {
+  cpu_usage: 99.58,
+  memory_usage: 97.48,
+  io_mbps: 0.13,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:51:10: [Metrics API] Oracle queries completed in 2217ms (failures: none)
+2026-02-21T23:51:10: [Metrics API] Total response time: 2217ms
+2026-02-21T23:51:37: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:51:39: [OS Stats] 조회 완료: {
+  cpu_usage: 99.57,
+  memory_usage: 97.8,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:51:40: [Metrics API] Oracle queries completed in 2244ms (failures: none)
+2026-02-21T23:51:40: [Metrics API] Total response time: 2244ms
+2026-02-21T23:52:09: [OS Stats] 조회 완료: {
+  cpu_usage: 99.57,
+  memory_usage: 97.37,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:52:10: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:52:12: [Metrics API] Oracle queries completed in 2064ms (failures: none)
+2026-02-21T23:52:12: [Metrics API] Total response time: 2064ms
+2026-02-21T23:52:40: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:52:40: [OS Stats] 조회 완료: {
+  cpu_usage: 99.58,
+  memory_usage: 97.49,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:52:42: [Metrics API] Oracle queries completed in 2123ms (failures: none)
+2026-02-21T23:52:42: [Metrics API] Total response time: 2123ms
+2026-02-21T23:53:10: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:53:11: [OS Stats] 조회 완료: {
+  cpu_usage: 99.58,
+  memory_usage: 97.58,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:53:12: [Metrics API] Oracle queries completed in 2220ms (failures: none)
+2026-02-21T23:53:12: [Metrics API] Total response time: 2220ms
+2026-02-21T23:53:41: [OS Stats] 조회 완료: {
+  cpu_usage: 99.62,
+  memory_usage: 96.81,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:53:42: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:53:44: [Metrics API] Oracle queries completed in 2265ms (failures: none)
+2026-02-21T23:53:44: [Metrics API] Total response time: 2265ms
+2026-02-21T23:54:12: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:54:12: [OS Stats] 조회 완료: {
+  cpu_usage: 99.62,
+  memory_usage: 97.72,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:54:14: [Metrics API] Oracle queries completed in 2033ms (failures: none)
+2026-02-21T23:54:14: [Metrics API] Total response time: 2033ms
+2026-02-21T23:54:42: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:54:43: [OS Stats] 조회 완료: {
+  cpu_usage: 99.54,
+  memory_usage: 97.69,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:54:44: [Metrics API] Oracle queries completed in 2310ms (failures: none)
+2026-02-21T23:54:44: [Metrics API] Total response time: 2310ms
+2026-02-21T23:55:14: [OS Stats] 조회 완료: {
+  cpu_usage: 99.54,
+  memory_usage: 97.55,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:55:14: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:55:16: [Metrics API] Oracle queries completed in 2068ms (failures: none)
+2026-02-21T23:55:16: [Metrics API] Total response time: 2068ms
+2026-02-21T23:55:44: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:55:45: [OS Stats] 조회 완료: {
+  cpu_usage: 99.54,
+  memory_usage: 97.21,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:55:47: [Metrics API] Oracle queries completed in 2342ms (failures: none)
+2026-02-21T23:55:47: [Metrics API] Total response time: 2342ms
+2026-02-21T23:56:14: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:56:16: [OS Stats] 조회 완료: {
+  cpu_usage: 99.54,
+  memory_usage: 97.77,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:56:17: [Metrics API] Oracle queries completed in 2169ms (failures: none)
+2026-02-21T23:56:17: [Metrics API] Total response time: 2169ms
+2026-02-21T23:56:46: [OS Stats] 조회 완료: {
+  cpu_usage: 99.59,
+  memory_usage: 97.53,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:56:47: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:56:49: [Metrics API] Oracle queries completed in 2118ms (failures: none)
+2026-02-21T23:56:49: [Metrics API] Total response time: 2118ms
+2026-02-21T23:57:17: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:57:17: [OS Stats] 조회 완료: {
+  cpu_usage: 99.59,
+  memory_usage: 97.8,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:57:19: [Metrics API] Oracle queries completed in 2118ms (failures: none)
+2026-02-21T23:57:19: [Metrics API] Total response time: 2118ms
+2026-02-21T23:57:47: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:57:48: [OS Stats] 조회 완료: {
+  cpu_usage: 99.54,
+  memory_usage: 98.13,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:57:49: [Metrics API] Oracle queries completed in 2356ms (failures: none)
+2026-02-21T23:57:49: [Metrics API] Total response time: 2356ms
+2026-02-21T23:58:19: [OS Stats] 조회 완료: {
+  cpu_usage: 99.54,
+  memory_usage: 97.41,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:58:19: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:58:21: [Metrics API] Oracle queries completed in 2129ms (failures: none)
+2026-02-21T23:58:21: [Metrics API] Total response time: 2129ms
+2026-02-21T23:58:49: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:58:49: [OS Stats] 조회 완료: {
+  cpu_usage: 99.58,
+  memory_usage: 97.69,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:58:51: [Metrics API] Oracle queries completed in 2114ms (failures: none)
+2026-02-21T23:58:51: [Metrics API] Total response time: 2114ms
+2026-02-21T23:59:19: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:59:20: [OS Stats] 조회 완료: {
+  cpu_usage: 99.58,
+  memory_usage: 98.07,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:59:21: [Metrics API] Oracle queries completed in 2126ms (failures: none)
+2026-02-21T23:59:21: [Metrics API] Total response time: 2126ms
+2026-02-21T23:59:51: [OS Stats] 조회 완료: {
+  cpu_usage: 99.53,
+  memory_usage: 97.87,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-21T23:59:51: [Metrics API] Fetching from Oracle directly
+2026-02-21T23:59:54: [Metrics API] Oracle queries completed in 2393ms (failures: none)
+2026-02-21T23:59:54: [Metrics API] Total response time: 2393ms
+2026-02-22T00:00:21: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:00:22: [OS Stats] 조회 완료: {
+  cpu_usage: 99.53,
+  memory_usage: 97.32,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:00:23: [Metrics API] Oracle queries completed in 2189ms (failures: none)
+2026-02-22T00:00:23: [Metrics API] Total response time: 2189ms
+2026-02-22T00:00:51: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:00:52: [OS Stats] 조회 완료: {
+  cpu_usage: 99.63,
+  memory_usage: 98.32,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:00:53: [Metrics API] Oracle queries completed in 2235ms (failures: none)
+2026-02-22T00:00:53: [Metrics API] Total response time: 2235ms
+2026-02-22T00:01:23: [OS Stats] 조회 완료: {
+  cpu_usage: 99.63,
+  memory_usage: 97.87,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:01:23: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:01:26: [Metrics API] Oracle queries completed in 2079ms (failures: none)
+2026-02-22T00:01:26: [Metrics API] Total response time: 2079ms
+2026-02-22T00:01:53: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:01:54: [OS Stats] 조회 완료: {
+  cpu_usage: 99.56,
+  memory_usage: 97.86,
+  io_mbps: 0.35,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:01:55: [Metrics API] Oracle queries completed in 2010ms (failures: none)
+2026-02-22T00:01:55: [Metrics API] Total response time: 2010ms
+2026-02-22T00:02:23: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:02:24: [OS Stats] 조회 완료: {
+  cpu_usage: 99.56,
+  memory_usage: 98.27,
+  io_mbps: 0.35,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:02:26: [Metrics API] Oracle queries completed in 2206ms (failures: none)
+2026-02-22T00:02:26: [Metrics API] Total response time: 2206ms
+2026-02-22T00:02:55: [OS Stats] 조회 완료: {
+  cpu_usage: 99.54,
+  memory_usage: 97.94,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:02:56: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:02:58: [Metrics API] Oracle queries completed in 2032ms (failures: none)
+2026-02-22T00:02:58: [Metrics API] Total response time: 2032ms
+2026-02-22T00:03:26: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:03:26: [OS Stats] 조회 완료: {
+  cpu_usage: 99.54,
+  memory_usage: 97.64,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:03:28: [Metrics API] Oracle queries completed in 2352ms (failures: none)
+2026-02-22T00:03:28: [Metrics API] Total response time: 2352ms
+2026-02-22T00:03:56: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:03:57: [OS Stats] 조회 완료: {
+  cpu_usage: 99.63,
+  memory_usage: 98.15,
+  io_mbps: 0.13,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:03:58: [Metrics API] Oracle queries completed in 2392ms (failures: none)
+2026-02-22T00:03:58: [Metrics API] Total response time: 2392ms
+2026-02-22T00:04:26: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:04:27: [OS Stats] 조회 완료: {
+  cpu_usage: 99.63,
+  memory_usage: 97.82,
+  io_mbps: 0.13,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:04:28: [Metrics API] Oracle queries completed in 2209ms (failures: none)
+2026-02-22T00:04:28: [Metrics API] Total response time: 2209ms
+2026-02-22T00:04:58: [OS Stats] 조회 완료: {
+  cpu_usage: 99.53,
+  memory_usage: 97.88,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:04:58: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:05:00: [Metrics API] Oracle queries completed in 2035ms (failures: none)
+2026-02-22T00:05:00: [Metrics API] Total response time: 2035ms
+2026-02-22T00:05:28: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:05:29: [OS Stats] 조회 완료: {
+  cpu_usage: 99.53,
+  memory_usage: 98.35,
+  io_mbps: 0.12,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:05:30: [Metrics API] Oracle queries completed in 2146ms (failures: none)
+2026-02-22T00:05:30: [Metrics API] Total response time: 2146ms
+2026-02-22T00:05:47: [sql-statistics] ASH 시간 범위 쿼리: {
+  startTime: '2026-02-21 09:59:00',
+  endTime: '2026-02-21 10:01:00',
+  limit: 100,
+  orderBy: 'elapsed_time_ms'
+}
+2026-02-22T00:05:48: [sql-statistics] ASH 쿼리 결과: { rowCount: 100 }
+2026-02-22T00:05:58: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:05:59: [sql-statistics] ASH 시간 범위 쿼리: {
+  startTime: '2026-02-21 10:03:00',
+  endTime: '2026-02-21 10:04:00',
+  limit: 100,
+  orderBy: 'elapsed_time_ms'
+}
+2026-02-22T00:05:59: [OS Stats] 조회 완료: {
+  cpu_usage: 99.55,
+  memory_usage: 97.83,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:06:00: [sql-statistics] ASH 쿼리 결과: { rowCount: 100 }
+2026-02-22T00:06:00: [Metrics API] Oracle queries completed in 2272ms (failures: none)
+2026-02-22T00:06:00: [Metrics API] Total response time: 2272ms
+2026-02-22T00:06:30: [OS Stats] 조회 완료: {
+  cpu_usage: 99.55,
+  memory_usage: 98.06,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:06:30: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:06:32: [Metrics API] Oracle queries completed in 1999ms (failures: none)
+2026-02-22T00:06:32: [Metrics API] Total response time: 1999ms
+2026-02-22T00:07:00: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:07:01: [OS Stats] 조회 완료: {
+  cpu_usage: 99.64,
+  memory_usage: 97.62,
+  io_mbps: 0.26,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:07:03: [Metrics API] Oracle queries completed in 2462ms (failures: none)
+2026-02-22T00:07:03: [Metrics API] Total response time: 2462ms
+2026-02-22T00:07:32: [OS Stats] 조회 완료: {
+  cpu_usage: 99.64,
+  memory_usage: 97.87,
+  io_mbps: 0.26,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:07:33: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:07:35: [Metrics API] Oracle queries completed in 2059ms (failures: none)
+2026-02-22T00:07:35: [Metrics API] Total response time: 2059ms
+2026-02-22T00:08:02: [OS Stats] 조회 완료: {
+  cpu_usage: 99.6,
+  memory_usage: 97.74,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:08:03: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:08:05: [Metrics API] Oracle queries completed in 2017ms (failures: none)
+2026-02-22T00:08:05: [Metrics API] Total response time: 2017ms
+2026-02-22T00:08:33: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:08:33: [OS Stats] 조회 완료: {
+  cpu_usage: 99.6,
+  memory_usage: 97.59,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:08:35: [Metrics API] Oracle queries completed in 2055ms (failures: none)
+2026-02-22T00:08:35: [Metrics API] Total response time: 2055ms
+2026-02-22T00:09:04: [OS Stats] 조회 완료: {
+  cpu_usage: 99.55,
+  memory_usage: 97.96,
+  io_mbps: 0.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:09:05: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:09:07: [Metrics API] Oracle queries completed in 2424ms (failures: none)
+2026-02-22T00:09:07: [Metrics API] Total response time: 2424ms
+2026-02-22T00:09:35: [OS Stats] 조회 완료: {
+  cpu_usage: 99.56,
+  memory_usage: 98.84,
+  io_mbps: 0.79,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:09:35: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:09:37: [Metrics API] Oracle queries completed in 2080ms (failures: none)
+2026-02-22T00:09:37: [Metrics API] Total response time: 2080ms
+2026-02-22T00:10:05: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:10:05: [OS Stats] 조회 완료: {
+  cpu_usage: 99.56,
+  memory_usage: 98.74,
+  io_mbps: 0.79,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:10:07: [Metrics API] Oracle queries completed in 2251ms (failures: none)
+2026-02-22T00:10:07: [Metrics API] Total response time: 2251ms
+2026-02-22T00:10:35: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:10:36: [OS Stats] 조회 완료: {
+  cpu_usage: 99.55,
+  memory_usage: 96.57,
+  io_mbps: 4.25,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:10:37: [Metrics API] Oracle queries completed in 2172ms (failures: none)
+2026-02-22T00:10:37: [Metrics API] Total response time: 2172ms
+2026-02-22T00:10:46: [sql-statistics] ASH 시간 범위 쿼리: {
+  startTime: '2026-02-21 10:09:00',
+  endTime: '2026-02-21 10:10:00',
+  limit: 100,
+  orderBy: 'elapsed_time_ms'
+}
+2026-02-22T00:10:47: [sql-statistics] ASH 쿼리 결과: { rowCount: 100 }
+2026-02-22T00:11:05: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:11:07: [OS Stats] 조회 완료: {
+  cpu_usage: 99.55,
+  memory_usage: 97.44,
+  io_mbps: 4.25,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:11:07: [Metrics API] Oracle queries completed in 2288ms (failures: none)
+2026-02-22T00:11:07: [Metrics API] Total response time: 2288ms
+2026-02-22T00:12:43: [Sessions API] Received connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:12:43: [Sessions API] Fetched 100 sessions for connection f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:12:44: [Wait Events API] Received connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:12:45: [Wait Events API] Oracle returned 128 rows
+2026-02-22T00:12:45: [Wait Events API] Returning 128 wait events, 49 waiting sessions, 11 events with SQL, 1780 event descriptions
+2026-02-22T00:13:45: [Wait Events API] Received connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:13:47: [Wait Events API] Oracle returned 128 rows
+2026-02-22T00:13:47: [Wait Events API] Returning 128 wait events, 50 waiting sessions, 11 events with SQL, 1780 event descriptions
+2026-02-22T00:14:42: [Locks API] Fetched 0 locks for connection f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:14:42: [Locks API] V$DIAG_ALERT_EXT not available, trying ASH...
+2026-02-22T00:14:43: [Locks API] Found 0 deadlock events
+2026-02-22T00:14:49: [SQL Monitor] Edition check: {
+  isEnterprise: true,
+  editionInfo: 'Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'
+}
+2026-02-22T00:14:49: [SQL Monitor] License check: DIAGNOSTIC+TUNING
+2026-02-22T00:14:49: [SQL Monitor API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:14:49: [SQL Monitor API] Query filters - Status: all , Username: all
+2026-02-22T00:14:49: [SQL Monitor API] Query executed successfully, rows returned: 3
+2026-02-22T00:14:49: [SQL Monitor API] Found 3 SQL Monitor entries
+2026-02-22T00:14:55: [SQL Monitor] Edition check: {
+  isEnterprise: true,
+  editionInfo: 'Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'
+}
+2026-02-22T00:14:55: [SQL Monitor] License check: DIAGNOSTIC+TUNING
+2026-02-22T00:14:55: [SQL Monitor API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:14:55: [SQL Monitor API] Query filters - Status: all , Username: all
+2026-02-22T00:14:55: [SQL Monitor API] Query executed successfully, rows returned: 3
+2026-02-22T00:14:55: [SQL Monitor API] Found 3 SQL Monitor entries
+2026-02-22T00:15:00: [SQL Monitor] Edition check: {
+  isEnterprise: true,
+  editionInfo: 'Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'
+}
+2026-02-22T00:15:01: [SQL Monitor] License check: DIAGNOSTIC+TUNING
+2026-02-22T00:15:01: [SQL Monitor API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:15:01: [SQL Monitor API] Query filters - Status: all , Username: all
+2026-02-22T00:15:01: [SQL Monitor API] Query executed successfully, rows returned: 3
+2026-02-22T00:15:01: [SQL Monitor API] Found 3 SQL Monitor entries
+2026-02-22T00:15:02: [SQL Monitor Report] Request received: {
+  connection_id: 'f8aee7e1-7409-4834-acdb-c811e29e0f89',
+  sql_id: 'fnf8sdwah222w',
+  sql_exec_id: 16777216
+}
+2026-02-22T00:15:02: [SQL Monitor Report] Config loaded successfully
+2026-02-22T00:15:03: [SQL Monitor Report] HTML Result converted: success
+2026-02-22T00:15:03: [SQL Monitor Report] TEXT Result converted: success
+2026-02-22T00:15:04: [SQL Monitor Report] XML Result converted: success
+2026-02-22T00:15:04: [SQL Monitor Report API] Generated report for SQL_ID: fnf8sdwah222w, EXEC_ID: 16777216
+2026-02-22T00:15:06: [SQL Monitor] Edition check: {
+  isEnterprise: true,
+  editionInfo: 'Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'
+}
+2026-02-22T00:15:06: [SQL Monitor] License check: DIAGNOSTIC+TUNING
+2026-02-22T00:15:06: [SQL Monitor API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:15:06: [SQL Monitor API] Query filters - Status: all , Username: all
+2026-02-22T00:15:07: [SQL Monitor API] Query executed successfully, rows returned: 3
+2026-02-22T00:15:07: [SQL Monitor API] Found 3 SQL Monitor entries
+2026-02-22T00:15:12: [SQL Monitor] Edition check: {
+  isEnterprise: true,
+  editionInfo: 'Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'
+}
+2026-02-22T00:15:12: [SQL Monitor] License check: DIAGNOSTIC+TUNING
+2026-02-22T00:15:12: [SQL Monitor API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:15:12: [SQL Monitor API] Query filters - Status: all , Username: all
+2026-02-22T00:15:12: [SQL Monitor API] Query executed successfully, rows returned: 3
+2026-02-22T00:15:12: [SQL Monitor API] Found 3 SQL Monitor entries
+2026-02-22T00:15:18: [SQL Monitor] Edition check: {
+  isEnterprise: true,
+  editionInfo: 'Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'
+}
+2026-02-22T00:15:18: [SQL Monitor] License check: DIAGNOSTIC+TUNING
+2026-02-22T00:15:18: [SQL Monitor API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:15:18: [SQL Monitor API] Query filters - Status: all , Username: all
+2026-02-22T00:15:18: [SQL Monitor API] Query executed successfully, rows returned: 3
+2026-02-22T00:15:18: [SQL Monitor API] Found 3 SQL Monitor entries
+2026-02-22T00:15:24: [SQL Monitor] Edition check: {
+  isEnterprise: true,
+  editionInfo: 'Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'
+}
+2026-02-22T00:15:24: [SQL Monitor] License check: DIAGNOSTIC+TUNING
+2026-02-22T00:15:24: [SQL Monitor API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:15:24: [SQL Monitor API] Query filters - Status: all , Username: all
+2026-02-22T00:15:24: [SQL Monitor API] Query executed successfully, rows returned: 3
+2026-02-22T00:15:24: [SQL Monitor API] Found 3 SQL Monitor entries
+2026-02-22T00:15:29: [SQL Monitor] Edition check: {
+  isEnterprise: true,
+  editionInfo: 'Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'
+}
+2026-02-22T00:15:30: [SQL Monitor] License check: DIAGNOSTIC+TUNING
+2026-02-22T00:15:30: [SQL Monitor API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:15:30: [SQL Monitor API] Query filters - Status: all , Username: all
+2026-02-22T00:15:30: [SQL Monitor API] Query executed successfully, rows returned: 3
+2026-02-22T00:15:30: [SQL Monitor API] Found 3 SQL Monitor entries
+2026-02-22T00:15:48: [LLM Stream] Request received
+2026-02-22T00:15:48: [LLM Stream] Body parsed successfully, keys: [
+  'sql_text',
+  'context',
+  'language',
+  '_timestamp',
+  'execution_plan',
+  'metrics'
+]
+2026-02-22T00:15:48: [LLM Stream] Auth check: OK
+2026-02-22T00:15:48: [LLM Stream] Feature enabled: true
+2026-02-22T00:15:48: [LLM Stream] Validation: true []
+2026-02-22T00:15:48: [LLM Stream] Starting stream, messages: 2
+2026-02-22T00:15:48: [LLM Stream] LLM client created, starting chat...
+2026-02-22T00:16:11: [LLM Stream] First chunk received in 23073 ms
+2026-02-22T00:16:26: [LLM Stream] Completed in 38373 ms, chunks: 800
+2026-02-22T00:16:26: [LLM Stop] Request received
+2026-02-22T00:16:26: [LLM Stop] Sending unload request to Ollama: http://localhost:11434/api/generate model: qwen3:8b
+2026-02-22T00:16:26: [LLM Stop] Ollama response: 200 {"model":"qwen3:8b","created_at":"2026-02-21T15:16:26.865118Z","response":"","done":true,"done_reason":"unload"}
+2026-02-22T00:16:26: [LLM Stop] Model unload request sent successfully
+2026-02-22T00:16:50: [LLM Stream] Request received
+2026-02-22T00:16:50: [LLM Stream] Body parsed successfully, keys: [
+  'sql_text',
+  'context',
+  'language',
+  '_timestamp',
+  'execution_plan',
+  'metrics'
+]
+2026-02-22T00:16:50: [LLM Stream] Auth check: OK
+2026-02-22T00:16:50: [LLM Stream] Feature enabled: true
+2026-02-22T00:16:50: [LLM Stream] Validation: true []
+2026-02-22T00:16:50: [LLM Stream] Starting stream, messages: 2
+2026-02-22T00:16:50: [LLM Stream] LLM client created, starting chat...
+2026-02-22T00:17:09: [LLM Stream] First chunk received in 18125 ms
+2026-02-22T00:17:21: [LLM Stream] Completed in 30999 ms, chunks: 662
+2026-02-22T00:17:21: [LLM Stop] Request received
+2026-02-22T00:17:21: [LLM Stop] Sending unload request to Ollama: http://localhost:11434/api/generate model: qwen3:8b
+2026-02-22T00:17:21: [LLM Stop] Ollama response: 200 {"model":"qwen3:8b","created_at":"2026-02-21T15:17:21.942457Z","response":"","done":true,"done_reason":"unload"}
+2026-02-22T00:17:21: [LLM Stop] Model unload request sent successfully
+2026-02-22T00:17:43: [Sessions API] Received connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:17:44: [Sessions API] Fetched 100 sessions for connection f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:17:54: [SQL Detail API] Received connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89 sql_id: 4xavfqcjkjfup
+2026-02-22T00:17:54: [SQL Detail API] SQL_FULLTEXT type: string constructor: String
+2026-02-22T00:17:54: [SQL Detail API] SQL text length: 599
+2026-02-22T00:17:54: [SQL Detail API] Returning detail for SQL_ID: 4xavfqcjkjfup
+2026-02-22T00:17:59: [Sessions API] Received connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:17:59: [Sessions API] Fetched 100 sessions for connection f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:19:49: [Schemas API] Fetching schemas for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:19:49: [Schemas API] Connection found: TMSDB
+2026-02-22T00:19:50: [Schemas API] Executing query...
+2026-02-22T00:19:50: [Schemas API] Success! Found 16 schemas
+2026-02-22T00:19:50: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: APPQOSSYS type: TABLE
+2026-02-22T00:19:50: [Objects API] Connection found: TMSDB
+2026-02-22T00:19:56: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH type: TABLE
+2026-02-22T00:19:56: [Objects API] Connection found: TMSDB
+2026-02-22T00:20:01: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:20:01: [Execute API] Connection found: TMSDB
+2026-02-22T00:20:02: [Execute API] Schema changed to: SH
+2026-02-22T00:20:02: [Execute API] Query type: SELECT
+2026-02-22T00:20:02: [Execute API] Success! Execution time: 380 ms
+2026-02-22T00:20:11: [Explain API] Getting explain plan for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:20:11: [Explain API] Connection found: TMSDB
+2026-02-22T00:20:11: [Explain API] Statement ID: STMT_1771687211203_04qfpzpt5
+2026-02-22T00:20:11: [Explain API] PLAN_TABLE missing, creating and retrying...
+2026-02-22T00:20:11: [Explain API] PLAN_TABLE does not exist, creating...
+2026-02-22T00:20:12: [Explain API] PLAN_TABLE created successfully
+2026-02-22T00:20:26: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:20:26: [Execute API] Connection found: TMSDB
+2026-02-22T00:20:26: [Execute API] Schema changed to: SH
+2026-02-22T00:20:26: [Execute API] Query type: SELECT
+2026-02-22T00:20:26: [Execute API] Success! Execution time: 274 ms
+2026-02-22T00:20:28: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:20:28: [Execute API] Connection found: TMSDB
+2026-02-22T00:20:28: [Execute API] Schema changed to: SH
+2026-02-22T00:20:28: [Execute API] Query type: SELECT
+2026-02-22T00:20:29: [Execute API] Success! Execution time: 420 ms
+2026-02-22T00:20:44: [Explain API] Getting explain plan for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:20:44: [Explain API] Connection found: TMSDB
+2026-02-22T00:20:45: [Explain API] Statement ID: STMT_1771687245005_bran0ijnf
+2026-02-22T00:20:45: [Explain API] PLAN_TABLE missing, creating and retrying...
+2026-02-22T00:20:45: [Explain API] PLAN_TABLE already exists
+2026-02-22T00:21:17: [Explain API] Getting explain plan for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:21:17: [Explain API] Connection found: TMSDB
+2026-02-22T00:21:17: [Explain API] Statement ID: STMT_1771687277579_6ftq0s5b2
+2026-02-22T00:21:17: [Explain API] PLAN_TABLE missing, creating and retrying...
+2026-02-22T00:21:18: [Explain API] PLAN_TABLE already exists
+2026-02-22T00:28:12: ▲ Next.js 16.1.6
+2026-02-22T00:28:12: ▲ Next.js 16.1.6
+2026-02-22T00:28:12: - Local:         http://localhost:3000
+2026-02-22T00:28:12: - Network:       http://192.168.0.4:3000
+2026-02-22T00:28:12: 
+2026-02-22T00:28:12: ✓ Starting...
+2026-02-22T00:28:12: - Local:         http://localhost:3000
+2026-02-22T00:28:12: - Network:       http://192.168.0.4:3000
+2026-02-22T00:28:12: 
+2026-02-22T00:28:12: ✓ Starting...
+2026-02-22T00:28:13: ✓ Ready in 321ms
+2026-02-22T00:28:13: ✓ Ready in 321ms
+2026-02-22T00:28:13: ✓ Oracle Thick mode initialized
+2026-02-22T00:28:13:   Library directory: /opt/oracle/instantclient
+2026-02-22T00:28:13: ✓ Oracle Thick mode initialized
+2026-02-22T00:28:13:   Library directory: /opt/oracle/instantclient
+2026-02-22T00:28:15: ▲ Next.js 16.1.6
+2026-02-22T00:28:15: ▲ Next.js 16.1.6
+2026-02-22T00:28:15: - Local:         http://localhost:3000
+2026-02-22T00:28:15: - Network:       http://192.168.0.4:3000
+2026-02-22T00:28:15: 
+2026-02-22T00:28:15: ✓ Starting...
+2026-02-22T00:28:15: - Local:         http://localhost:3000
+2026-02-22T00:28:15: - Network:       http://192.168.0.4:3000
+2026-02-22T00:28:15: 
+2026-02-22T00:28:15: ✓ Starting...
+2026-02-22T00:28:15: ✓ Ready in 252ms
+2026-02-22T00:28:15: ✓ Ready in 252ms
+2026-02-22T00:28:16: ✓ Oracle Thick mode initialized
+2026-02-22T00:28:16:   Library directory: /opt/oracle/instantclient
+2026-02-22T00:28:16: ✓ Oracle Thick mode initialized
+2026-02-22T00:28:16:   Library directory: /opt/oracle/instantclient
+2026-02-22T00:30:16: [Explain API] Getting explain plan for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: default
+2026-02-22T00:30:17: [Explain API] Statement ID: STMT_1771687817040_hwjh4bnez
+2026-02-22T00:30:17: [Explain API] PLAN_TABLE already exists
+2026-02-22T00:30:22: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:30:22: [Sessions API] Received connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:30:22: [Sessions API] Fetched 100 sessions for connection f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:30:23: [Schemas API] Fetching schemas for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:30:23: [Schemas API] Connection found: TMSDB
+2026-02-22T00:30:24: [Schemas API] Executing query...
+2026-02-22T00:30:24: [Schemas API] Success! Found 16 schemas
+2026-02-22T00:30:24: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: APPQOSSYS type: TABLE
+2026-02-22T00:30:24: [Metrics API] Oracle queries completed in 1932ms (failures: none)
+2026-02-22T00:30:24: [Metrics API] Total response time: 1932ms
+2026-02-22T00:30:24: [Objects API] Connection found: TMSDB
+2026-02-22T00:30:28: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH type: TABLE
+2026-02-22T00:30:28: [Objects API] Connection found: TMSDB
+2026-02-22T00:37:31: [Metrics API] Fetching from Oracle directly
+2026-02-22T00:37:32: [OS Stats] 조회 완료: {
+  cpu_usage: 99.59,
+  memory_usage: 96.42,
+  io_mbps: 0.08,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T00:37:33: [Metrics API] Oracle queries completed in 1957ms (failures: none)
+2026-02-22T00:37:33: [Metrics API] Total response time: 1957ms
+2026-02-22T00:37:33: [Schemas API] Fetching schemas for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:37:33: [Schemas API] Connection found: TMSDB
+2026-02-22T00:37:33: [Schemas API] Executing query...
+2026-02-22T00:37:34: [Schemas API] Success! Found 16 schemas
+2026-02-22T00:37:34: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: APPQOSSYS type: TABLE
+2026-02-22T00:37:34: [Objects API] Connection found: TMSDB
+2026-02-22T00:37:38: [Schemas API] Fetching schemas for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T00:37:38: [Schemas API] Connection found: TMSDB
+2026-02-22T00:37:38: [Schemas API] Executing query...
+2026-02-22T00:37:39: [Schemas API] Success! Found 16 schemas
+2026-02-22T00:37:39: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: APPQOSSYS type: TABLE
+2026-02-22T00:37:39: [Objects API] Connection found: TMSDB
+2026-02-22T00:37:42: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH type: TABLE
+2026-02-22T00:37:42: [Objects API] Connection found: TMSDB
+2026-02-22T00:37:47: [SQL Detail API] Received connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89 sql_id: 4kwqmbh8cs1gp
+2026-02-22T00:37:47: [SQL Detail API] SQL_FULLTEXT type: string constructor: String
+2026-02-22T00:37:47: [SQL Detail API] SQL text length: 637
+2026-02-22T00:37:48: [SQL Detail API] Returning detail for SQL_ID: 4kwqmbh8cs1gp
+2026-02-22T00:38:02: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:38:02: [Execute API] Connection found: TMSDB
+2026-02-22T00:38:02: [Execute API] Schema changed to: SH
+2026-02-22T00:38:02: [Execute API] Query type: SELECT
+2026-02-22T00:38:03: [Execute API] Success! Execution time: 1192 ms
+2026-02-22T00:38:07: [Explain API] Getting explain plan for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:38:08: [Explain API] Schema changed to: SH
+2026-02-22T00:38:08: [Explain API] Statement ID: STMT_1771688288376_6y7piuhem
+2026-02-22T00:38:08: [Explain API] Explain plan executed
+2026-02-22T00:38:08: [Explain API] Plan retrieved, rows: 12
+2026-02-22T00:38:25: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH type: INDEX
+2026-02-22T00:38:25: [Objects API] Connection found: TMSDB
+2026-02-22T00:39:13: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:39:13: [Execute API] Connection found: TMSDB
+2026-02-22T00:39:13: [Execute API] Schema changed to: SH
+2026-02-22T00:39:13: [Execute API] Query type: SELECT
+2026-02-22T00:39:14: [Execute API] Success! Execution time: 856 ms
+2026-02-22T00:39:16: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:39:16: [Execute API] Connection found: TMSDB
+2026-02-22T00:39:16: [Execute API] Schema changed to: SH
+2026-02-22T00:39:16: [Execute API] Query type: SELECT
+2026-02-22T00:39:16: [Execute API] Success! Execution time: 579 ms
+2026-02-22T00:39:50: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:39:50: [Execute API] Connection found: TMSDB
+2026-02-22T00:39:50: [Execute API] Schema changed to: SH
+2026-02-22T00:39:50: [Execute API] Query type: SELECT
+2026-02-22T00:39:51: [Execute API] Success! Execution time: 438 ms
+2026-02-22T00:40:06: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:40:06: [Execute API] Connection found: TMSDB
+2026-02-22T00:40:06: [Execute API] Schema changed to: SH
+2026-02-22T00:40:06: [Execute API] Query type: SELECT
+2026-02-22T00:40:06: [Execute API] Success! Execution time: 283 ms
+2026-02-22T00:40:17: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:40:17: [Execute API] Connection found: TMSDB
+2026-02-22T00:40:17: [Execute API] Schema changed to: SH
+2026-02-22T00:40:17: [Execute API] Query type: SELECT
+2026-02-22T00:40:17: [Execute API] Success! Execution time: 302 ms
+2026-02-22T00:40:23: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:40:23: [Execute API] Connection found: TMSDB
+2026-02-22T00:40:23: [Execute API] Schema changed to: SH
+2026-02-22T00:40:23: [Execute API] Query type: SELECT
+2026-02-22T00:40:23: [Execute API] Success! Execution time: 314 ms
+2026-02-22T00:40:31: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:40:31: [Execute API] Connection found: TMSDB
+2026-02-22T00:40:31: [Execute API] Schema changed to: SH
+2026-02-22T00:40:31: [Execute API] Query type: SELECT
+2026-02-22T00:40:31: [Execute API] Success! Execution time: 411 ms
+2026-02-22T00:40:41: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:40:41: [Execute API] Connection found: TMSDB
+2026-02-22T00:40:42: [Execute API] Schema changed to: SH
+2026-02-22T00:40:42: [Execute API] Query type: SELECT
+2026-02-22T00:40:42: [Execute API] Success! Execution time: 471 ms
+2026-02-22T00:40:59: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH type: ALL
+2026-02-22T00:40:59: [Objects API] Connection found: TMSDB
+2026-02-22T00:41:06: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH type: INDEX
+2026-02-22T00:41:06: [Objects API] Connection found: TMSDB
+2026-02-22T00:41:39: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:41:39: [Execute API] Connection found: TMSDB
+2026-02-22T00:41:39: [Execute API] Schema changed to: SH
+2026-02-22T00:41:39: [Execute API] Query type: SELECT
+2026-02-22T00:41:40: [Execute API] Success! Execution time: 1007 ms
+2026-02-22T00:42:03: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:42:03: [Execute API] Connection found: TMSDB
+2026-02-22T00:42:04: [Execute API] Schema changed to: SH
+2026-02-22T00:42:04: [Execute API] Query type: OTHER
+2026-02-22T00:42:18: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:42:18: [Execute API] Connection found: TMSDB
+2026-02-22T00:42:18: [Execute API] Schema changed to: SH
+2026-02-22T00:42:18: [Execute API] Query type: SELECT
+2026-02-22T00:42:18: [Execute API] Success! Execution time: 415 ms
+2026-02-22T00:42:39: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:42:39: [Execute API] Connection found: TMSDB
+2026-02-22T00:42:39: [Execute API] Schema changed to: SH
+2026-02-22T00:42:39: [Execute API] Query type: SELECT
+2026-02-22T00:42:39: [Execute API] Success! Execution time: 456 ms
+2026-02-22T00:42:49: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:42:49: [Execute API] Connection found: TMSDB
+2026-02-22T00:42:49: [Execute API] Schema changed to: SH
+2026-02-22T00:42:49: [Execute API] Query type: SELECT
+2026-02-22T00:42:50: [Execute API] Success! Execution time: 890 ms
+2026-02-22T00:43:32: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:43:32: [Execute API] Connection found: TMSDB
+2026-02-22T00:43:32: [Execute API] Schema changed to: SH
+2026-02-22T00:43:32: [Execute API] Query type: SELECT
+2026-02-22T00:43:32: [Execute API] Success! Execution time: 205 ms
+2026-02-22T00:43:35: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:43:35: [Execute API] Connection found: TMSDB
+2026-02-22T00:43:35: [Execute API] Schema changed to: SH
+2026-02-22T00:43:35: [Execute API] Query type: SELECT
+2026-02-22T00:43:35: [Execute API] Success! Execution time: 184 ms
+2026-02-22T00:43:36: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:43:36: [Execute API] Connection found: TMSDB
+2026-02-22T00:43:36: [Execute API] Schema changed to: SH
+2026-02-22T00:43:36: [Execute API] Query type: SELECT
+2026-02-22T00:43:36: [Execute API] Success! Execution time: 162 ms
+2026-02-22T00:43:51: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:43:51: [Execute API] Connection found: TMSDB
+2026-02-22T00:43:51: [Execute API] Schema changed to: SH
+2026-02-22T00:43:51: [Execute API] Query type: SELECT
+2026-02-22T00:43:51: [Execute API] Success! Execution time: 349 ms
+2026-02-22T00:43:52: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:43:52: [Execute API] Connection found: TMSDB
+2026-02-22T00:43:52: [Execute API] Schema changed to: SH
+2026-02-22T00:43:52: [Execute API] Query type: SELECT
+2026-02-22T00:43:52: [Execute API] Success! Execution time: 149 ms
+2026-02-22T00:43:53: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:43:53: [Execute API] Connection found: TMSDB
+2026-02-22T00:43:53: [Execute API] Schema changed to: SH
+2026-02-22T00:43:53: [Execute API] Query type: SELECT
+2026-02-22T00:43:53: [Execute API] Success! Execution time: 197 ms
+2026-02-22T00:43:53: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:43:53: [Execute API] Connection found: TMSDB
+2026-02-22T00:43:53: [Execute API] Schema changed to: SH
+2026-02-22T00:43:53: [Execute API] Query type: SELECT
+2026-02-22T00:43:53: [Execute API] Success! Execution time: 161 ms
+2026-02-22T00:43:53: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:43:53: [Execute API] Connection found: TMSDB
+2026-02-22T00:43:54: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-22T00:43:54: [Execute API] Connection found: TMSDB
+2026-02-22T00:43:54: [Execute API] Schema changed to: SH
+2026-02-22T00:43:54: [Execute API] Query type: SELECT
+2026-02-22T00:43:54: [Execute API] Success! Execution time: 298 ms
+2026-02-22T00:43:54: [Execute API] Schema changed to: SH
+2026-02-22T00:43:54: [Execute API] Query type: SELECT
+2026-02-22T00:43:54: [Execute API] Success! Execution time: 314 ms
+2026-02-22T00:44:39: ▲ Next.js 16.1.6
+2026-02-22T00:44:39: ▲ Next.js 16.1.6
+2026-02-22T00:44:39: ▲ Next.js 16.1.6
+2026-02-22T00:44:39: - Local:         http://localhost:3000
+2026-02-22T00:44:39: - Network:       http://192.168.0.4:3000
+2026-02-22T00:44:39: 
+2026-02-22T00:44:39: ✓ Starting...
+2026-02-22T00:44:39: - Local:         http://localhost:3000
+2026-02-22T00:44:39: - Network:       http://192.168.0.4:3000
+2026-02-22T00:44:39: 
+2026-02-22T00:44:39: ✓ Starting...
+2026-02-22T00:44:39: - Local:         http://localhost:3000
+2026-02-22T00:44:39: - Network:       http://192.168.0.4:3000
+2026-02-22T00:44:39: 
+2026-02-22T00:44:39: ✓ Starting...
+2026-02-22T00:44:39: ✓ Ready in 224ms
+2026-02-22T00:44:39: ✓ Ready in 227ms
+2026-02-22T00:44:40: ✓ Oracle Thick mode initialized
+2026-02-22T00:44:40:   Library directory: /opt/oracle/instantclient
+2026-02-22T00:44:40: ✓ Oracle Thick mode initialized
+2026-02-22T00:44:40:   Library directory: /opt/oracle/instantclient
+2026-02-22T08:36:20: ▲ Next.js 16.1.6
+2026-02-22T08:36:20: ▲ Next.js 16.1.6
+2026-02-22T08:36:20: - Local:         http://localhost:3000
+2026-02-22T08:36:20: - Network:       http://192.168.0.4:3000
+2026-02-22T08:36:20: 
+2026-02-22T08:36:20: ✓ Starting...
+2026-02-22T08:36:20: - Local:         http://localhost:3000
+2026-02-22T08:36:20: - Network:       http://192.168.0.4:3000
+2026-02-22T08:36:20: 
+2026-02-22T08:36:20: ✓ Starting...
+2026-02-22T08:36:21: ✓ Ready in 542ms
+2026-02-22T08:36:21: ✓ Ready in 542ms
+2026-02-22T08:36:22: ✓ Oracle Thick mode initialized
+2026-02-22T08:36:22:   Library directory: /opt/oracle/instantclient
+2026-02-22T08:36:22: ✓ Oracle Thick mode initialized
+2026-02-22T08:36:22:   Library directory: /opt/oracle/instantclient
+2026-02-22T08:36:23: ▲ Next.js 16.1.6
+2026-02-22T08:36:23: ▲ Next.js 16.1.6
+2026-02-22T08:36:23: - Local:         http://localhost:3000
+2026-02-22T08:36:23: - Network:       http://192.168.0.4:3000
+2026-02-22T08:36:23: 
+2026-02-22T08:36:23: ✓ Starting...
+2026-02-22T08:36:23: - Local:         http://localhost:3000
+2026-02-22T08:36:23: - Network:       http://192.168.0.4:3000
+2026-02-22T08:36:23: 
+2026-02-22T08:36:23: ✓ Starting...
+2026-02-22T08:36:23: ✓ Ready in 221ms
+2026-02-22T08:36:23: ✓ Ready in 221ms
+2026-02-22T08:36:24: ✓ Oracle Thick mode initialized
+2026-02-22T08:36:24:   Library directory: /opt/oracle/instantclient
+2026-02-22T08:36:24: ✓ Oracle Thick mode initialized
+2026-02-22T08:36:24:   Library directory: /opt/oracle/instantclient
+2026-02-22T09:24:09: [Metrics API] Fetching from Oracle directly
+2026-02-22T09:24:11: [Metrics API] Oracle queries completed in 2538ms (failures: none)
+2026-02-22T09:24:11: [Metrics API] Total response time: 2538ms
+2026-02-22T09:24:12: [OS Stats] 조회 완료: {
+  cpu_usage: 99.58,
+  memory_usage: 97.98,
+  io_mbps: 0.07,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T09:24:37: [Pattern Detection API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T09:24:37: [Realtime Monitoring API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T09:24:37: [Refactoring Suggestions API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T09:24:37: [Realtime Monitoring API] Found 30 active SQLs
+2026-02-22T09:24:38: [Refactoring Suggestions API] Found 10 suggestions
+2026-02-22T09:24:39: [Pattern Detection API] Found 1 issues
+2026-02-22T17:06:58: [Metrics API] Fetching from Oracle directly
+2026-02-22T17:07:09: [Metrics API] Oracle queries completed in 11192ms (failures: none)
+2026-02-22T17:07:09: [Metrics API] Total response time: 11192ms
+2026-02-22T17:07:17: [Pattern Detection API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T17:07:17: [Realtime Monitoring API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T17:07:17: [Refactoring Suggestions API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T17:07:18: [Realtime Monitoring API] Found 30 active SQLs
+2026-02-22T17:07:23: [Pattern Detection API] Found 0 issues
+2026-02-22T17:07:32: [SQL Detail API] Received connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89 sql_id: 5aryjzqd7h00h
+2026-02-22T17:07:32: [SQL History API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89 sql_id: 5aryjzqd7h00h
+2026-02-22T17:07:32: [SQL History API] Found 2 history records
+2026-02-22T17:07:32: [SQL Detail API] SQL_FULLTEXT type: string constructor: String
+2026-02-22T17:07:32: [SQL Detail API] SQL text length: 637
+2026-02-22T17:07:34: [SQL Detail API] Returning detail for SQL_ID: 5aryjzqd7h00h
+2026-02-22T17:08:30: [Schemas API] Fetching schemas for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-22T17:08:30: [Schemas API] Connection found: TMSDB
+2026-02-22T17:08:30: [Schemas API] Executing query...
+2026-02-22T17:08:30: [Schemas API] Success! Found 16 schemas
+2026-02-22T17:08:30: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: APPQOSSYS type: TABLE
+2026-02-22T17:08:30: [Objects API] Connection found: TMSDB
+2026-02-22T17:08:54: [LLM Stream] Request received
+2026-02-22T17:08:54: [LLM Stream] Body parsed successfully, keys: [
+  'sql_text',
+  'context',
+  'language',
+  '_timestamp',
+  'execution_plan',
+  'metrics'
+]
+2026-02-22T17:08:54: [LLM Stream] Auth check: OK
+2026-02-22T17:08:54: [LLM Stream] Feature enabled: true
+2026-02-22T17:08:54: [LLM Stream] Validation: true []
+2026-02-22T17:08:54: [LLM Stream] Starting stream, messages: 2
+2026-02-22T17:08:54: [LLM Stream] LLM client created, starting chat...
+2026-02-22T17:09:08: [LLM Stream] First chunk received in 13983 ms
+2026-02-22T17:09:43: [Metrics API] Fetching from Oracle directly
+2026-02-22T17:09:45: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 97.14,
+  io_mbps: 0.08,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T17:09:55: [Metrics API] Oracle queries completed in 11853ms (failures: none)
+2026-02-22T17:09:55: [Metrics API] Total response time: 11853ms
+2026-02-22T17:10:17: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 97.63,
+  io_mbps: 0.08,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T17:11:24: Fetching connection: {
+  connectionId: 'f8aee7e1-7409-4834-acdb-c811e29e0f89',
+  userId: '3cfe01df-cabe-4e0e-83c3-c00fdd180801'
+}
+2026-02-22T17:11:24: Connection found: TMSDB
+2026-02-22T17:11:55: Fetching connection: {
+  connectionId: 'f8aee7e1-7409-4834-acdb-c811e29e0f89',
+  userId: '3cfe01df-cabe-4e0e-83c3-c00fdd180801'
+}
+2026-02-22T17:11:55: Connection found: TMSDB
+2026-02-22T17:15:19: [Metrics API] Fetching from Oracle directly
+2026-02-22T17:15:31: [Metrics API] Oracle queries completed in 12034ms (failures: none)
+2026-02-22T17:15:31: [Metrics API] Total response time: 12034ms
+2026-02-22T19:40:08: ▲ Next.js 16.1.6
+2026-02-22T19:40:08: ▲ Next.js 16.1.6
+2026-02-22T19:40:08: - Local:         http://localhost:3000
+2026-02-22T19:40:08: - Network:       http://192.168.0.4:3000
+2026-02-22T19:40:08: 
+2026-02-22T19:40:08: ✓ Starting...
+2026-02-22T19:40:08: - Local:         http://localhost:3000
+2026-02-22T19:40:08: - Network:       http://192.168.0.4:3000
+2026-02-22T19:40:08: 
+2026-02-22T19:40:08: ✓ Starting...
+2026-02-22T19:40:09: ✓ Ready in 323ms
+2026-02-22T19:40:09: ✓ Ready in 323ms
+2026-02-22T19:40:09: ✓ Oracle Thick mode initialized
+2026-02-22T19:40:09:   Library directory: /opt/oracle/instantclient
+2026-02-22T19:40:09: ✓ Oracle Thick mode initialized
+2026-02-22T19:40:09:   Library directory: /opt/oracle/instantclient
+2026-02-22T19:40:14: ▲ Next.js 16.1.6
+2026-02-22T19:40:14: ▲ Next.js 16.1.6
+2026-02-22T19:40:14: - Local:         http://localhost:3000
+2026-02-22T19:40:14: - Network:       http://192.168.0.4:3000
+2026-02-22T19:40:14: 
+2026-02-22T19:40:14: ✓ Starting...
+2026-02-22T19:40:14: - Local:         http://localhost:3000
+2026-02-22T19:40:14: - Network:       http://192.168.0.4:3000
+2026-02-22T19:40:14: 
+2026-02-22T19:40:14: ✓ Starting...
+2026-02-22T19:40:15: ✓ Ready in 249ms
+2026-02-22T19:40:15: ✓ Ready in 249ms
+2026-02-22T19:40:15: ✓ Oracle Thick mode initialized
+2026-02-22T19:40:15:   Library directory: /opt/oracle/instantclient
+2026-02-22T19:40:15: ✓ Oracle Thick mode initialized
+2026-02-22T19:40:15:   Library directory: /opt/oracle/instantclient
+2026-02-22T19:40:29: [Metrics API] Fetching from Oracle directly
+2026-02-22T19:40:40: [Metrics API] Oracle queries completed in 10668ms (failures: none)
+2026-02-22T19:40:40: [Metrics API] Total response time: 10668ms
+2026-02-22T19:48:48: ▲ Next.js 16.1.6
+2026-02-22T19:48:48: ▲ Next.js 16.1.6
+2026-02-22T19:48:48: - Local:         http://localhost:3000
+2026-02-22T19:48:48: - Network:       http://192.168.0.4:3000
+2026-02-22T19:48:48: 
+2026-02-22T19:48:48: ✓ Starting...
+2026-02-22T19:48:48: - Local:         http://localhost:3000
+2026-02-22T19:48:48: - Network:       http://192.168.0.4:3000
+2026-02-22T19:48:48: 
+2026-02-22T19:48:48: ✓ Starting...
+2026-02-22T19:48:48: ✓ Ready in 277ms
+2026-02-22T19:48:48: ✓ Ready in 277ms
+2026-02-22T19:48:49: ✓ Oracle Thick mode initialized
+2026-02-22T19:48:49:   Library directory: /opt/oracle/instantclient
+2026-02-22T19:48:49: ✓ Oracle Thick mode initialized
+2026-02-22T19:48:49:   Library directory: /opt/oracle/instantclient
+2026-02-22T19:48:54: ▲ Next.js 16.1.6
+2026-02-22T19:48:54: ▲ Next.js 16.1.6
+2026-02-22T19:48:54: - Local:         http://localhost:3000
+2026-02-22T19:48:54: - Network:       http://192.168.0.4:3000
+2026-02-22T19:48:54: 
+2026-02-22T19:48:54: ✓ Starting...
+2026-02-22T19:48:54: - Local:         http://localhost:3000
+2026-02-22T19:48:54: - Network:       http://192.168.0.4:3000
+2026-02-22T19:48:54: 
+2026-02-22T19:48:54: ✓ Starting...
+2026-02-22T19:48:55: ✓ Ready in 251ms
+2026-02-22T19:48:55: ✓ Ready in 252ms
+2026-02-22T19:48:55: ✓ Oracle Thick mode initialized
+2026-02-22T19:48:55:   Library directory: /opt/oracle/instantclient
+2026-02-22T19:48:55: ✓ Oracle Thick mode initialized
+2026-02-22T19:48:55:   Library directory: /opt/oracle/instantclient
+2026-02-22T19:49:38: [Metrics API] Fetching from Oracle directly
+2026-02-22T19:49:57: [Metrics API] Oracle queries completed in 19462ms (failures: topSql)
+2026-02-22T19:49:57: [Metrics API] Total response time: 19462ms
+2026-02-22T19:50:02: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 95.06,
+  io_mbps: 36.96,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:50:27: [Metrics API] Fetching from Oracle directly
+2026-02-22T19:50:36: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 95.28,
+  io_mbps: 36.96,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:50:48: [Metrics API] Oracle queries completed in 21175ms (failures: topSql)
+2026-02-22T19:50:48: [Metrics API] Total response time: 21175ms
+2026-02-22T19:51:11: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 94.57,
+  io_mbps: 34.23,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:51:18: [Metrics API] Fetching from Oracle directly
+2026-02-22T19:51:39: [Metrics API] Oracle queries completed in 20525ms (failures: topSql)
+2026-02-22T19:51:39: [Metrics API] Total response time: 20525ms
+2026-02-22T19:51:46: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 94.98,
+  io_mbps: 38.17,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:52:09: [Metrics API] Fetching from Oracle directly
+2026-02-22T19:52:20: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 94.14,
+  io_mbps: 38.17,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:52:29: [Metrics API] Oracle queries completed in 20163ms (failures: topSql)
+2026-02-22T19:52:29: [Metrics API] Total response time: 20163ms
+2026-02-22T19:52:55: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 95.11,
+  io_mbps: 38.28,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:52:59: [Metrics API] Fetching from Oracle directly
+2026-02-22T19:53:19: [Metrics API] Oracle queries completed in 19377ms (failures: topSql)
+2026-02-22T19:53:19: [Metrics API] Total response time: 19377ms
+2026-02-22T19:53:30: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 94.88,
+  io_mbps: 38.28,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:53:49: [Metrics API] Fetching from Oracle directly
+2026-02-22T19:54:04: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 95.22,
+  io_mbps: 39.73,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:54:07: [Metrics API] Oracle queries completed in 18428ms (failures: topSql)
+2026-02-22T19:54:07: [Metrics API] Total response time: 18428ms
+2026-02-22T19:54:37: [Metrics API] Fetching from Oracle directly
+2026-02-22T19:54:38: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 94.94,
+  io_mbps: 39.43,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:54:58: [Metrics API] Oracle queries completed in 20919ms (failures: topSql)
+2026-02-22T19:54:58: [Metrics API] Total response time: 20919ms
+2026-02-22T19:55:13: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 94.58,
+  io_mbps: 39.43,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:55:28: [Metrics API] Fetching from Oracle directly
+2026-02-22T19:55:48: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 94.9,
+  io_mbps: 42.2,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:55:48: [Metrics API] Oracle queries completed in 19906ms (failures: topSql)
+2026-02-22T19:55:48: [Metrics API] Total response time: 19906ms
+2026-02-22T19:56:18: [Metrics API] Fetching from Oracle directly
+2026-02-22T19:56:22: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 94.5,
+  io_mbps: 42.2,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:56:39: [Metrics API] Oracle queries completed in 20503ms (failures: topSql)
+2026-02-22T19:56:39: [Metrics API] Total response time: 20503ms
+2026-02-22T19:56:56: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 94.26,
+  io_mbps: 38.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:57:09: [Metrics API] Fetching from Oracle directly
+2026-02-22T19:57:29: [Metrics API] Oracle queries completed in 19991ms (failures: topSql)
+2026-02-22T19:57:29: [Metrics API] Total response time: 19991ms
+2026-02-22T19:57:30: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 93.38,
+  io_mbps: 38.1,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:57:59: [Metrics API] Fetching from Oracle directly
+2026-02-22T19:58:05: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 93.51,
+  io_mbps: 42.32,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T19:58:19: [Metrics API] Oracle queries completed in 20123ms (failures: topSql)
+2026-02-22T19:58:19: [Metrics API] Total response time: 20123ms
+2026-02-22T22:03:32: ▲ Next.js 16.1.6
+2026-02-22T22:03:32: ▲ Next.js 16.1.6
+2026-02-22T22:03:32: - Local:         http://localhost:3000
+2026-02-22T22:03:32: - Network:       http://192.168.0.4:3000
+2026-02-22T22:03:32: 
+2026-02-22T22:03:32: ✓ Starting...
+2026-02-22T22:03:32: - Local:         http://localhost:3000
+2026-02-22T22:03:32: - Network:       http://192.168.0.4:3000
+2026-02-22T22:03:32: 
+2026-02-22T22:03:32: ✓ Starting...
+2026-02-22T22:03:32: ✓ Ready in 357ms
+2026-02-22T22:03:32: ✓ Ready in 357ms
+2026-02-22T22:03:33: ✓ Oracle Thick mode initialized
+2026-02-22T22:03:33:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:03:33: ✓ Oracle Thick mode initialized
+2026-02-22T22:03:33:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:03:35: ▲ Next.js 16.1.6
+2026-02-22T22:03:35: ▲ Next.js 16.1.6
+2026-02-22T22:03:35: - Local:         http://localhost:3000
+2026-02-22T22:03:35: - Network:       http://192.168.0.4:3000
+2026-02-22T22:03:35: 
+2026-02-22T22:03:35: ✓ Starting...
+2026-02-22T22:03:35: - Local:         http://localhost:3000
+2026-02-22T22:03:35: - Network:       http://192.168.0.4:3000
+2026-02-22T22:03:35: 
+2026-02-22T22:03:35: ✓ Starting...
+2026-02-22T22:03:35: ✓ Ready in 257ms
+2026-02-22T22:03:35: ✓ Ready in 258ms
+2026-02-22T22:03:35: ✓ Oracle Thick mode initialized
+2026-02-22T22:03:35:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:03:35: ✓ Oracle Thick mode initialized
+2026-02-22T22:03:35:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:03:56: [Metrics API] Fetching from Oracle directly
+2026-02-22T22:03:57: [OS Stats] 조회 완료: {
+  cpu_usage: 99.1,
+  memory_usage: 98.02,
+  io_mbps: 53.6,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T22:03:59: [Metrics API] Oracle queries completed in 3512ms (failures: none)
+2026-02-22T22:03:59: [Metrics API] Total response time: 3512ms
+2026-02-22T22:06:26: ▲ Next.js 16.1.6
+2026-02-22T22:06:26: ▲ Next.js 16.1.6
+2026-02-22T22:06:26: - Local:         http://localhost:3000
+2026-02-22T22:06:26: - Network:       http://192.168.0.4:3000
+2026-02-22T22:06:26: 
+2026-02-22T22:06:26: ✓ Starting...
+2026-02-22T22:06:26: - Local:         http://localhost:3000
+2026-02-22T22:06:26: - Network:       http://192.168.0.4:3000
+2026-02-22T22:06:26: 
+2026-02-22T22:06:26: ✓ Starting...
+2026-02-22T22:06:26: ✓ Ready in 273ms
+2026-02-22T22:06:26: ✓ Ready in 276ms
+2026-02-22T22:06:27: ✓ Oracle Thick mode initialized
+2026-02-22T22:06:27:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:06:27: ✓ Oracle Thick mode initialized
+2026-02-22T22:06:27:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:06:32: ▲ Next.js 16.1.6
+2026-02-22T22:06:32: ▲ Next.js 16.1.6
+2026-02-22T22:06:32: - Local:         http://localhost:3000
+2026-02-22T22:06:32: - Network:       http://192.168.0.4:3000
+2026-02-22T22:06:32: 
+2026-02-22T22:06:32: ✓ Starting...
+2026-02-22T22:06:32: - Local:         http://localhost:3000
+2026-02-22T22:06:32: - Network:       http://192.168.0.4:3000
+2026-02-22T22:06:32: 
+2026-02-22T22:06:32: ✓ Starting...
+2026-02-22T22:06:32: ✓ Ready in 262ms
+2026-02-22T22:06:32: ✓ Ready in 264ms
+2026-02-22T22:06:33: ✓ Oracle Thick mode initialized
+2026-02-22T22:06:33:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:06:33: ✓ Oracle Thick mode initialized
+2026-02-22T22:06:33:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:07:01: [Metrics API] Fetching from Oracle directly
+2026-02-22T22:07:05: [Metrics API] Oracle queries completed in 3497ms (failures: none)
+2026-02-22T22:07:05: [Metrics API] Total response time: 3497ms
+2026-02-22T22:07:06: [OS Stats] 조회 완료: {
+  cpu_usage: 99.09,
+  memory_usage: 97.19,
+  io_mbps: 58.43,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-22T22:16:45: ▲ Next.js 16.1.6
+2026-02-22T22:16:45: ▲ Next.js 16.1.6
+2026-02-22T22:16:45: - Local:         http://localhost:3000
+2026-02-22T22:16:45: - Network:       http://192.168.0.4:3000
+2026-02-22T22:16:45: 
+2026-02-22T22:16:45: ✓ Starting...
+2026-02-22T22:16:45: - Local:         http://localhost:3000
+2026-02-22T22:16:45: - Network:       http://192.168.0.4:3000
+2026-02-22T22:16:45: 
+2026-02-22T22:16:45: ✓ Starting...
+2026-02-22T22:16:45: ✓ Ready in 293ms
+2026-02-22T22:16:45: ✓ Ready in 293ms
+2026-02-22T22:16:46: ✓ Oracle Thick mode initialized
+2026-02-22T22:16:46:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:16:46: ✓ Oracle Thick mode initialized
+2026-02-22T22:16:46:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:16:51: ▲ Next.js 16.1.6
+2026-02-22T22:16:51: ▲ Next.js 16.1.6
+2026-02-22T22:16:51: - Local:         http://localhost:3000
+2026-02-22T22:16:51: - Network:       http://192.168.0.4:3000
+2026-02-22T22:16:51: 
+2026-02-22T22:16:51: ✓ Starting...
+2026-02-22T22:16:51: - Local:         http://localhost:3000
+2026-02-22T22:16:51: - Network:       http://192.168.0.4:3000
+2026-02-22T22:16:51: 
+2026-02-22T22:16:51: ✓ Starting...
+2026-02-22T22:16:52: ✓ Ready in 261ms
+2026-02-22T22:16:52: ✓ Ready in 261ms
+2026-02-22T22:16:52: ✓ Oracle Thick mode initialized
+2026-02-22T22:16:52:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:16:52: ✓ Oracle Thick mode initialized
+2026-02-22T22:16:52:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:16:58: ▲ Next.js 16.1.6
+2026-02-22T22:16:58: ▲ Next.js 16.1.6
+2026-02-22T22:16:58: - Local:         http://localhost:3000
+2026-02-22T22:16:58: - Network:       http://192.168.0.4:3000
+2026-02-22T22:16:58: 
+2026-02-22T22:16:58: ✓ Starting...
+2026-02-22T22:16:58: - Local:         http://localhost:3000
+2026-02-22T22:16:58: - Network:       http://192.168.0.4:3000
+2026-02-22T22:16:58: 
+2026-02-22T22:16:58: ✓ Starting...
+2026-02-22T22:16:59: ✓ Ready in 276ms
+2026-02-22T22:16:59: ✓ Ready in 276ms
+2026-02-22T22:16:59: ✓ Oracle Thick mode initialized
+2026-02-22T22:16:59:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:16:59: ✓ Oracle Thick mode initialized
+2026-02-22T22:16:59:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:17:01: ▲ Next.js 16.1.6
+2026-02-22T22:17:01: ▲ Next.js 16.1.6
+2026-02-22T22:17:01: - Local:         http://localhost:3000
+2026-02-22T22:17:01: - Network:       http://192.168.0.4:3000
+2026-02-22T22:17:01: 
+2026-02-22T22:17:01: ✓ Starting...
+2026-02-22T22:17:01: - Local:         http://localhost:3000
+2026-02-22T22:17:01: - Network:       http://192.168.0.4:3000
+2026-02-22T22:17:01: 
+2026-02-22T22:17:01: ✓ Starting...
+2026-02-22T22:17:02: ✓ Ready in 262ms
+2026-02-22T22:17:02: ✓ Ready in 262ms
+2026-02-22T22:17:02: ✓ Oracle Thick mode initialized
+2026-02-22T22:17:02:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:17:02: ✓ Oracle Thick mode initialized
+2026-02-22T22:17:02:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:17:30: [ASH API] Request: connectionId=f8aee7e1-7409-4834-acdb-c811e29e0f89, range=2026-02-22 21:17:30 ~ 2026-02-22 22:17:30
+2026-02-22T22:17:31: [ASH API] Request: connectionId=f8aee7e1-7409-4834-acdb-c811e29e0f89, range=2026-02-22 21:17:30 ~ 2026-02-22 22:17:30
+2026-02-22T22:17:37: [ASH API] Request: connectionId=f8aee7e1-7409-4834-acdb-c811e29e0f89, range=2026-02-22 22:02:37 ~ 2026-02-22 22:17:37
+2026-02-22T22:17:39: [ASH API] Request: connectionId=f8aee7e1-7409-4834-acdb-c811e29e0f89, range=2026-02-22 22:02:37 ~ 2026-02-22 22:17:37
+2026-02-22T22:17:50: [ASH API] Request: connectionId=f8aee7e1-7409-4834-acdb-c811e29e0f89, range=2026-02-22 22:02:50 ~ 2026-02-22 22:17:50
+2026-02-22T22:21:09: ▲ Next.js 16.1.6
+2026-02-22T22:21:09: ▲ Next.js 16.1.6
+2026-02-22T22:21:09: - Local:         http://localhost:3000
+2026-02-22T22:21:09: - Network:       http://192.168.0.4:3000
+2026-02-22T22:21:09: 
+2026-02-22T22:21:09: ✓ Starting...
+2026-02-22T22:21:09: - Local:         http://localhost:3000
+2026-02-22T22:21:09: - Network:       http://192.168.0.4:3000
+2026-02-22T22:21:09: 
+2026-02-22T22:21:09: ✓ Starting...
+2026-02-22T22:21:09: ✓ Ready in 540ms
+2026-02-22T22:21:09: ✓ Ready in 539ms
+2026-02-22T22:21:10: ✓ Oracle Thick mode initialized
+2026-02-22T22:21:10:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:21:10: ✓ Oracle Thick mode initialized
+2026-02-22T22:21:10:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:21:12: ▲ Next.js 16.1.6
+2026-02-22T22:21:12: ▲ Next.js 16.1.6
+2026-02-22T22:21:12: - Local:         http://localhost:3000
+2026-02-22T22:21:12: - Network:       http://192.168.0.4:3000
+2026-02-22T22:21:12: 
+2026-02-22T22:21:12: ✓ Starting...
+2026-02-22T22:21:12: - Local:         http://localhost:3000
+2026-02-22T22:21:12: - Network:       http://192.168.0.4:3000
+2026-02-22T22:21:12: 
+2026-02-22T22:21:12: ✓ Starting...
+2026-02-22T22:21:12: ✓ Ready in 220ms
+2026-02-22T22:21:12: ✓ Ready in 220ms
+2026-02-22T22:21:12: ✓ Oracle Thick mode initialized
+2026-02-22T22:21:12:   Library directory: /opt/oracle/instantclient
+2026-02-22T22:21:12: ✓ Oracle Thick mode initialized
+2026-02-22T22:21:12:   Library directory: /opt/oracle/instantclient
+2026-02-23T00:00:23: [Metrics API] Fetching from Oracle directly
+2026-02-23T00:00:26: [Metrics API] Oracle queries completed in 3065ms (failures: none)
+2026-02-23T00:00:26: [Metrics API] Total response time: 3065ms
+2026-02-23T00:00:27: [OS Stats] 조회 완료: {
+  cpu_usage: 99.27,
+  memory_usage: 98.55,
+  io_mbps: 50.42,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-23T00:00:36: [ASH API] Request: connectionId=f8aee7e1-7409-4834-acdb-c811e29e0f89, range=2026-02-22 23:00:36 ~ 2026-02-23 00:00:36
+2026-02-23T00:00:38: [ASH API] Request: connectionId=f8aee7e1-7409-4834-acdb-c811e29e0f89, range=2026-02-22 23:00:36 ~ 2026-02-23 00:00:36
+2026-02-23T00:00:44: [ASH API] Request: connectionId=f8aee7e1-7409-4834-acdb-c811e29e0f89, range=2026-02-22 23:00:44 ~ 2026-02-23 00:00:44
+2026-02-23T00:00:46: [ASH API] Request: connectionId=f8aee7e1-7409-4834-acdb-c811e29e0f89, range=2026-02-22 23:00:44 ~ 2026-02-23 00:00:44
+2026-02-23T00:04:33: [Metrics API] Fetching from Oracle directly
+2026-02-23T00:04:36: [Metrics API] Oracle queries completed in 2921ms (failures: none)
+2026-02-23T00:04:36: [Metrics API] Total response time: 2921ms
+2026-02-23T00:04:37: [ASH API] Request: connectionId=f8aee7e1-7409-4834-acdb-c811e29e0f89, range=2026-02-22 23:04:37 ~ 2026-02-23 00:04:37
+2026-02-23T00:04:37: [OS Stats] 조회 완료: {
+  cpu_usage: 99.07,
+  memory_usage: 97.39,
+  io_mbps: 57.56,
+  has_osstat: true,
+  has_sysmetric: true
+}

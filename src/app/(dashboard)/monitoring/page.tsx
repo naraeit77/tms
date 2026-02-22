@@ -361,13 +361,13 @@ export default function MonitoringPage() {
 
   // Fetch monitoring metrics using React Query with DMA cache support
   // 성능 최적화: staleTime을 늘려 초기 로딩 시 캐시 활용도 증가
-  const { data: metricsData, isLoading: loading, isFetching, refetch: refetchMetrics } = useQuery({
+  const { data: metricsResponse, isLoading: loading, isFetching, refetch: refetchMetrics } = useQuery({
     queryKey: ['monitoring-metrics', selectedConnectionId],
     queryFn: async () => {
       const response = await fetch(`/api/monitoring/metrics?connection_id=${selectedConnectionId}`)
       if (!response.ok) throw new Error('Failed to fetch metrics')
       const result = await response.json()
-      return result.data
+      return { data: result.data, warnings: result.warnings || [], responseTime: result.responseTime }
     },
     enabled: !!selectedConnectionId,
     staleTime: 45 * 1000, // 45초간 fresh 상태 유지 (캐시 히트율 증가)
@@ -378,6 +378,10 @@ export default function MonitoringPage() {
     refetchOnWindowFocus: false, // 윈도우 포커스 시 재요청 비활성화
     placeholderData: (previousData) => previousData, // 이전 데이터 유지하여 깜빡임 방지
   })
+
+  // metricsResponse에서 데이터와 경고 분리
+  const metricsData = metricsResponse?.data
+  const metricsWarnings: string[] = metricsResponse?.warnings || []
 
   // 성능 트렌드 데이터 - Oracle 서버 시간 기반 실제 데이터 조회 (모든 시간대 SQL 포함)
   // 메인 메트릭 로드 완료 후 지연 로드하여 초기 로딩 속도 개선
@@ -1140,6 +1144,13 @@ export default function MonitoringPage() {
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
+          {/* API 부분 데이터 경고 */}
+          {metricsWarnings.length > 0 && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-sm text-yellow-800 dark:text-yellow-300">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+              <span>일부 메트릭 조회 실패: {metricsWarnings.join(', ')} - 해당 항목은 기본값으로 표시됩니다.</span>
+            </div>
+          )}
           {/* System Metrics Cards - Skeleton or Data */}
           {loading && !metricsData ? (
             <SystemMetricsSkeleton />

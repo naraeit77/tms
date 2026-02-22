@@ -819,6 +819,7 @@ function SQLEditorContent() {
         body: JSON.stringify({
           connectionId: selectedConnectionId,
           query: sqlQuery,
+          schema: selectedSchema || undefined,
         }),
       });
 

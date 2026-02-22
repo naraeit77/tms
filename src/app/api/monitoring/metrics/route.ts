@@ -77,10 +77,9 @@ export async function GET(request: NextRequest) {
           ROUND(AVG(elapsed_time / NULLIF(executions, 0)) / 1000, 2) as avg_elapsed_time,
           ROUND(AVG(cpu_time / NULLIF(executions, 0)) / 1000, 2) as avg_cpu_time,
           ROUND(AVG(buffer_gets / NULLIF(executions, 0)), 2) as avg_buffer_gets
-        FROM v$sql
+        FROM v$sqlarea
         WHERE parsing_schema_name NOT IN ('SYS', 'SYSTEM')
           AND executions > 0
-          AND ROWNUM <= 500
       `, [], queryOpts), { rows: [{ UNIQUE_SQL_COUNT: 0, TOTAL_EXECUTIONS: 0, AVG_ELAPSED_TIME: 0, AVG_CPU_TIME: 0, AVG_BUFFER_GETS: 0 }] as any[] }, failures),
 
       trackedQuery('memory', () => executeQuery(config, `
@@ -103,8 +102,8 @@ export async function GET(request: NextRequest) {
       `, [], queryOpts), { rows: [{ BUFFER_CACHE_HIT_RATE: 0, TPS: 0, TOTAL_TRANSACTIONS: 0 }] as any[] }, failures),
     ]);
 
-    // ── Batch 2: I/O, 대기이벤트, Top SQL, 테이블스페이스 ──
-    const [ioStatsResult, topWaitsResult, topSqlResult, tablespaceResult] = await Promise.all([
+    // ── Batch 2: I/O, 대기이벤트, Top SQL, 테이블스페이스, Wait Class, 메모리상세, 리소스제한, 블록세션 ──
+    const [ioStatsResult, topWaitsResult, topSqlResult, tablespaceResult, waitClassResult, memoryDetailResult, resourceLimitResult, blockedSessionsResult] = await Promise.all([
       trackedQuery('ioStats', () => executeQuery(config, `
         SELECT
           NVL(MAX(CASE WHEN metric_name = 'Physical Read Total IO Requests Per Sec' THEN value END), 0) as read_iops,
@@ -127,17 +126,19 @@ export async function GET(request: NextRequest) {
       `, [], queryOpts), { rows: [{}] as any[] }, failures),
 
       trackedQuery('topWaits', () => executeQuery(config, `
-        SELECT event, wait_class, total_waits,
-               time_waited * 10 as time_waited_ms,
-               average_wait * 10 as average_wait_ms
-        FROM v$system_event
-        WHERE wait_class != 'Idle' AND ROWNUM <= 5
-        ORDER BY time_waited DESC
+        SELECT * FROM (
+          SELECT event, wait_class, total_waits,
+                 time_waited * 10 as time_waited_ms,
+                 average_wait * 10 as average_wait_ms
+          FROM v$system_event
+          WHERE wait_class != 'Idle'
+          ORDER BY time_waited DESC
+        ) WHERE ROWNUM <= 5
       `, [], queryOpts), { rows: [] }, failures),
 
       trackedQuery('topSql', () => executeQuery(config, `
         SELECT * FROM (
-          SELECT /*+ FIRST_ROWS(50) */
+          SELECT
             sql_id,
             SUBSTR(sql_text, 1, 50) as sql_snippet,
             executions,
@@ -145,14 +146,14 @@ export async function GET(request: NextRequest) {
             ROUND(cpu_time / NULLIF(executions, 0) / 1000, 0) as avg_cpu_ms,
             ROUND(buffer_gets / NULLIF(executions, 0), 0) as avg_buffer_gets,
             last_active_time
-          FROM v$sql
+          FROM v$sqlarea
           WHERE parsing_schema_name NOT IN ('SYS', 'SYSTEM', 'DBSNMP', 'SYSMAN')
             AND executions > 0
             AND elapsed_time > 0
             AND last_active_time >= SYSDATE - 1
           ORDER BY elapsed_time DESC
-        ) WHERE ROWNUM <= 50
-      `, [], { timeout: 10000 }), { rows: [] }, failures),
+        ) WHERE ROWNUM <= 20
+      `, [], queryOpts), { rows: [] }, failures),
 
       // 테이블스페이스 (Oracle 12c+ 시도 → 11g 폴백)
       trackedQuery('tablespace', async () => {
@@ -191,10 +192,7 @@ export async function GET(request: NextRequest) {
           `, [], queryOpts);
         }
       }, { rows: [] }, failures),
-    ]);
 
-    // ── Batch 3: 부가 정보 (Wait Class, 메모리상세, 리소스제한, 블록세션) ──
-    const [waitClassResult, memoryDetailResult, resourceLimitResult, blockedSessionsResult] = await Promise.all([
       trackedQuery('waitClass', () => executeQuery(config, `
         SELECT wait_class, ROUND(SUM(time_waited_micro) / 1000000, 2) as time_waited_sec
         FROM v$system_event

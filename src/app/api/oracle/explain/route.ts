@@ -6,14 +6,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { executeQuery } from '@/lib/oracle/client';
-import { db } from '@/db';
-import { oracleConnections } from '@/db/schema';
-import { eq } from 'drizzle-orm';
-import { decrypt } from '@/lib/crypto';
+import { getConnection } from '@/lib/oracle/client';
+import { getOracleConfig } from '@/lib/oracle/utils';
 import oracledb from 'oracledb';
 
 export async function POST(request: NextRequest) {
+  let connection: oracledb.Connection | null = null;
+
   try {
     // 인증 확인
     const session = await getServerSession(authOptions);
@@ -22,45 +21,31 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { connectionId, query } = body;
+    const { connectionId, query, schema } = body;
 
     if (!connectionId || !query) {
       return NextResponse.json({ error: 'Missing required fields: connectionId, query' }, { status: 400 });
     }
 
-    console.log('[Explain API] Getting explain plan for connection:', connectionId);
+    console.log('[Explain API] Getting explain plan for connection:', connectionId, 'schema:', schema || 'default');
 
-    // Fetch connection details from DB
-    const [connection] = await db
-      .select()
-      .from(oracleConnections)
-      .where(eq(oracleConnections.id, connectionId))
-      .limit(1);
-
-    if (!connection) {
-      console.error('[Explain API] Connection not found:', connectionId);
-      return NextResponse.json({ error: 'Connection not found' }, { status: 404 });
-    }
-
-    console.log('[Explain API] Connection found:', connection.name);
-
-    // Decrypt password
-    const password = decrypt(connection.passwordEncrypted);
-
-    const config = {
-      id: connection.id,
-      name: connection.name,
-      host: connection.host,
-      port: connection.port,
-      username: connection.username,
-      password,
-      serviceName: connection.serviceName,
-      sid: connection.sid,
-      connectionType: connection.connectionType as 'SERVICE_NAME' | 'SID',
-      privilege: connection.privilege || undefined,
-    };
+    // 캐싱된 연결 설정 가져오기
+    const config = await getOracleConfig(connectionId);
 
     try {
+      // 하나의 연결을 사용하여 스키마 변경과 EXPLAIN PLAN을 함께 처리
+      connection = await getConnection(config);
+
+      // 스키마가 지정된 경우 현재 스키마 변경 (같은 connection에서)
+      if (schema) {
+        try {
+          await connection.execute(`ALTER SESSION SET CURRENT_SCHEMA = ${schema}`);
+          console.log('[Explain API] Schema changed to:', schema);
+        } catch (schemaError: any) {
+          console.warn('[Explain API] Failed to change schema:', schemaError.message);
+        }
+      }
+
       // 쿼리 정리: 세미콜론 제거 및 공백 정리
       const cleanQuery = query.trim().replace(/;+\s*$/, '');
 
@@ -73,13 +58,22 @@ export async function POST(request: NextRequest) {
       const explainSql = `EXPLAIN PLAN SET STATEMENT_ID = '${statementId}' FOR ${cleanQuery}`;
 
       try {
-        await executeQuery(config, explainSql, [], { autoCommit: true, timeout: 60000 });
+        await connection.execute(explainSql, [], { autoCommit: true });
       } catch (error: any) {
         // ORA-00942: table or view does not exist (PLAN_TABLE이 없는 경우)
-        if (error.message?.includes('ORA-00942')) {
+        // PLAN_TABLE 관련 ORA-00942만 처리: 쿼리 내 테이블이 없는 경우와 구분
+        if (error.message?.includes('ORA-00942') && error.message?.includes('PLAN_TABLE')) {
           console.log('[Explain API] PLAN_TABLE missing, creating and retrying...');
-          await ensurePlanTable(config);
-          await executeQuery(config, explainSql, [], { autoCommit: true, timeout: 60000 });
+          await ensurePlanTable(connection);
+          await connection.execute(explainSql, [], { autoCommit: true });
+        } else if (error.message?.includes('ORA-00942')) {
+          // PLAN_TABLE이 아닌 쿼리 내 테이블이 없는 경우: PLAN_TABLE 확인 후 재시도
+          try {
+            await ensurePlanTable(connection);
+            await connection.execute(explainSql, [], { autoCommit: true });
+          } catch (retryError: any) {
+            throw retryError;
+          }
         } else {
           throw error;
         }
@@ -87,9 +81,9 @@ export async function POST(request: NextRequest) {
 
       console.log('[Explain API] Explain plan executed');
 
-      // 실행계획 조회
-      const planQuery = `
-        SELECT
+      // 실행계획 조회 (같은 connection에서)
+      const planResult = await connection.execute(
+        `SELECT
           ID,
           PARENT_ID,
           OPERATION,
@@ -112,33 +106,30 @@ export async function POST(request: NextRequest) {
           DISTRIBUTION
         FROM PLAN_TABLE
         WHERE STATEMENT_ID = :sid
-        ORDER BY ID
-      `;
+        ORDER BY ID`,
+        { sid: statementId },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
 
-      const result = await executeQuery<any>(config, planQuery, { sid: statementId }, {
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-        timeout: 30000,
-      });
+      const planRows = planResult.rows || [];
+      console.log('[Explain API] Plan retrieved, rows:', planRows.length);
 
-      console.log('[Explain API] Plan retrieved, rows:', result.rows?.length || 0);
-
-      // 실행계획 삭제
-      await executeQuery(
-        config,
+      // 실행계획 삭제 (같은 connection에서)
+      await connection.execute(
         `DELETE FROM PLAN_TABLE WHERE STATEMENT_ID = :sid`,
         { sid: statementId },
-        { autoCommit: true, timeout: 30000 }
+        { autoCommit: true }
       );
 
       // 실행계획을 트리 구조로 변환
-      const planTree = buildPlanTree(result.rows || []);
+      const planTree = buildPlanTree(planRows);
 
       // 텍스트 형식으로 변환
       const planText = formatPlanAsText(planTree);
 
       return NextResponse.json({
         success: true,
-        plan: result.rows || [],
+        plan: planRows,
         planTree,
         planText,
         statementId,
@@ -157,33 +148,34 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('[Explain API] Request error:', error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error('[Explain API] Error closing connection:', err);
+      }
+    }
   }
 }
 
 /**
- * PLAN_TABLE 존재 확인 및 생성
+ * PLAN_TABLE 존재 확인 및 생성 (같은 connection 사용)
  */
-async function ensurePlanTable(config: any) {
+async function ensurePlanTable(connection: oracledb.Connection) {
   try {
-    // PLAN_TABLE 존재 확인
-    const checkQuery = `
-      SELECT COUNT(*) as CNT
-      FROM USER_TABLES
-      WHERE TABLE_NAME = 'PLAN_TABLE'
-    `;
-
-    const checkResult = await executeQuery<any>(config, checkQuery, [], {
-      outFormat: oracledb.OUT_FORMAT_OBJECT,
-      timeout: 30000,
-    });
+    const checkResult = await connection.execute<any>(
+      `SELECT COUNT(*) as CNT FROM USER_TABLES WHERE TABLE_NAME = 'PLAN_TABLE'`,
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
 
     const exists = checkResult.rows?.[0]?.CNT > 0;
 
     if (!exists) {
       console.log('[Explain API] PLAN_TABLE does not exist, creating...');
 
-      // PLAN_TABLE 생성 (Oracle 표준 DDL)
-      const createTableSql = `
+      await connection.execute(`
         CREATE TABLE PLAN_TABLE (
           STATEMENT_ID       VARCHAR2(30),
           PLAN_ID            NUMBER,
@@ -222,9 +214,7 @@ async function ensurePlanTable(config: any) {
           QBLOCK_NAME        VARCHAR2(128),
           OTHER_XML          CLOB
         )
-      `;
-
-      await executeQuery(config, createTableSql, [], { autoCommit: true, timeout: 30000 });
+      `, [], { autoCommit: true });
       console.log('[Explain API] PLAN_TABLE created successfully');
     } else {
       console.log('[Explain API] PLAN_TABLE already exists');
