@@ -50594,3 +50594,169 @@ Help: https://docs.oracle.com/error-help/db/ora-01013/
   has_osstat: true,
   has_sysmetric: true
 }
+2026-02-23T00:10:56: ▲ Next.js 16.1.6
+2026-02-23T00:10:56: ▲ Next.js 16.1.6
+2026-02-23T00:10:56: - Local:         http://localhost:3000
+2026-02-23T00:10:56: - Network:       http://192.168.0.4:3000
+2026-02-23T00:10:56: 
+2026-02-23T00:10:56: ✓ Starting...
+2026-02-23T00:10:56: - Local:         http://localhost:3000
+2026-02-23T00:10:56: - Network:       http://192.168.0.4:3000
+2026-02-23T00:10:56: 
+2026-02-23T00:10:56: ✓ Starting...
+2026-02-23T00:10:56: ✓ Ready in 310ms
+2026-02-23T00:10:56: ✓ Ready in 310ms
+2026-02-23T00:10:56: ✓ Oracle Thick mode initialized
+2026-02-23T00:10:56:   Library directory: /opt/oracle/instantclient
+2026-02-23T00:10:56: ✓ Oracle Thick mode initialized
+2026-02-23T00:10:56:   Library directory: /opt/oracle/instantclient
+2026-02-23T00:10:59: ▲ Next.js 16.1.6
+2026-02-23T00:10:59: ▲ Next.js 16.1.6
+2026-02-23T00:10:59: - Local:         http://localhost:3000
+2026-02-23T00:10:59: - Network:       http://192.168.0.4:3000
+2026-02-23T00:10:59: 
+2026-02-23T00:10:59: ✓ Starting...
+2026-02-23T00:10:59: - Local:         http://localhost:3000
+2026-02-23T00:10:59: - Network:       http://192.168.0.4:3000
+2026-02-23T00:10:59: 
+2026-02-23T00:10:59: ✓ Starting...
+2026-02-23T00:10:59: ✓ Ready in 260ms
+2026-02-23T00:10:59: ✓ Ready in 260ms
+2026-02-23T00:10:59: ✓ Oracle Thick mode initialized
+2026-02-23T00:10:59:   Library directory: /opt/oracle/instantclient
+2026-02-23T00:10:59: ✓ Oracle Thick mode initialized
+2026-02-23T00:10:59:   Library directory: /opt/oracle/instantclient
+2026-02-23T00:12:49: [ASH API] Request: connectionId=f8aee7e1-7409-4834-acdb-c811e29e0f89, range=2026-02-22 23:04:37 ~ 2026-02-23 00:04:37
+2026-02-23T00:12:49: [ASH] DB server time: 2026-02-22 10:12:49 -05:00, timezone: +09:00
+2026-02-23T00:12:50: [ASH] V$ACTIVE_SESSION_HISTORY returned 0 rows
+2026-02-23T00:12:50: [ASH] Trying DBA_HIST_ACTIVE_SESS_HISTORY...
+2026-02-23T00:12:51: [ASH] DBA_HIST_ACTIVE_SESS_HISTORY returned 0 rows
+2026-02-23T00:12:51: [ASH] Falling back to V$SESSION
+2026-02-23T00:12:51: [ASH] V$SESSION returned 162 rows
+2026-02-23T00:14:45: [SQL Detail API] Received connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89 sql_id: br0pf4hw9cc2k
+2026-02-23T00:14:45: [SQL Detail API] SQL_FULLTEXT type: string constructor: String
+2026-02-23T00:14:45: [SQL Detail API] SQL text length: 637
+2026-02-23T00:14:46: [SQL Detail API] Returning detail for SQL_ID: br0pf4hw9cc2k
+2026-02-23T00:15:00: [Metrics API] Fetching from Oracle directly
+2026-02-23T00:15:03: [Metrics API] Oracle queries completed in 3042ms (failures: none)
+2026-02-23T00:15:03: [Metrics API] Total response time: 3042ms
+2026-02-23T00:20:15: ▲ Next.js 16.1.6
+2026-02-23T00:20:15: ▲ Next.js 16.1.6
+2026-02-23T00:20:15: - Local:         http://localhost:3000
+2026-02-23T00:20:15: - Network:       http://192.168.0.4:3000
+2026-02-23T00:20:15: 
+2026-02-23T00:20:15: ✓ Starting...
+2026-02-23T00:20:15: - Local:         http://localhost:3000
+2026-02-23T00:20:15: - Network:       http://192.168.0.4:3000
+2026-02-23T00:20:15: 
+2026-02-23T00:20:15: ✓ Starting...
+2026-02-23T00:20:15: ✓ Ready in 274ms
+2026-02-23T00:20:15: ✓ Ready in 274ms
+2026-02-23T00:20:16: ✓ Oracle Thick mode initialized
+2026-02-23T00:20:16:   Library directory: /opt/oracle/instantclient
+2026-02-23T00:20:16: ✓ Oracle Thick mode initialized
+2026-02-23T00:20:16:   Library directory: /opt/oracle/instantclient
+2026-02-23T00:20:18: ▲ Next.js 16.1.6
+2026-02-23T00:20:18: ▲ Next.js 16.1.6
+2026-02-23T00:20:18: - Local:         http://localhost:3000
+2026-02-23T00:20:18: - Network:       http://192.168.0.4:3000
+2026-02-23T00:20:18: 
+2026-02-23T00:20:18: ✓ Starting...
+2026-02-23T00:20:18: - Local:         http://localhost:3000
+2026-02-23T00:20:18: - Network:       http://192.168.0.4:3000
+2026-02-23T00:20:18: 
+2026-02-23T00:20:18: ✓ Starting...
+2026-02-23T00:20:19: ✓ Ready in 261ms
+2026-02-23T00:20:19: ✓ Ready in 263ms
+2026-02-23T00:20:19: ✓ Oracle Thick mode initialized
+2026-02-23T00:20:19:   Library directory: /opt/oracle/instantclient
+2026-02-23T00:20:19: ✓ Oracle Thick mode initialized
+2026-02-23T00:20:19:   Library directory: /opt/oracle/instantclient
+2026-02-23T00:20:30: [Metrics API] Fetching from Oracle directly
+2026-02-23T00:20:33: [Metrics API] Oracle queries completed in 3042ms (failures: none)
+2026-02-23T00:20:33: [Metrics API] Total response time: 3042ms
+2026-02-23T00:20:33: [OS Stats] 조회 완료: {
+  cpu_usage: 99.15,
+  memory_usage: 97.79,
+  io_mbps: 53.31,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-23T00:21:12: [Metrics API] Fetching from Oracle directly
+2026-02-23T00:21:15: [Metrics API] Oracle queries completed in 2811ms (failures: none)
+2026-02-23T00:21:15: [Metrics API] Total response time: 2811ms
+2026-02-23T00:21:16: [OS Stats] 조회 완료: {
+  cpu_usage: 99.18,
+  memory_usage: 97.58,
+  io_mbps: 44.29,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-23T00:21:26: [sql-statistics] ASH 시간 범위 쿼리: {
+  startTime: '2026-02-22 10:12:00',
+  endTime: '2026-02-22 10:13:00',
+  limit: 100,
+  orderBy: 'elapsed_time_ms'
+}
+2026-02-23T00:21:26: [sql-statistics] ASH 쿼리 결과: { rowCount: 0 }
+2026-02-23T00:21:26: [sql-statistics] ASH 결과 없음, V$SQL 폴백 시도
+2026-02-23T00:21:26: [sql-statistics] V$SQL 폴백 시간 범위 쿼리: {
+  startTime: '2026-02-22 10:12:00',
+  endTime: '2026-02-22 10:13:00',
+  limit: 100,
+  orderBy: 'elapsed_time_ms'
+}
+2026-02-23T00:21:27: [sql-statistics] V$SQL 폴백 쿼리 결과: { rowCount: 100 }
+2026-02-23T00:21:33: [ASH API] Request: connectionId=f8aee7e1-7409-4834-acdb-c811e29e0f89, range=2026-02-22 23:21:33 ~ 2026-02-23 00:21:33, clientTz=+09:00
+2026-02-23T00:21:33: [ASH] DB server time: 2026-02-22 10:21:33 -05:00, serverTz: -05:00, clientTz: +09:00
+2026-02-23T00:21:33: [ASH] Time conversion: 2026-02-22 23:21:33 ~ 2026-02-23 00:21:33 (client) → 2026-02-22 09:21:33 ~ 2026-02-22 10:21:33 (DB local)
+2026-02-23T00:21:34: [ASH] V$ACTIVE_SESSION_HISTORY returned 5000 rows
+2026-02-23T00:21:52: [SQL Detail API] Received connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89 sql_id: 39hww24xwjuh6
+2026-02-23T00:21:52: [SQL Detail API] SQL_FULLTEXT type: string constructor: String
+2026-02-23T00:21:52: [SQL Detail API] SQL text length: 406
+2026-02-23T00:21:52: [SQL Detail API] Returning detail for SQL_ID: 39hww24xwjuh6
+2026-02-23T00:22:26: [Schemas API] Fetching schemas for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-23T00:22:26: [Schemas API] Connection found: TMSDB
+2026-02-23T00:22:26: [Schemas API] Executing query...
+2026-02-23T00:22:27: [Schemas API] Success! Found 16 schemas
+2026-02-23T00:22:27: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: APPQOSSYS type: TABLE
+2026-02-23T00:22:27: [Objects API] Connection found: TMSDB
+2026-02-23T00:22:33: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH type: TABLE
+2026-02-23T00:22:33: [Objects API] Connection found: TMSDB
+2026-02-23T00:22:37: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:22:37: [Execute API] Connection found: TMSDB
+2026-02-23T00:22:38: [Execute API] Schema changed to: SH
+2026-02-23T00:22:38: [Execute API] Query type: SELECT
+2026-02-23T00:22:40: [Execute API] Success! Execution time: 2403 ms
+2026-02-23T00:22:53: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:22:53: [Execute API] Connection found: TMSDB
+2026-02-23T00:22:53: [Execute API] Schema changed to: SH
+2026-02-23T00:22:53: [Execute API] Query type: SELECT
+2026-02-23T00:22:55: [Execute API] Success! Execution time: 2144 ms
+2026-02-23T00:23:05: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:23:05: [Execute API] Connection found: TMSDB
+2026-02-23T00:23:05: [Execute API] Schema changed to: SH
+2026-02-23T00:23:05: [Execute API] Query type: SELECT
+2026-02-23T00:23:07: [Execute API] Success! Execution time: 1929 ms
+2026-02-23T00:23:18: [Explain API] Getting explain plan for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:23:18: [Explain API] Schema changed to: SH
+2026-02-23T00:23:18: [Explain API] Statement ID: STMT_1771773798898_5gw1s9acl
+2026-02-23T00:23:18: [Explain API] Explain plan executed
+2026-02-23T00:23:18: [Explain API] Plan retrieved, rows: 6
+2026-02-23T00:23:31: [Objects API] Fetching objects for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH type: INDEX
+2026-02-23T00:23:31: [Objects API] Connection found: TMSDB
+2026-02-23T00:24:34: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:24:34: [Execute API] Connection found: TMSDB
+2026-02-23T00:24:34: [Execute API] Schema changed to: SH
+2026-02-23T00:24:34: [Execute API] Query type: SELECT
+2026-02-23T00:24:35: [Execute API] Success! Execution time: 1075 ms
+2026-02-23T00:24:45: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:24:45: [Execute API] Connection found: TMSDB
+2026-02-23T00:24:45: [Execute API] Schema changed to: SH
+2026-02-23T00:24:45: [Execute API] Query type: SELECT
+2026-02-23T00:24:46: [Execute API] Success! Execution time: 406 ms
+2026-02-23T00:25:09: [Execute API] Executing query for connection: f8aee7e1-7409-4834-acdb-c811e29e0f89 schema: SH
+2026-02-23T00:25:09: [Execute API] Connection found: TMSDB
+2026-02-23T00:25:09: [Execute API] Schema changed to: SH
+2026-02-23T00:25:09: [Execute API] Query type: SELECT
+2026-02-23T00:25:09: [Execute API] Success! Execution time: 558 ms

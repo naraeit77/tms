@@ -193,6 +193,7 @@ export default function ASHPage() {
         connection_id: effectiveConnectionId,
         start_time: startDateTime,
         end_time: endDateTime,
+        tz_offset: String(new Date().getTimezoneOffset()),
       });
 
       const res = await fetch(`/api/awr/ash?${params}`);

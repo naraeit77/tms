@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     const connectionId = searchParams.get('connection_id');
     const startTime = searchParams.get('start_time'); // Format: YYYY-MM-DD HH:MI:SS
     const endTime = searchParams.get('end_time'); // Format: YYYY-MM-DD HH:MI:SS
+    const tzOffsetParam = searchParams.get('tz_offset'); // Browser's Date.getTimezoneOffset() in minutes
 
     if (!connectionId) {
       return NextResponse.json({ error: 'Connection ID is required' }, { status: 400 });
@@ -33,29 +34,60 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`[ASH API] Request: connectionId=${connectionId}, range=${startTime} ~ ${endTime}`);
+    // 브라우저 타임존 오프셋 → Oracle 형식 변환 (예: -540 → '+09:00')
+    const tzOffsetMinutes = parseInt(tzOffsetParam || '0');
+    const tzSign = tzOffsetMinutes <= 0 ? '+' : '-';
+    const tzAbsMinutes = Math.abs(tzOffsetMinutes);
+    const tzHours = Math.floor(tzAbsMinutes / 60).toString().padStart(2, '0');
+    const tzMins = (tzAbsMinutes % 60).toString().padStart(2, '0');
+    const clientTz = `${tzSign}${tzHours}:${tzMins}`;
+
+    console.log(`[ASH API] Request: connectionId=${connectionId}, range=${startTime} ~ ${endTime}, clientTz=${clientTz}`);
 
     // Oracle 연결 설정 가져오기
     const config = await getOracleConfig(connectionId);
 
-    // 서버 시간 및 타임존 확인 (디버깅용)
+    // 브라우저 시간을 Oracle DB 로컬 시간으로 변환
+    // sample_time은 TIMESTAMP(3)으로 DB OS 시간대 기준으로 저장됨
+    let convertedStartTime = startTime;
+    let convertedEndTime = endTime;
     let dbServerTime: string | null = null;
     let dbTimezone: string | null = null;
     try {
-      const tzQuery = `
+      const convertQuery = `
         SELECT
           TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD HH24:MI:SS TZH:TZM') as server_time,
+          TO_CHAR(SYSTIMESTAMP, 'TZH:TZM') as server_tz,
           DBTIMEZONE as db_tz,
-          SESSIONTIMEZONE as session_tz
+          SESSIONTIMEZONE as session_tz,
+          TO_CHAR(
+            CAST(FROM_TZ(TO_TIMESTAMP(:start_time, 'YYYY-MM-DD HH24:MI:SS'), :client_tz)
+              AT TIME ZONE TO_CHAR(SYSTIMESTAMP, 'TZH:TZM') AS TIMESTAMP),
+            'YYYY-MM-DD HH24:MI:SS'
+          ) as converted_start,
+          TO_CHAR(
+            CAST(FROM_TZ(TO_TIMESTAMP(:end_time, 'YYYY-MM-DD HH24:MI:SS'), :client_tz)
+              AT TIME ZONE TO_CHAR(SYSTIMESTAMP, 'TZH:TZM') AS TIMESTAMP),
+            'YYYY-MM-DD HH24:MI:SS'
+          ) as converted_end
         FROM dual
       `;
-      const tzResult = await executeQuery(config, tzQuery, [], { timeout: 5000 });
-      const tzRow = tzResult.rows[0];
+      const convertResult = await executeQuery(config, convertQuery, {
+        start_time: startTime,
+        end_time: endTime,
+        client_tz: clientTz,
+      }, { timeout: 5000 });
+      const tzRow = convertResult.rows[0];
       dbServerTime = tzRow?.SERVER_TIME || null;
-      dbTimezone = tzRow?.SESSION_TZ || tzRow?.DB_TZ || null;
-      console.log(`[ASH] DB server time: ${dbServerTime}, timezone: ${dbTimezone}`);
-    } catch {
-      console.log('[ASH] Failed to get DB timezone info');
+      dbTimezone = tzRow?.SERVER_TZ || tzRow?.SESSION_TZ || tzRow?.DB_TZ || null;
+      if (tzRow?.CONVERTED_START && tzRow?.CONVERTED_END) {
+        convertedStartTime = tzRow.CONVERTED_START;
+        convertedEndTime = tzRow.CONVERTED_END;
+      }
+      console.log(`[ASH] DB server time: ${dbServerTime}, serverTz: ${dbTimezone}, clientTz: ${clientTz}`);
+      console.log(`[ASH] Time conversion: ${startTime} ~ ${endTime} (client) → ${convertedStartTime} ~ ${convertedEndTime} (DB local)`);
+    } catch (tzError) {
+      console.log('[ASH] Failed to convert timezone, using original times:', (tzError as Error).message);
     }
 
     // ASH 데이터 조회 - V$ACTIVE_SESSION_HISTORY (EE) 또는 V$SESSION (SE) 폴백
@@ -102,7 +134,7 @@ export async function GET(request: NextRequest) {
         ) WHERE ROWNUM <= 5000
       `;
 
-      const result = await executeQuery(config, ashQuery, { start_time: startTime, end_time: endTime }, { timeout: 30000 });
+      const result = await executeQuery(config, ashQuery, { start_time: convertedStartTime, end_time: convertedEndTime }, { timeout: 30000 });
       console.log(`[ASH] V$ACTIVE_SESSION_HISTORY returned ${result.rows.length} rows`);
       samples = result.rows.map((row: any) => ({
         sample_id: row.SAMPLE_ID,
@@ -142,7 +174,7 @@ export async function GET(request: NextRequest) {
             ash_max_time: row?.ASH_MAX_TIME || null,
             ash_available: true,
             edition: row?.EDITION || null,
-            requested_range: { start: startTime, end: endTime },
+            requested_range: { start: convertedStartTime, end: convertedEndTime },
             db_timezone: dbTimezone,
           };
           console.log('[ASH] Diagnostic info:', JSON.stringify(diagnostic));
@@ -190,7 +222,7 @@ export async function GET(request: NextRequest) {
           ) WHERE ROWNUM <= 5000
         `;
 
-        const dbaResult = await executeQuery(config, dbaHistQuery, { start_time: startTime, end_time: endTime }, { timeout: 30000 });
+        const dbaResult = await executeQuery(config, dbaHistQuery, { start_time: convertedStartTime, end_time: convertedEndTime }, { timeout: 30000 });
         console.log(`[ASH] DBA_HIST_ACTIVE_SESS_HISTORY returned ${dbaResult.rows.length} rows`);
         if (dbaResult.rows.length > 0) {
           dataSource = 'dba_hist_ash';
@@ -297,7 +329,7 @@ export async function GET(request: NextRequest) {
             server_time: row?.SERVER_TIME || null,
             ash_available: false,
             edition: row?.EDITION || null,
-            requested_range: { start: startTime, end: endTime },
+            requested_range: { start: convertedStartTime, end: convertedEndTime },
             db_timezone: dbTimezone,
           };
         } catch {
