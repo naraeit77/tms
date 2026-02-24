@@ -47,11 +47,12 @@ export async function GET(request: NextRequest) {
     console.log('[Metrics API] Fetching from Oracle directly');
 
     const config = await getOracleConfig(connectionId);
-    const queryOpts = { timeout: 5000 };
+    const queryOpts = { timeout: 8000 };
     const failures: string[] = [];
 
     // 에디션 확인 (프론트엔드에서 기능 분기에 사용)
     const edition = await getConnectionEdition(connectionId);
+    const isEnterprise = edition === 'Enterprise';
 
     // ── Batch 1: 핵심 정보 (DB정보, 세션, SQL통계, 메모리, 성능통계) ──
     const [dbInfoResult, sessionResult, sqlStatsResult, memoryResult, perfStatsResult] = await Promise.all([
@@ -70,17 +71,34 @@ export async function GET(request: NextRequest) {
         WHERE type = 'USER'
       `, [], queryOpts), { rows: [{ TOTAL_SESSIONS: 0, ACTIVE_SESSIONS: 0, INACTIVE_SESSIONS: 0, BLOCKED_SESSIONS: 0 }] as any[] }, failures),
 
-      trackedQuery('sqlStats', () => executeQuery(config, `
-        SELECT
-          COUNT(*) as unique_sql_count,
-          SUM(executions) as total_executions,
-          ROUND(AVG(elapsed_time / NULLIF(executions, 0)) / 1000, 2) as avg_elapsed_time,
-          ROUND(AVG(cpu_time / NULLIF(executions, 0)) / 1000, 2) as avg_cpu_time,
-          ROUND(AVG(buffer_gets / NULLIF(executions, 0)), 2) as avg_buffer_gets
-        FROM v$sqlarea
-        WHERE parsing_schema_name NOT IN ('SYS', 'SYSTEM')
-          AND executions > 0
-      `, [], queryOpts), { rows: [{ UNIQUE_SQL_COUNT: 0, TOTAL_EXECUTIONS: 0, AVG_ELAPSED_TIME: 0, AVG_CPU_TIME: 0, AVG_BUFFER_GETS: 0 }] as any[] }, failures),
+      // EE: v$sqlarea 풀스캔이 대규모 shared pool에서 타임아웃되므로 ASH+sysmetric 사용
+      // SE: v$sqlarea 직접 조회 (shared pool이 작아서 빠름)
+      trackedQuery('sqlStats', () => executeQuery(config,
+        isEnterprise
+          ? `SELECT
+              NVL((SELECT COUNT(DISTINCT sql_id) FROM v$active_session_history
+                   WHERE sample_time >= SYSDATE - 1/24 AND sql_id IS NOT NULL), 0) as unique_sql_count,
+              NVL((SELECT value FROM v$sysstat WHERE name = 'execute count'), 0) as total_executions,
+              ROUND(NVL((SELECT value FROM v$sysmetric
+                         WHERE metric_name = 'SQL Service Response Time' AND group_id = 2 AND ROWNUM = 1), 0), 2) as avg_elapsed_time,
+              ROUND(NVL((SELECT value FROM v$sysmetric
+                         WHERE metric_name = 'CPU Usage Per Sec' AND group_id = 2 AND ROWNUM = 1), 0), 2) as avg_cpu_time,
+              ROUND(NVL(CASE
+                WHEN NVL((SELECT value FROM v$sysmetric WHERE metric_name = 'Executions Per Sec' AND group_id = 2 AND ROWNUM = 1), 0) > 0
+                THEN (SELECT value FROM v$sysmetric WHERE metric_name = 'Logical Reads Per Sec' AND group_id = 2 AND ROWNUM = 1)
+                     / (SELECT value FROM v$sysmetric WHERE metric_name = 'Executions Per Sec' AND group_id = 2 AND ROWNUM = 1)
+                ELSE 0 END, 0), 2) as avg_buffer_gets
+            FROM dual`
+          : `SELECT
+              COUNT(*) as unique_sql_count,
+              SUM(executions) as total_executions,
+              ROUND(AVG(elapsed_time / NULLIF(executions, 0)) / 1000, 2) as avg_elapsed_time,
+              ROUND(AVG(cpu_time / NULLIF(executions, 0)) / 1000, 2) as avg_cpu_time,
+              ROUND(AVG(buffer_gets / NULLIF(executions, 0)), 2) as avg_buffer_gets
+            FROM v$sqlarea
+            WHERE parsing_schema_name NOT IN ('SYS', 'SYSTEM')
+              AND executions > 0`
+      , [], queryOpts), { rows: [{ UNIQUE_SQL_COUNT: 0, TOTAL_EXECUTIONS: 0, AVG_ELAPSED_TIME: 0, AVG_CPU_TIME: 0, AVG_BUFFER_GETS: 0 }] as any[] }, failures),
 
       trackedQuery('memory', () => executeQuery(config, `
         SELECT name, ROUND(value / 1024 / 1024, 2) as size_mb
@@ -136,24 +154,48 @@ export async function GET(request: NextRequest) {
         ) WHERE ROWNUM <= 5
       `, [], queryOpts), { rows: [] }, failures),
 
-      trackedQuery('topSql', () => executeQuery(config, `
-        SELECT * FROM (
-          SELECT
-            sql_id,
-            SUBSTR(sql_text, 1, 50) as sql_snippet,
-            executions,
-            ROUND(elapsed_time / NULLIF(executions, 0) / 1000, 0) as avg_elapsed_ms,
-            ROUND(cpu_time / NULLIF(executions, 0) / 1000, 0) as avg_cpu_ms,
-            ROUND(buffer_gets / NULLIF(executions, 0), 0) as avg_buffer_gets,
-            last_active_time
-          FROM v$sqlarea
-          WHERE parsing_schema_name NOT IN ('SYS', 'SYSTEM', 'DBSNMP', 'SYSMAN')
-            AND executions > 0
-            AND elapsed_time > 0
-            AND last_active_time >= SYSDATE - 1
-          ORDER BY elapsed_time DESC
-        ) WHERE ROWNUM <= 20
-      `, [], queryOpts), { rows: [] }, failures),
+      // EE: ASH에서 최근 활성 SQL 식별 후 v$sql 포인트 조회 (v$sqlarea 풀스캔 회피)
+      // SE: v$sqlarea 직접 조회
+      trackedQuery('topSql', () => executeQuery(config,
+        isEnterprise
+          ? `SELECT
+              top_sql.sql_id,
+              (SELECT SUBSTR(s.sql_text, 1, 50) FROM v$sql s WHERE s.sql_id = top_sql.sql_id AND ROWNUM = 1) as sql_snippet,
+              NVL((SELECT s.executions FROM v$sql s WHERE s.sql_id = top_sql.sql_id AND ROWNUM = 1), 0) as executions,
+              NVL((SELECT ROUND(s.elapsed_time / NULLIF(s.executions, 0) / 1000, 0) FROM v$sql s WHERE s.sql_id = top_sql.sql_id AND ROWNUM = 1), 0) as avg_elapsed_ms,
+              NVL((SELECT ROUND(s.cpu_time / NULLIF(s.executions, 0) / 1000, 0) FROM v$sql s WHERE s.sql_id = top_sql.sql_id AND ROWNUM = 1), 0) as avg_cpu_ms,
+              NVL((SELECT ROUND(s.buffer_gets / NULLIF(s.executions, 0), 0) FROM v$sql s WHERE s.sql_id = top_sql.sql_id AND ROWNUM = 1), 0) as avg_buffer_gets,
+              top_sql.last_active_time
+            FROM (
+              SELECT * FROM (
+                SELECT
+                  sql_id,
+                  MAX(sample_time) as last_active_time,
+                  COUNT(*) as ash_samples
+                FROM v$active_session_history
+                WHERE sql_id IS NOT NULL
+                  AND sample_time >= SYSDATE - 1/24
+                GROUP BY sql_id
+                ORDER BY COUNT(*) DESC
+              ) WHERE ROWNUM <= 20
+            ) top_sql`
+          : `SELECT * FROM (
+              SELECT
+                sql_id,
+                SUBSTR(sql_text, 1, 50) as sql_snippet,
+                executions,
+                ROUND(elapsed_time / NULLIF(executions, 0) / 1000, 0) as avg_elapsed_ms,
+                ROUND(cpu_time / NULLIF(executions, 0) / 1000, 0) as avg_cpu_ms,
+                ROUND(buffer_gets / NULLIF(executions, 0), 0) as avg_buffer_gets,
+                last_active_time
+              FROM v$sqlarea
+              WHERE parsing_schema_name NOT IN ('SYS', 'SYSTEM', 'DBSNMP', 'SYSMAN')
+                AND executions > 0
+                AND elapsed_time > 0
+                AND last_active_time >= SYSDATE - 1
+              ORDER BY elapsed_time DESC
+            ) WHERE ROWNUM <= 20`
+      , [], queryOpts), { rows: [] }, failures),
 
       // 테이블스페이스 (Oracle 12c+ 시도 → 11g 폴백)
       trackedQuery('tablespace', async () => {
