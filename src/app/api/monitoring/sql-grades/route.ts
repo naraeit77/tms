@@ -8,6 +8,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getOracleConfig } from '@/lib/oracle/utils';
 import { executeQuery } from '@/lib/oracle/client';
+import { getConnectionEdition } from '@/lib/oracle/edition-guard-server';
 import {
   transformToClusterPoint,
   SQLGrade,
@@ -38,6 +39,41 @@ SELECT * FROM (
     AND sql_text NOT LIKE '%dba_%'
     AND elapsed_time > 0
   ORDER BY elapsed_time DESC
+) WHERE ROWNUM <= ${limit}
+`;
+
+// Enterprise Edition용: ASH 기반 SQL 통계 조회 (v$sql full scan 회피)
+// ASH에서 최근 1시간 활성 SQL을 찾고, v$sql 개별 조회로 상세 정보 획득
+const getSqlStatsQueryEE = (limit: number) => `
+SELECT * FROM (
+  SELECT * FROM (
+    SELECT
+      a.sql_id,
+      (SELECT SUBSTR(s.sql_text, 1, 200) FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1) as sql_text,
+      NVL((SELECT s.executions FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1), 0) as executions,
+      NVL((SELECT s.elapsed_time / 1000000 FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1), 0) as elapsed_sec,
+      NVL((SELECT s.cpu_time / 1000000 FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1), 0) as cpu_sec,
+      NVL((SELECT s.buffer_gets FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1), 0) as buffer_gets,
+      NVL((SELECT s.disk_reads FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1), 0) as disk_reads,
+      NVL((SELECT s.rows_processed FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1), 0) as rows_processed,
+      (SELECT s.module FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1) as module,
+      (SELECT s.parsing_schema_name FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1) as username,
+      (SELECT s.first_load_time FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1) as first_load_time,
+      (SELECT s.last_active_time FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1) as last_active_time
+    FROM (
+      SELECT sql_id FROM (
+        SELECT sql_id, COUNT(*) as samples
+        FROM v$active_session_history
+        WHERE sql_id IS NOT NULL
+          AND sample_time >= SYSDATE - 1/24
+        GROUP BY sql_id
+        ORDER BY COUNT(*) DESC
+      ) WHERE ROWNUM <= ${limit + 50}
+    ) a
+  ) WHERE sql_text IS NOT NULL
+    AND executions > 0
+    AND elapsed_sec > 0
+  ORDER BY elapsed_sec DESC
 ) WHERE ROWNUM <= ${limit}
 `;
 
@@ -129,6 +165,10 @@ export async function GET(request: NextRequest) {
 
     const config = await getOracleConfig(connectionId);
 
+    // Enterprise Edition 감지
+    const edition = await getConnectionEdition(connectionId);
+    const isEnterprise = edition === 'Enterprise';
+
     // limit 범위 제한 (최소 10, 최대 2000)
     const safeLimit = Math.min(Math.max(limit, 10), 2000);
 
@@ -137,7 +177,7 @@ export async function GET(request: NextRequest) {
 
     // 시간 범위가 지정된 경우
     if (startTime && endTime) {
-      if (useEnterprise) {
+      if (useEnterprise || isEnterprise) {
         query = getSqlByTimeRangeQuery(safeLimit);
       } else {
         query = getSqlByTimeRangeSeQuery(safeLimit);
@@ -147,10 +187,13 @@ export async function GET(request: NextRequest) {
         end_time: endTime,
       };
     } else {
-      query = getSqlStatsQuery(safeLimit);
+      // 기본 모드: EE는 ASH 기반, SE는 v$sql full scan
+      query = isEnterprise ? getSqlStatsQueryEE(safeLimit) : getSqlStatsQuery(safeLimit);
     }
 
-    const result = await executeQuery(config, query, bindParams);
+    console.log(`[sql-grades] Edition: ${edition}, isEnterprise: ${isEnterprise}, timeRange: ${!!startTime}, limit: ${safeLimit}`);
+
+    const result = await executeQuery(config, query, bindParams, { timeout: 15000 });
 
     // SQL 데이터를 클러스터 포인트로 변환하고 등급 계산
     let clusterData: SQLClusterPoint[] = result.rows.map((row: any) => {

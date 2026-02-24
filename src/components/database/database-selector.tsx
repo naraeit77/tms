@@ -81,65 +81,63 @@ function DatabaseSelectorInner() {
     refetchOnWindowFocus: false,
   });
 
-  // React Query 데이터를 Zustand 스토어에 동기화
+  // React Query 데이터를 Zustand 스토어에 동기화 (connectionsData 변경 시에만 실행)
   useEffect(() => {
-    if (connectionsData) {
-      setConnections(connectionsData as any);
+    if (!connectionsData) return;
 
-      // 저장된 선택 ID 복원 (stale ID 검증 포함)
+    // Zustand 스토어에 connections 동기화 (selectedConnectionId는 변경하지 않음)
+    setConnections(connectionsData as any);
+
+    // 저장된 선택 ID 복원 (stale ID 검증 포함) - store에서 최신 값 직접 읽기
+    const currentId = useDatabaseStore.getState().selectedConnectionId;
+    const isCurrentValid = currentId && connectionsData.some((c: any) => c.id === currentId);
+
+    if (!isCurrentValid && connectionsData.length > 0) {
       const savedId = localStorage.getItem('selected-database-id');
-      const currentId = selectedConnectionId;
-      const isCurrentValid = currentId && connectionsData.some((c: any) => c.id === currentId);
-
-      if (!isCurrentValid && connectionsData.length > 0) {
-        // 현재 선택이 유효하지 않으면 localStorage에서 복원 시도
-        const savedConnection = savedId ? connectionsData.find((c: any) => c.id === savedId) : null;
-        if (savedConnection) {
-          selectConnection(savedId!);
-        } else {
-          // 기본 연결 또는 첫 번째 연결 선택
-          const defaultConnection = connectionsData.find((c: any) => c.isDefault) || connectionsData[0];
-          if (defaultConnection) {
-            selectConnection(defaultConnection.id);
-          }
-        }
-      }
-
-      // health_status가 없거나 UNKNOWN인 연결들에 대해 자동 health check 실행
-      if (!healthCheckExecutedRef.current) {
-        const connectionsNeedingHealthCheck = (connectionsData as any[]).filter(
-          (c: any) => c.healthStatus === 'UNKNOWN'
-        );
-
-        if (connectionsNeedingHealthCheck.length > 0) {
-          healthCheckExecutedRef.current = true;
-
-          // 각 연결에 대해 health check 실행 (백그라운드에서)
-          Promise.all(
-            connectionsNeedingHealthCheck.map(async (conn: any) => {
-              try {
-                const response = await fetch(`/api/oracle/connections/${conn.id}/health`);
-                const result = await response.json();
-                if (result?.data) {
-                  const newStatus = result.data.isHealthy ? 'HEALTHY' : 'ERROR';
-                  updateConnectionHealth(conn.id, newStatus as any, result.data.version);
-                }
-                return result;
-              } catch (error) {
-                console.error(`[DatabaseSelector] Health check failed for ${conn.name}:`, error);
-                updateConnectionHealth(conn.id, 'ERROR');
-                return null;
-              }
-            })
-          ).then(() => {
-            setTimeout(() => {
-              queryClient.invalidateQueries({ queryKey: ['database-selector-connections'] });
-            }, 1000);
-          });
+      const savedConnection = savedId ? connectionsData.find((c: any) => c.id === savedId) : null;
+      if (savedConnection) {
+        selectConnection(savedId!);
+      } else {
+        const defaultConnection = connectionsData.find((c: any) => c.isDefault) || connectionsData[0];
+        if (defaultConnection) {
+          selectConnection((defaultConnection as any).id);
         }
       }
     }
-  }, [connectionsData, selectedConnectionId, setConnections, selectConnection, queryClient]);
+
+    // health_status가 없거나 UNKNOWN인 연결들에 대해 자동 health check 실행
+    if (!healthCheckExecutedRef.current) {
+      const connectionsNeedingHealthCheck = (connectionsData as any[]).filter(
+        (c: any) => c.healthStatus === 'UNKNOWN'
+      );
+
+      if (connectionsNeedingHealthCheck.length > 0) {
+        healthCheckExecutedRef.current = true;
+
+        Promise.all(
+          connectionsNeedingHealthCheck.map(async (conn: any) => {
+            try {
+              const response = await fetch(`/api/oracle/connections/${conn.id}/health`);
+              const result = await response.json();
+              if (result?.data) {
+                const newStatus = result.data.isHealthy ? 'HEALTHY' : 'ERROR';
+                updateConnectionHealth(conn.id, newStatus as any, result.data.version);
+              }
+              return result;
+            } catch (error) {
+              console.error(`[DatabaseSelector] Health check failed for ${conn.name}:`, error);
+              updateConnectionHealth(conn.id, 'ERROR');
+              return null;
+            }
+          })
+        ).then(() => {
+          setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: ['database-selector-connections'] });
+          }, 1000);
+        });
+      }
+    }
+  }, [connectionsData, setConnections, selectConnection, updateConnectionHealth, queryClient]);
 
   // React Query 데이터를 직접 사용하여 렌더링 (Zustand 동기화 지연 방지)
   const displayConnections = (connectionsData as any[] || connections || []) as any[];

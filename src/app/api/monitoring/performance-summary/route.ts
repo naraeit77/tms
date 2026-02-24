@@ -155,51 +155,96 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. AWR 데이터가 없으면 V$SQL에서 현재 데이터 조회
+    // 3. AWR 데이터가 없으면 ASH(EE) 또는 V$SQL(SE)에서 현재 데이터 조회
     if (!summaryData) {
       const today = new Date();
       const targetDate = new Date(dateStr);
       const daysDiff = Math.floor((today.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
 
-      if (daysDiff <= 1) {
-        // 시간 필터가 있는 경우와 없는 경우 분리
-        const vsqlSummaryQuery = hasTimeFilter ? `
-          SELECT
-            COUNT(DISTINCT sql_id) as total_sqls,
-            SUM(executions) as total_executions,
-            ROUND(AVG(elapsed_time / DECODE(executions, 0, 1, executions)) / 1000, 2) as avg_elapsed_time,
-            ROUND(AVG(cpu_time / DECODE(executions, 0, 1, executions)) / 1000, 2) as avg_cpu_time,
-            ROUND(AVG(buffer_gets / DECODE(executions, 0, 1, executions)), 0) as avg_buffer_gets,
-            ROUND(AVG(disk_reads / DECODE(executions, 0, 1, executions)), 0) as avg_disk_reads,
-            SUM(rows_processed) as total_rows_processed,
-            MAX(elapsed_time / DECODE(executions, 0, 1, executions) / 1000) as max_elapsed_time
-          FROM v$sql
-          WHERE executions > 0
-            AND parsing_schema_name NOT IN ('SYS', 'SYSTEM', 'DBSNMP', 'SYSMAN', 'OUTLN', 'MDSYS', 'ORDSYS', 'EXFSYS', 'WMSYS', 'CTXSYS', 'XDB')
-            AND last_active_time >= TO_DATE(:start_dt, 'YYYY-MM-DD HH24:MI:SS')
-            AND last_active_time <= TO_DATE(:end_dt, 'YYYY-MM-DD HH24:MI:SS')
-        ` : `
-          SELECT
-            COUNT(DISTINCT sql_id) as total_sqls,
-            SUM(executions) as total_executions,
-            ROUND(AVG(elapsed_time / DECODE(executions, 0, 1, executions)) / 1000, 2) as avg_elapsed_time,
-            ROUND(AVG(cpu_time / DECODE(executions, 0, 1, executions)) / 1000, 2) as avg_cpu_time,
-            ROUND(AVG(buffer_gets / DECODE(executions, 0, 1, executions)), 0) as avg_buffer_gets,
-            ROUND(AVG(disk_reads / DECODE(executions, 0, 1, executions)), 0) as avg_disk_reads,
-            SUM(rows_processed) as total_rows_processed,
-            MAX(elapsed_time / DECODE(executions, 0, 1, executions) / 1000) as max_elapsed_time
-          FROM v$sql
-          WHERE executions > 0
-            AND parsing_schema_name NOT IN ('SYS', 'SYSTEM', 'DBSNMP', 'SYSMAN', 'OUTLN', 'MDSYS', 'ORDSYS', 'EXFSYS', 'WMSYS', 'CTXSYS', 'XDB')
-            AND last_active_time >= TO_DATE(:date_str, 'YYYY-MM-DD')
-            AND last_active_time < TO_DATE(:date_str, 'YYYY-MM-DD') + 1
-        `;
+      try {
+        const config = await getOracleConfig(connectionId);
+        const queryOpts = { timeout: 10000 };
 
-        const vsqlBindParams = hasTimeFilter ? [startDateTime, endDateTime] : [dateStr];
+        if (!isStandardEdition) {
+          // EE: ASH + v$sysstat/v$sysmetric 기반 경량 조회
+          const ashTimeFilter = daysDiff <= 0
+            ? (hasTimeFilter
+                ? `AND h.sample_time >= TO_DATE('${startDateTime}', 'YYYY-MM-DD HH24:MI:SS')
+                   AND h.sample_time <= TO_DATE('${endDateTime}', 'YYYY-MM-DD HH24:MI:SS')`
+                : `AND h.sample_time >= TRUNC(SYSDATE)`)
+            : daysDiff <= 1
+              ? `AND h.sample_time >= TRUNC(SYSDATE) - 1 AND h.sample_time < TRUNC(SYSDATE)`
+              : `AND h.sample_time >= SYSDATE - 7`;
 
-        try {
-          const config = await getOracleConfig(connectionId);
-          const queryOpts = { timeout: 20000 };
+          const ashSummaryQuery = `
+            SELECT
+              COUNT(DISTINCT h.sql_id) as total_sqls,
+              SUM(NVL((SELECT s.executions FROM v$sql s WHERE s.sql_id = h.sql_id AND ROWNUM = 1), 0)) as total_executions,
+              ROUND(AVG(NVL((SELECT s.elapsed_time / NULLIF(s.executions, 0) / 1000 FROM v$sql s WHERE s.sql_id = h.sql_id AND ROWNUM = 1), 0)), 2) as avg_elapsed_time,
+              ROUND(AVG(NVL((SELECT s.cpu_time / NULLIF(s.executions, 0) / 1000 FROM v$sql s WHERE s.sql_id = h.sql_id AND ROWNUM = 1), 0)), 2) as avg_cpu_time,
+              ROUND(AVG(NVL((SELECT s.buffer_gets / NULLIF(s.executions, 0) FROM v$sql s WHERE s.sql_id = h.sql_id AND ROWNUM = 1), 0)), 0) as avg_buffer_gets,
+              ROUND(AVG(NVL((SELECT s.disk_reads / NULLIF(s.executions, 0) FROM v$sql s WHERE s.sql_id = h.sql_id AND ROWNUM = 1), 0)), 0) as avg_disk_reads,
+              0 as total_rows_processed,
+              ROUND(MAX(NVL((SELECT s.elapsed_time / NULLIF(s.executions, 0) / 1000 FROM v$sql s WHERE s.sql_id = h.sql_id AND ROWNUM = 1), 0)), 2) as max_elapsed_time
+            FROM (
+              SELECT DISTINCT sql_id
+              FROM v$active_session_history h
+              WHERE h.sql_id IS NOT NULL
+                ${ashTimeFilter}
+            ) h
+          `;
+
+          const ashResult = await executeQuery(config, ashSummaryQuery, [], queryOpts);
+
+          if (ashResult.rows && ashResult.rows.length > 0) {
+            const row = ashResult.rows[0];
+            summaryData = {
+              total_sqls: Number(row.TOTAL_SQLS) || 0,
+              total_executions: Number(row.TOTAL_EXECUTIONS) || 0,
+              avg_elapsed_time: Number(row.AVG_ELAPSED_TIME) || 0,
+              avg_cpu_time: Number(row.AVG_CPU_TIME) || 0,
+              avg_buffer_gets: Number(row.AVG_BUFFER_GETS) || 0,
+              avg_disk_reads: Number(row.AVG_DISK_READS) || 0,
+              total_rows_processed: Number(row.TOTAL_ROWS_PROCESSED) || 0,
+              max_elapsed_time: Number(row.MAX_ELAPSED_TIME) || 0,
+              source: 'ash'
+            };
+          }
+        } else if (daysDiff <= 1) {
+          // SE: V$SQL 직접 집계 (shared pool이 작아서 빠름)
+          const vsqlSummaryQuery = hasTimeFilter ? `
+            SELECT
+              COUNT(DISTINCT sql_id) as total_sqls,
+              SUM(executions) as total_executions,
+              ROUND(AVG(elapsed_time / DECODE(executions, 0, 1, executions)) / 1000, 2) as avg_elapsed_time,
+              ROUND(AVG(cpu_time / DECODE(executions, 0, 1, executions)) / 1000, 2) as avg_cpu_time,
+              ROUND(AVG(buffer_gets / DECODE(executions, 0, 1, executions)), 0) as avg_buffer_gets,
+              ROUND(AVG(disk_reads / DECODE(executions, 0, 1, executions)), 0) as avg_disk_reads,
+              SUM(rows_processed) as total_rows_processed,
+              MAX(elapsed_time / DECODE(executions, 0, 1, executions) / 1000) as max_elapsed_time
+            FROM v$sql
+            WHERE executions > 0
+              AND parsing_schema_name NOT IN ('SYS', 'SYSTEM', 'DBSNMP', 'SYSMAN', 'OUTLN', 'MDSYS', 'ORDSYS', 'EXFSYS', 'WMSYS', 'CTXSYS', 'XDB')
+              AND last_active_time >= TO_DATE(:start_dt, 'YYYY-MM-DD HH24:MI:SS')
+              AND last_active_time <= TO_DATE(:end_dt, 'YYYY-MM-DD HH24:MI:SS')
+          ` : `
+            SELECT
+              COUNT(DISTINCT sql_id) as total_sqls,
+              SUM(executions) as total_executions,
+              ROUND(AVG(elapsed_time / DECODE(executions, 0, 1, executions)) / 1000, 2) as avg_elapsed_time,
+              ROUND(AVG(cpu_time / DECODE(executions, 0, 1, executions)) / 1000, 2) as avg_cpu_time,
+              ROUND(AVG(buffer_gets / DECODE(executions, 0, 1, executions)), 0) as avg_buffer_gets,
+              ROUND(AVG(disk_reads / DECODE(executions, 0, 1, executions)), 0) as avg_disk_reads,
+              SUM(rows_processed) as total_rows_processed,
+              MAX(elapsed_time / DECODE(executions, 0, 1, executions) / 1000) as max_elapsed_time
+            FROM v$sql
+            WHERE executions > 0
+              AND parsing_schema_name NOT IN ('SYS', 'SYSTEM', 'DBSNMP', 'SYSMAN', 'OUTLN', 'MDSYS', 'ORDSYS', 'EXFSYS', 'WMSYS', 'CTXSYS', 'XDB')
+              AND last_active_time >= TO_DATE(:date_str, 'YYYY-MM-DD')
+              AND last_active_time < TO_DATE(:date_str, 'YYYY-MM-DD') + 1
+          `;
+
+          const vsqlBindParams = hasTimeFilter ? [startDateTime, endDateTime] : [dateStr];
           const vsqlResult = await executeQuery(config, vsqlSummaryQuery, vsqlBindParams, queryOpts);
 
           if (vsqlResult.rows && vsqlResult.rows.length > 0) {
@@ -216,9 +261,9 @@ export async function GET(request: NextRequest) {
               source: 'v$sql'
             };
           }
-        } catch (vsqlError) {
-          console.log('[Performance Summary] V$SQL query failed:', vsqlError);
         }
+      } catch (fallbackError) {
+        console.log('[Performance Summary] Fallback query failed:', fallbackError);
       }
     }
 

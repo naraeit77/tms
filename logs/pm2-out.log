@@ -59058,3 +59058,396 @@ Help: https://docs.oracle.com/error-help/db/ora-01013/
   has_osstat: true,
   has_sysmetric: false
 }
+2026-02-25T01:37:03: [Metrics API] Fetching from Oracle directly
+2026-02-25T01:37:04: [Metrics API] Oracle queries completed in 752ms (failures: none)
+2026-02-25T01:37:04: [Metrics API] Total response time: 752ms
+2026-02-25T01:37:08: [OS Stats] 조회 완료: {
+  cpu_usage: 14.48,
+  memory_usage: 78.78,
+  io_mbps: 0,
+  has_osstat: true,
+  has_sysmetric: false
+}
+2026-02-25T01:37:08: [Performance Trend] Standard Edition detected (Standard), skipping ASH-based strategies
+2026-02-25T01:37:08: [Performance Trend] V$SYSMETRIC_HISTORY has no data for requested time range
+2026-02-25T01:37:08: [Performance Trend] V$SYSMETRIC query returned 0 rows
+2026-02-25T01:37:08: [Performance Trend] Using V$SQL time-bucketed fallback (60 minutes)
+2026-02-25T01:37:09: [Performance Trend] V$SQL bucket query returned 22 rows
+2026-02-25T01:37:33: [Metrics API] Fetching from Oracle directly
+2026-02-25T01:37:33: [Metrics API] Oracle queries completed in 449ms (failures: none)
+2026-02-25T01:37:33: [Metrics API] Total response time: 449ms
+2026-02-25T01:37:38: [OS Stats] 조회 완료: {
+  cpu_usage: 14.48,
+  memory_usage: 78.78,
+  io_mbps: 0,
+  has_osstat: true,
+  has_sysmetric: false
+}
+2026-02-25T01:37:47: [Metrics API] Fetching from Oracle directly
+2026-02-25T01:37:52: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 96.28,
+  io_mbps: 46.41,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-25T01:37:57: [Metrics API] Oracle queries completed in 9422ms (failures: none)
+2026-02-25T01:37:57: [Metrics API] Total response time: 9422ms
+2026-02-25T01:38:13: [Performance History] V$SQL query failed: Error: Query timeout after 8000ms
+    at Timeout.<anonymous> (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7462)
+2026-02-25T01:38:27: [Performance History] V$SQL query failed: Error: Query timeout after 8000ms
+    at Timeout.<anonymous> (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7462)
+2026-02-25T01:38:30: [Pattern Detection API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-25T01:38:30: [Realtime Monitoring API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-25T01:38:31: [Refactoring Suggestions API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-25T01:38:32: [Realtime Monitoring API] Found 30 active SQLs
+2026-02-25T01:38:50: [Performance History] V$SQL query failed: Error: Query timeout after 8000ms
+    at Timeout.<anonymous> (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7462)
+2026-02-25T01:38:50: [Pattern Detection API] Found 0 issues
+2026-02-25T01:38:59: [LLM Stream] Request received
+2026-02-25T01:38:59: [LLM Stream] Body parsed successfully, keys: [
+  'sql_text',
+  'context',
+  'language',
+  '_timestamp',
+  'execution_plan',
+  'metrics'
+]
+2026-02-25T01:38:59: [LLM Stream] Auth check: OK
+2026-02-25T01:38:59: [LLM Stream] Feature enabled: true
+2026-02-25T01:38:59: [LLM Stream] Validation: true []
+2026-02-25T01:38:59: [LLM Stream] Starting stream, messages: 2
+2026-02-25T01:38:59: [LLM Stream] LLM client created, starting chat...
+2026-02-25T01:39:15: [LLM Stream] First chunk received in 15817 ms
+2026-02-25T01:39:29: [LLM Stream] Completed in 30481 ms, chunks: 807
+2026-02-25T01:39:29: [LLM Stop] Request received
+2026-02-25T01:39:29: [LLM Stop] Sending unload request to Ollama: http://localhost:11434/api/generate model: qwen3:8b
+2026-02-25T01:39:29: [LLM Stop] Ollama response: 200 {"model":"qwen3:8b","created_at":"2026-02-24T16:39:29.79714Z","response":"","done":true,"done_reason":"unload"}
+2026-02-25T01:39:29: [LLM Stop] Model unload request sent successfully
+2026-02-25T01:40:41: [Metrics API] Fetching from Oracle directly
+2026-02-25T01:40:49: [Metrics API] Oracle queries completed in 8548ms (failures: none)
+2026-02-25T01:40:49: [Metrics API] Total response time: 8548ms
+2026-02-25T01:41:22: [Performance History] V$SQL query failed: Error: Query timeout after 8000ms
+    at Timeout.<anonymous> (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7462)
+2026-02-25T01:41:34: [Performance Summary] V$SQL query failed: Error: Query timeout after 20000ms
+    at Timeout.<anonymous> (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7462)
+2026-02-25T01:42:48: [Realtime Monitoring API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-25T01:42:48: [Refactoring Suggestions API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-25T01:42:48: [Pattern Detection API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-25T01:42:50: [Realtime Monitoring API] Found 30 active SQLs
+2026-02-25T01:42:56: [Pattern Detection API] Found 1 issues
+2026-02-25T01:47:17: ▲ Next.js 16.1.6
+2026-02-25T01:47:17: ▲ Next.js 16.1.6
+2026-02-25T01:47:17: - Local:         http://localhost:3000
+2026-02-25T01:47:17: - Network:       http://192.168.0.4:3000
+2026-02-25T01:47:17: 
+2026-02-25T01:47:17: ✓ Starting...
+2026-02-25T01:47:17: - Local:         http://localhost:3000
+2026-02-25T01:47:17: - Network:       http://192.168.0.4:3000
+2026-02-25T01:47:17: 
+2026-02-25T01:47:17: ✓ Starting...
+2026-02-25T01:47:17: ✓ Ready in 299ms
+2026-02-25T01:47:17: ✓ Ready in 299ms
+2026-02-25T01:47:18: ✓ Oracle Thick mode initialized
+2026-02-25T01:47:18:   Library directory: /opt/oracle/instantclient
+2026-02-25T01:47:18: ✓ Oracle Thick mode initialized
+2026-02-25T01:47:18:   Library directory: /opt/oracle/instantclient
+2026-02-25T01:47:20: ▲ Next.js 16.1.6
+2026-02-25T01:47:20: ▲ Next.js 16.1.6
+2026-02-25T01:47:20: - Local:         http://localhost:3000
+2026-02-25T01:47:20: - Network:       http://192.168.0.4:3000
+2026-02-25T01:47:20: 
+2026-02-25T01:47:20: ✓ Starting...
+2026-02-25T01:47:20: - Local:         http://localhost:3000
+2026-02-25T01:47:20: - Network:       http://192.168.0.4:3000
+2026-02-25T01:47:20: 
+2026-02-25T01:47:20: ✓ Starting...
+2026-02-25T01:47:20: ✓ Ready in 274ms
+2026-02-25T01:47:20: ✓ Ready in 274ms
+2026-02-25T01:47:21: ✓ Oracle Thick mode initialized
+2026-02-25T01:47:21:   Library directory: /opt/oracle/instantclient
+2026-02-25T01:47:21: ✓ Oracle Thick mode initialized
+2026-02-25T01:47:21:   Library directory: /opt/oracle/instantclient
+2026-02-25T01:51:00: [Performance History] AWR query returned 0 rows for date=2026-02-25
+2026-02-25T01:51:02: [Performance History] Fallback query failed: Error: ORA-00934: 그룹 함수는 허가되지 않습니다
+Help: https://docs.oracle.com/error-help/db/ora-00934/
+    at async S (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7651)
+    at async p (.next/server/chunks/_b02019cd._.js:103:15)
+    at async d (.next/server/chunks/_b02019cd._.js:164:4621)
+    at async l (.next/server/chunks/_b02019cd._.js:164:5662)
+    at async Module.T (.next/server/chunks/_b02019cd._.js:164:6740) {
+  errorNum: 934,
+  offset: 1673,
+  isRecoverable: false,
+  code: 'ORA-00934'
+}
+2026-02-25T01:51:04: [Performance History] AWR query returned 0 rows for date=2026-02-25
+2026-02-25T01:51:05: [Performance History] Fallback query failed: Error: ORA-00934: 그룹 함수는 허가되지 않습니다
+Help: https://docs.oracle.com/error-help/db/ora-00934/
+    at async S (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7651)
+    at async p (.next/server/chunks/_b02019cd._.js:103:15)
+    at async d (.next/server/chunks/_b02019cd._.js:164:4621)
+    at async l (.next/server/chunks/_b02019cd._.js:164:5662)
+    at async Module.T (.next/server/chunks/_b02019cd._.js:164:6740) {
+  errorNum: 934,
+  offset: 1673,
+  isRecoverable: false,
+  code: 'ORA-00934'
+}
+2026-02-25T01:51:07: [Metrics API] Fetching from Oracle directly
+2026-02-25T01:51:12: [Performance Summary] Fallback query failed: Error: Query timeout after 10000ms
+    at Timeout.<anonymous> (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7462)
+2026-02-25T01:51:15: [Metrics API] Oracle queries completed in 8407ms (failures: none)
+2026-02-25T01:51:15: [Metrics API] Total response time: 8407ms
+2026-02-25T01:51:33: [Metrics API] Fetching from Oracle directly
+2026-02-25T01:51:33: [Metrics API] Oracle queries completed in 490ms (failures: none)
+2026-02-25T01:51:33: [Metrics API] Total response time: 490ms
+2026-02-25T01:51:33: [Performance Trend] Standard Edition detected (Standard), skipping ASH-based strategies
+2026-02-25T01:51:33: [Performance Trend] V$SYSMETRIC_HISTORY has no data for requested time range
+2026-02-25T01:51:33: [Performance Trend] V$SYSMETRIC query returned 0 rows
+2026-02-25T01:51:33: [Performance Trend] Using V$SQL time-bucketed fallback (60 minutes)
+2026-02-25T01:51:34: [Performance Trend] V$SQL bucket query returned 20 rows
+2026-02-25T01:51:34: [OS Stats] 조회 완료: {
+  cpu_usage: 14.47,
+  memory_usage: 78.84,
+  io_mbps: 0,
+  has_osstat: true,
+  has_sysmetric: false
+}
+2026-02-25T01:52:02: [Performance History] AWR query returned 0 rows for date=2026-02-25
+2026-02-25T01:52:03: [Performance History] Fallback query failed: Error: ORA-00934: 그룹 함수는 허가되지 않습니다
+Help: https://docs.oracle.com/error-help/db/ora-00934/
+    at async S (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7651)
+    at async p (.next/server/chunks/_b02019cd._.js:103:15)
+    at async d (.next/server/chunks/_b02019cd._.js:164:4621)
+    at async l (.next/server/chunks/_b02019cd._.js:164:5662)
+    at async Module.T (.next/server/chunks/_b02019cd._.js:164:6740) {
+  errorNum: 934,
+  offset: 1673,
+  isRecoverable: false,
+  code: 'ORA-00934'
+}
+2026-02-25T01:52:11: [Performance History] AWR query returned 0 rows for date=2026-02-25
+2026-02-25T01:52:12: [Performance History] Fallback query failed: Error: ORA-00934: 그룹 함수는 허가되지 않습니다
+Help: https://docs.oracle.com/error-help/db/ora-00934/
+    at async S (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7651)
+    at async p (.next/server/chunks/_b02019cd._.js:103:15)
+    at async d (.next/server/chunks/_b02019cd._.js:164:4621)
+    at async l (.next/server/chunks/_b02019cd._.js:164:5662)
+    at async Module.T (.next/server/chunks/_b02019cd._.js:164:6740) {
+  errorNum: 934,
+  offset: 1673,
+  isRecoverable: false,
+  code: 'ORA-00934'
+}
+2026-02-25T01:52:14: [Performance Summary] Fallback query failed: Error: Query timeout after 10000ms
+    at Timeout.<anonymous> (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7462)
+2026-02-25T01:52:16: [Metrics API] Fetching from Oracle directly
+2026-02-25T01:52:23: [Performance Summary] Fallback query failed: Error: Query timeout after 10000ms
+    at Timeout.<anonymous> (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7462)
+2026-02-25T01:52:24: [Metrics API] Oracle queries completed in 8626ms (failures: none)
+2026-02-25T01:52:24: [Metrics API] Total response time: 8626ms
+2026-02-25T01:52:33: Performing health check for connection: {
+  name: 'TMSDB',
+  host: 'mcseoper.iptime.org',
+  port: 1521,
+  connectionType: 'SID'
+}
+2026-02-25T01:52:33: [HealthCheck] Starting connection test: {
+  host: 'mcseoper.iptime.org',
+  port: 1521,
+  username: 'sys',
+  serviceName: null,
+  sid: 'ora91c',
+  connectionType: 'SID',
+  privilege: 'SYSDBA'
+}
+2026-02-25T01:52:35: Oracle Version Detection:
+2026-02-25T01:52:35:   BANNER: Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production
+2026-02-25T01:52:35:   VERSION: 19.0.0.0.0
+2026-02-25T01:52:35:   ✓ Extracted Edition: Enterprise Edition
+2026-02-25T01:52:35:   ✓ Extracted from BANNER: 19c
+2026-02-25T01:52:35: Health check result: {
+  isHealthy: true,
+  responseTime: 2233,
+  version: '19c',
+  edition: 'Enterprise Edition',
+  instanceName: 'ora91c',
+  status: 'OPEN'
+}
+2026-02-25T01:52:37: Collecting SQL statistics from Oracle... {
+  host: 'mcseoper.iptime.org',
+  port: 1521,
+  username: 'sys',
+  connectionType: 'SID',
+  serviceName: undefined,
+  sid: 'ora91c',
+  privilege: 'SYSDBA',
+  connectionPrivilege: 'SYSDBA'
+}
+2026-02-25T01:52:37: Executing SQL statistics query with limit: 1000
+2026-02-25T01:52:45: [Metrics API] Fetching from Oracle directly
+2026-02-25T01:52:51: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 97.54,
+  io_mbps: 45.37,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-25T01:52:55: [Metrics API] Oracle queries completed in 9279ms (failures: none)
+2026-02-25T01:52:55: [Metrics API] Total response time: 9279ms
+2026-02-25T01:52:59: Query executed successfully, returned 1000 rows
+2026-02-25T01:52:59: Collected 1000 SQL statistics
+2026-02-25T01:53:08: [Performance History] AWR query returned 0 rows for date=2026-02-25
+2026-02-25T01:53:09: [Performance History] Fallback query failed: Error: ORA-00934: 그룹 함수는 허가되지 않습니다
+Help: https://docs.oracle.com/error-help/db/ora-00934/
+    at async S (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7651)
+    at async p (.next/server/chunks/_b02019cd._.js:103:15)
+    at async d (.next/server/chunks/_b02019cd._.js:164:4621)
+    at async l (.next/server/chunks/_b02019cd._.js:164:5662)
+    at async Module.T (.next/server/chunks/_b02019cd._.js:164:6740) {
+  errorNum: 934,
+  offset: 1673,
+  isRecoverable: false,
+  code: 'ORA-00934'
+}
+2026-02-25T01:53:09: [Performance History] AWR query returned 0 rows for date=2026-02-25
+2026-02-25T01:53:10: [Performance History] Fallback query failed: Error: ORA-00934: 그룹 함수는 허가되지 않습니다
+Help: https://docs.oracle.com/error-help/db/ora-00934/
+    at async S (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7651)
+    at async p (.next/server/chunks/_b02019cd._.js:103:15)
+    at async d (.next/server/chunks/_b02019cd._.js:164:4621)
+    at async l (.next/server/chunks/_b02019cd._.js:164:5662)
+    at async Module.T (.next/server/chunks/_b02019cd._.js:164:6740) {
+  errorNum: 934,
+  offset: 1673,
+  isRecoverable: false,
+  code: 'ORA-00934'
+}
+2026-02-25T01:53:11: [Performance History] AWR query returned 0 rows for date=2026-02-25
+2026-02-25T01:53:12: [Performance History] AWR query returned 0 rows for date=2026-02-25
+2026-02-25T01:53:13: [Performance History] Fallback query failed: Error: ORA-00934: 그룹 함수는 허가되지 않습니다
+Help: https://docs.oracle.com/error-help/db/ora-00934/
+    at async S (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7651)
+    at async p (.next/server/chunks/_b02019cd._.js:103:15)
+    at async d (.next/server/chunks/_b02019cd._.js:164:4621)
+    at async l (.next/server/chunks/_b02019cd._.js:164:5662)
+    at async Module.T (.next/server/chunks/_b02019cd._.js:164:6740) {
+  errorNum: 934,
+  offset: 1673,
+  isRecoverable: false,
+  code: 'ORA-00934'
+}
+2026-02-25T01:53:13: [Performance History] AWR query returned 0 rows for date=2026-02-25
+2026-02-25T01:53:14: [Performance History] Fallback query failed: Error: ORA-00934: 그룹 함수는 허가되지 않습니다
+Help: https://docs.oracle.com/error-help/db/ora-00934/
+    at async S (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7651)
+    at async p (.next/server/chunks/_b02019cd._.js:103:15)
+    at async d (.next/server/chunks/_b02019cd._.js:164:4621)
+    at async l (.next/server/chunks/_b02019cd._.js:164:5662)
+    at async Module.T (.next/server/chunks/_b02019cd._.js:164:6740) {
+  errorNum: 934,
+  offset: 1673,
+  isRecoverable: false,
+  code: 'ORA-00934'
+}
+2026-02-25T01:53:15: [Performance History] Fallback query failed: Error: ORA-00934: 그룹 함수는 허가되지 않습니다
+Help: https://docs.oracle.com/error-help/db/ora-00934/
+    at async S (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7651)
+    at async p (.next/server/chunks/_b02019cd._.js:103:15)
+    at async d (.next/server/chunks/_b02019cd._.js:164:4621)
+    at async l (.next/server/chunks/_b02019cd._.js:164:5662)
+    at async Module.T (.next/server/chunks/_b02019cd._.js:164:6740) {
+  errorNum: 934,
+  offset: 1673,
+  isRecoverable: false,
+  code: 'ORA-00934'
+}
+2026-02-25T01:53:19: [Performance Summary] Fallback query failed: Error: Query timeout after 10000ms
+    at Timeout.<anonymous> (.next/server/chunks/[root-of-the-server]__583b8673._.js:1:7462)
+2026-02-25T01:53:28: [Performance History] Found 100 records from AWR
+2026-02-25T01:53:36: [Performance History] Found 100 records from AWR
+2026-02-25T01:53:37: [Performance History] Found 100 records from AWR
+2026-02-25T01:53:41: [Performance History] Found 100 records from AWR
+2026-02-25T01:53:42: Batch fetched SQL text for 999/1000 SQL IDs
+2026-02-25T01:53:55: [SQL Detail API] Received connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89 sql_id: 8k0bufga1dutt
+2026-02-25T01:53:56: [SQL Detail API] SQL_FULLTEXT type: string constructor: String
+2026-02-25T01:53:56: [SQL Detail API] SQL text length: 637
+2026-02-25T01:54:00: [SQL Detail API] Returning detail for SQL_ID: 8k0bufga1dutt
+2026-02-25T01:54:05: [Pattern Detection API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-25T01:54:05: [Realtime Monitoring API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-25T01:54:05: [Refactoring Suggestions API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-25T01:54:06: [Realtime Monitoring API] Found 30 active SQLs
+2026-02-25T01:54:12: [Pattern Detection API] Found 1 issues
+2026-02-25T02:02:26: ▲ Next.js 16.1.6
+2026-02-25T02:02:26: - Local:         http://localhost:3000
+2026-02-25T02:02:26: - Network:       http://192.168.0.4:3000
+2026-02-25T02:02:26: 
+2026-02-25T02:02:26: ✓ Starting...
+2026-02-25T02:02:26: ▲ Next.js 16.1.6
+2026-02-25T02:02:26: - Local:         http://localhost:3000
+2026-02-25T02:02:26: - Network:       http://192.168.0.4:3000
+2026-02-25T02:02:26: 
+2026-02-25T02:02:26: ✓ Starting...
+2026-02-25T02:02:26: ✓ Ready in 285ms
+2026-02-25T02:02:26: ✓ Ready in 286ms
+2026-02-25T02:02:27: ✓ Oracle Thick mode initialized
+2026-02-25T02:02:27:   Library directory: /opt/oracle/instantclient
+2026-02-25T02:02:27: ✓ Oracle Thick mode initialized
+2026-02-25T02:02:27:   Library directory: /opt/oracle/instantclient
+2026-02-25T02:02:29: ▲ Next.js 16.1.6
+2026-02-25T02:02:29: ▲ Next.js 16.1.6
+2026-02-25T02:02:29: - Local:         http://localhost:3000
+2026-02-25T02:02:29: - Network:       http://192.168.0.4:3000
+2026-02-25T02:02:29: 
+2026-02-25T02:02:29: ✓ Starting...
+2026-02-25T02:02:29: - Local:         http://localhost:3000
+2026-02-25T02:02:29: - Network:       http://192.168.0.4:3000
+2026-02-25T02:02:29: 
+2026-02-25T02:02:29: ✓ Starting...
+2026-02-25T02:02:29: ✓ Ready in 262ms
+2026-02-25T02:02:29: ✓ Ready in 263ms
+2026-02-25T02:02:30: ✓ Oracle Thick mode initialized
+2026-02-25T02:02:30:   Library directory: /opt/oracle/instantclient
+2026-02-25T02:02:30: ✓ Oracle Thick mode initialized
+2026-02-25T02:02:30:   Library directory: /opt/oracle/instantclient
+2026-02-25T02:02:37: [Pattern Detection API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-25T02:02:37: [Realtime Monitoring API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-25T02:02:37: [Refactoring Suggestions API] connection_id: f8aee7e1-7409-4834-acdb-c811e29e0f89
+2026-02-25T02:02:38: [Realtime Monitoring API] Found 30 active SQLs
+2026-02-25T02:02:43: [Pattern Detection API] Found 1 issues
+2026-02-25T02:03:56: [Metrics API] Fetching from Oracle directly
+2026-02-25T02:03:59: [sql-grades] Edition: Enterprise, isEnterprise: true, timeRange: false, limit: 100
+2026-02-25T02:04:04: [clusters/analyze] Edition: Enterprise, isEnterprise: true, minutes: 60
+2026-02-25T02:04:05: [Metrics API] Oracle queries completed in 9132ms (failures: none)
+2026-02-25T02:04:05: [Metrics API] Total response time: 9132ms
+2026-02-25T02:04:40: [sql-grades] Edition: Standard, isEnterprise: false, timeRange: false, limit: 100
+2026-02-25T02:04:40: [clusters/analyze] Edition: Standard, isEnterprise: false, minutes: 60
+2026-02-25T02:14:54: [Metrics API] Fetching from Oracle directly
+2026-02-25T02:15:03: [Metrics API] Oracle queries completed in 8597ms (failures: none)
+2026-02-25T02:15:03: [Metrics API] Total response time: 8597ms
+2026-02-25T02:15:21: [Metrics API] Fetching from Oracle directly
+2026-02-25T02:15:21: [Metrics API] Oracle queries completed in 779ms (failures: none)
+2026-02-25T02:15:21: [Metrics API] Total response time: 779ms
+2026-02-25T02:15:22: [Performance Trend] Standard Edition detected (Standard), skipping ASH-based strategies
+2026-02-25T02:15:22: [Performance Trend] V$SYSMETRIC_HISTORY has no data for requested time range
+2026-02-25T02:15:22: [Performance Trend] V$SYSMETRIC query returned 0 rows
+2026-02-25T02:15:22: [Performance Trend] Using V$SQL time-bucketed fallback (60 minutes)
+2026-02-25T02:15:22: [Performance Trend] V$SQL bucket query returned 21 rows
+2026-02-25T02:15:22: [OS Stats] 조회 완료: {
+  cpu_usage: 14.47,
+  memory_usage: 78.92,
+  io_mbps: 0,
+  has_osstat: true,
+  has_sysmetric: false
+}
+2026-02-25T02:15:48: [Metrics API] Fetching from Oracle directly
+2026-02-25T02:15:52: [OS Stats] 조회 완료: {
+  cpu_usage: 100,
+  memory_usage: 98.18,
+  io_mbps: 45.87,
+  has_osstat: true,
+  has_sysmetric: true
+}
+2026-02-25T02:15:58: [Metrics API] Oracle queries completed in 9870ms (failures: none)
+2026-02-25T02:15:58: [Metrics API] Total response time: 9870ms

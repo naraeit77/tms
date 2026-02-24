@@ -39,25 +39,28 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
   selectedConnectionId: null,
   isLoading: false,
   setConnections: (connections) => {
-    const defaultConnection = connections.find((c) => c.isDefault);
     const currentSelected = get().selectedConnectionId;
-
-    // 현재 선택된 연결이 새 목록에 존재하는지 검증
     const isCurrentValid = currentSelected && connections.some((c) => c.id === currentSelected);
-    const validSelectedId = isCurrentValid
-      ? currentSelected
-      : defaultConnection?.id || connections[0]?.id || null;
 
-    set({
-      connections,
-      selectedConnectionId: validSelectedId,
-    });
+    if (isCurrentValid) {
+      // 현재 선택이 유효하면 connections만 업데이트 (selectedConnectionId 유지)
+      set({ connections });
+    } else {
+      // 현재 선택이 유효하지 않으면 기본 연결로 대체
+      const defaultConnection = connections.find((c) => c.isDefault);
+      const validSelectedId = defaultConnection?.id || connections[0]?.id || null;
 
-    if (typeof window !== 'undefined') {
-      if (validSelectedId) {
-        localStorage.setItem('selected-database-id', validSelectedId);
-      } else {
-        localStorage.removeItem('selected-database-id');
+      set({
+        connections,
+        selectedConnectionId: validSelectedId,
+      });
+
+      if (typeof window !== 'undefined') {
+        if (validSelectedId) {
+          localStorage.setItem('selected-database-id', validSelectedId);
+        } else {
+          localStorage.removeItem('selected-database-id');
+        }
       }
     }
   },

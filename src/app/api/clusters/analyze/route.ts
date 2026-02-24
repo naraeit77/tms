@@ -10,6 +10,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getOracleConfig } from '@/lib/oracle/utils';
 import { executeQuery } from '@/lib/oracle/client';
+import { getConnectionEdition } from '@/lib/oracle/edition-guard-server';
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,36 +28,74 @@ export async function POST(request: NextRequest) {
     // Oracle에서 실제 SQL 성능 데이터 가져오기
     const config = await getOracleConfig(connection_id);
 
-    // 분석 시간 구간에 해당하는 SQL만 조회 (Last Active Time 기준)
-    const timeFilter = minutes ? `AND last_active_time >= SYSDATE - ${minutes}/1440` : '';
+    // Enterprise Edition 감지
+    const edition = await getConnectionEdition(connection_id);
+    const isEnterprise = edition === 'Enterprise';
 
-    // Oracle 11g 호환: FETCH FIRST 대신 서브쿼리 + ROWNUM 사용
-    const query = `
-      SELECT * FROM (
-        SELECT
-          sql_id,
-          elapsed_time,
-          cpu_time,
-          buffer_gets,
-          disk_reads,
-          executions,
-          rows_processed,
-          last_active_time
-        FROM
-          v$sql
-        WHERE
-          parsing_schema_name NOT IN ('SYS', 'SYSTEM')
-          AND sql_text NOT LIKE '%v$%'
-          AND sql_text NOT LIKE '%V$%'
-          AND executions > 0
-          AND elapsed_time > 0
-          ${timeFilter}
-        ORDER BY
-          elapsed_time DESC
-      ) WHERE ROWNUM <= 200
-    `;
+    const safeMinutes = minutes || 60;
+    let query: string;
 
-    const result = await executeQuery(config, query);
+    if (isEnterprise) {
+      // Enterprise Edition: ASH 기반 조회 (v$sql full scan 회피)
+      // ASH에서 활성 SQL ID를 찾고, v$sql 개별 point lookup으로 상세 정보 획득
+      query = `
+        SELECT * FROM (
+          SELECT * FROM (
+            SELECT
+              a.sql_id,
+              NVL((SELECT s.elapsed_time FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1), 0) as elapsed_time,
+              NVL((SELECT s.cpu_time FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1), 0) as cpu_time,
+              NVL((SELECT s.buffer_gets FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1), 0) as buffer_gets,
+              NVL((SELECT s.disk_reads FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1), 0) as disk_reads,
+              NVL((SELECT s.executions FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1), 0) as executions,
+              NVL((SELECT s.rows_processed FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1), 0) as rows_processed,
+              (SELECT s.last_active_time FROM v$sql s WHERE s.sql_id = a.sql_id AND ROWNUM = 1) as last_active_time
+            FROM (
+              SELECT sql_id FROM (
+                SELECT sql_id, COUNT(*) as samples
+                FROM v$active_session_history
+                WHERE sql_id IS NOT NULL
+                  AND sample_time >= SYSDATE - ${safeMinutes}/1440
+                GROUP BY sql_id
+                ORDER BY COUNT(*) DESC
+              ) WHERE ROWNUM <= 250
+            ) a
+          ) WHERE elapsed_time > 0 AND executions > 0
+          ORDER BY elapsed_time DESC
+        ) WHERE ROWNUM <= 200
+      `;
+    } else {
+      // Standard Edition: v$sql full scan (SE는 shared pool이 작아 빠름)
+      const timeFilter = minutes ? `AND last_active_time >= SYSDATE - ${minutes}/1440` : '';
+      query = `
+        SELECT * FROM (
+          SELECT
+            sql_id,
+            elapsed_time,
+            cpu_time,
+            buffer_gets,
+            disk_reads,
+            executions,
+            rows_processed,
+            last_active_time
+          FROM
+            v$sql
+          WHERE
+            parsing_schema_name NOT IN ('SYS', 'SYSTEM')
+            AND sql_text NOT LIKE '%v$%'
+            AND sql_text NOT LIKE '%V$%'
+            AND executions > 0
+            AND elapsed_time > 0
+            ${timeFilter}
+          ORDER BY
+            elapsed_time DESC
+        ) WHERE ROWNUM <= 200
+      `;
+    }
+
+    console.log(`[clusters/analyze] Edition: ${edition}, isEnterprise: ${isEnterprise}, minutes: ${safeMinutes}`);
+
+    const result = await executeQuery(config, query, [], { timeout: 15000 });
 
     // 데이터 변환
     const sqlData = result.rows.map((row: any) => ({
