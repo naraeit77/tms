@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>나래 TMS 2.0 — AI 기반 SQL 튜닝 관리 시스템</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f8fafc;--bg2:#ffffff;--bg3:#f1f5f9;
+  --accent:#2563eb;--accent2:#4f46e5;--accent3:#0891b2;
+  --text:#1e293b;--text2:#475569;--text3:#94a3b8;
+  --white:#ffffff;--radius:16px;
+}
+html{scroll-behavior:smooth;font-size:16px}
+body{font-family:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var(--bg);color:var(--text);line-height:1.7;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+
+.container{max-width:1200px;margin:0 auto;padding:0 24px}
+.section{padding:100px 0}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:100px;font-size:.8rem;font-weight:600;letter-spacing:.5px}
+.badge-blue{background:rgba(37,99,235,.08);color:#2563eb;border:1px solid rgba(37,99,235,.2)}
+.badge-purple{background:rgba(79,70,229,.08);color:#4f46e5;border:1px solid rgba(79,70,229,.2)}
+.badge-cyan{background:rgba(8,145,178,.08);color:#0891b2;border:1px solid rgba(8,145,178,.2)}
+.badge-green{background:rgba(5,150,105,.08);color:#059669;border:1px solid rgba(5,150,105,.2)}
+.badge-amber{background:rgba(217,119,6,.08);color:#d97706;border:1px solid rgba(217,119,6,.2)}
+.gradient-text{background:linear-gradient(135deg,#2563eb,#4f46e5,#0891b2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.section-title{font-size:clamp(2rem,4vw,3rem);font-weight:800;line-height:1.3;margin-bottom:20px}
+.section-desc{font-size:1.15rem;color:var(--text2);max-width:640px;margin-bottom:60px}
+
+body::before{content:'';position:fixed;inset:0;background:
+  radial-gradient(ellipse 80% 50% at 50% -20%,rgba(37,99,235,.04),transparent),
+  radial-gradient(ellipse 60% 40% at 80% 60%,rgba(79,70,229,.03),transparent);
+  pointer-events:none;z-index:0}
+
+/* Header */
+header{position:fixed;top:0;left:0;right:0;z-index:100;backdrop-filter:blur(20px);background:rgba(248,250,252,.85);border-bottom:1px solid rgba(0,0,0,.06);box-shadow:0 1px 3px rgba(0,0,0,.04)}
+nav{display:flex;align-items:center;justify-content:space-between;height:72px}
+.logo{display:flex;align-items:center;gap:10px;font-size:1.25rem;font-weight:800}
+.logo span{color:#2563eb}
+.nav-links{display:flex;gap:32px;list-style:none}
+.nav-links a{font-size:.9rem;color:var(--text2);transition:color .2s}
+.nav-links a:hover{color:var(--text)}
+.nav-cta{padding:10px 24px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--white);font-size:.9rem;font-weight:600;border:none;cursor:pointer;transition:transform .2s,box-shadow .2s}
+.nav-cta:hover{transform:translateY(-1px);box-shadow:0 8px 30px rgba(37,99,235,.25)}
+
+/* Hero */
+.hero{min-height:100vh;display:flex;align-items:center;position:relative;padding-top:72px}
+.hero-content{position:relative;z-index:1;text-align:center;max-width:900px;margin:0 auto}
+.hero h1{font-size:clamp(2.5rem,6vw,4.2rem);font-weight:900;line-height:1.2;margin:24px 0}
+.hero p{font-size:1.2rem;color:var(--text2);max-width:650px;margin:0 auto 40px}
+.hero-buttons{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+.btn-primary{display:inline-flex;align-items:center;gap:8px;padding:16px 36px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--white);font-size:1rem;font-weight:700;border:none;cursor:pointer;transition:all .3s;text-decoration:none}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(37,99,235,.3)}
+.btn-secondary{display:inline-flex;align-items:center;gap:8px;padding:16px 36px;border-radius:12px;background:var(--white);color:var(--text);font-size:1rem;font-weight:600;border:1px solid rgba(0,0,0,.12);cursor:pointer;transition:all .3s;text-decoration:none;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.btn-secondary:hover{background:var(--bg3);border-color:rgba(0,0,0,.18)}
+
+/* Hero visual */
+.hero-visual{margin-top:80px;position:relative}
+.hero-screen{background:var(--white);border:1px solid rgba(0,0,0,.08);border-radius:20px;overflow:hidden;box-shadow:0 40px 100px rgba(0,0,0,.1)}
+.screen-topbar{display:flex;align-items:center;gap:8px;padding:14px 20px;background:#f1f5f9;border-bottom:1px solid rgba(0,0,0,.06)}
+.dot{width:12px;height:12px;border-radius:50%}
+.dot-r{background:#ef4444}.dot-y{background:#eab308}.dot-g{background:#22c55e}
+.screen-body{padding:32px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.metric-card{background:var(--bg);border:1px solid rgba(0,0,0,.06);border-radius:12px;padding:20px}
+.metric-label{font-size:.75rem;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px}
+.metric-value{font-size:1.8rem;font-weight:800}
+.metric-value.blue{color:#2563eb}
+.metric-value.green{color:#059669}
+.metric-value.purple{color:#4f46e5}
+.metric-bar{height:4px;border-radius:4px;background:rgba(0,0,0,.06);margin-top:12px;overflow:hidden}
+.metric-bar-fill{height:100%;border-radius:4px;transition:width 1.5s ease}
+
+/* Stats */
+.stats-banner{background:var(--white);border-top:1px solid rgba(0,0,0,.06);border-bottom:1px solid rgba(0,0,0,.06);padding:60px 0}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:32px;text-align:center}
+.stat-number{font-size:2.8rem;font-weight:900;margin-bottom:4px}
+.stat-label{font-size:.9rem;color:var(--text3)}
+
+/* ===== Pricing / Version Section ===== */
+.pricing-grid{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:48px;max-width:960px;margin-left:auto;margin-right:auto}
+.pricing-card{background:var(--white);border:2px solid rgba(0,0,0,.06);border-radius:20px;padding:48px 40px;position:relative;transition:all .3s;overflow:hidden}
+.pricing-card:hover{border-color:rgba(37,99,235,.2);box-shadow:0 20px 50px rgba(0,0,0,.08);transform:translateY(-4px)}
+.pricing-card.featured{border-color:rgba(37,99,235,.3)}
+.pricing-card.featured::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.pricing-badge{display:inline-block;padding:4px 14px;border-radius:100px;font-size:.75rem;font-weight:700;margin-bottom:20px}
+.pricing-badge-free{background:rgba(5,150,105,.08);color:#059669;border:1px solid rgba(5,150,105,.2)}
+.pricing-badge-enterprise{background:rgba(37,99,235,.08);color:#2563eb;border:1px solid rgba(37,99,235,.2)}
+.pricing-card h3{font-size:1.5rem;font-weight:800;margin-bottom:8px}
+.pricing-card .price{font-size:2.5rem;font-weight:900;margin-bottom:4px}
+.pricing-card .price-sub{font-size:.9rem;color:var(--text3);margin-bottom:24px}
+.pricing-card .price .gradient-text{font-size:2.5rem}
+.pricing-features{list-style:none;display:flex;flex-direction:column;gap:12px;margin-bottom:32px}
+.pricing-features li{display:flex;align-items:flex-start;gap:10px;font-size:.92rem;color:var(--text2)}
+.pricing-features li::before{content:'✓';color:#059669;font-weight:700;flex-shrink:0;margin-top:1px}
+.pricing-btn{display:block;width:100%;text-align:center;padding:16px;border-radius:12px;font-size:1rem;font-weight:700;transition:all .3s;text-decoration:none;border:none;cursor:pointer}
+.pricing-btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--white)}
+.pricing-btn-primary:hover{box-shadow:0 8px 30px rgba(37,99,235,.3);transform:translateY(-1px)}
+.pricing-btn-secondary{background:var(--bg);color:var(--text);border:1px solid rgba(0,0,0,.1)}
+.pricing-btn-secondary:hover{background:var(--bg3);border-color:rgba(0,0,0,.2)}
+.contact-links{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.contact-link{display:flex;align-items:center;gap:10px;font-size:.9rem;color:var(--text2);padding:10px 16px;border-radius:10px;background:var(--bg);transition:all .2s;text-decoration:none}
+.contact-link:hover{background:rgba(37,99,235,.04);color:var(--accent)}
+
+/* Features */
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.feature-card{background:var(--white);border:1px solid rgba(0,0,0,.06);border-radius:var(--radius);padding:36px;transition:all .3s;position:relative;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.feature-card:hover{border-color:rgba(37,99,235,.25);background:rgba(37,99,235,.02);transform:translateY(-4px);box-shadow:0 12px 30px rgba(0,0,0,.08)}
+.feature-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0;transition:opacity .3s}
+.feature-card:hover::before{opacity:1}
+.feature-icon{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;margin-bottom:20px;font-size:1.5rem}
+.icon-blue{background:rgba(37,99,235,.08);color:#2563eb}
+.icon-purple{background:rgba(79,70,229,.08);color:#4f46e5}
+.icon-cyan{background:rgba(8,145,178,.08);color:#0891b2}
+.icon-green{background:rgba(5,150,105,.08);color:#059669}
+.icon-amber{background:rgba(217,119,6,.08);color:#d97706}
+.icon-rose{background:rgba(225,29,72,.08);color:#e11d48}
+.feature-card h3{font-size:1.15rem;font-weight:700;margin-bottom:10px}
+.feature-card p{font-size:.9rem;color:var(--text2);line-height:1.7}
+.feature-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:16px}
+.feature-tag{font-size:.72rem;padding:4px 10px;border-radius:6px;background:rgba(0,0,0,.04);color:var(--text2)}
+
+/* Showcase */
+.showcase-block{display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center;margin-bottom:120px}
+.showcase-block:nth-child(even){direction:rtl}
+.showcase-block:nth-child(even) > *{direction:ltr}
+.showcase-text h3{font-size:2rem;font-weight:800;margin-bottom:16px}
+.showcase-text p{color:var(--text2);margin-bottom:24px;font-size:1.05rem}
+.showcase-list{list-style:none;display:flex;flex-direction:column;gap:12px}
+.showcase-list li{display:flex;align-items:flex-start;gap:12px;font-size:.95rem;color:var(--text2)}
+.showcase-list li::before{content:'✦';color:#2563eb;font-size:.8rem;margin-top:4px;flex-shrink:0}
+.showcase-visual{background:var(--white);border:1px solid rgba(0,0,0,.08);border-radius:var(--radius);padding:32px;position:relative;box-shadow:0 4px 20px rgba(0,0,0,.06)}
+
+/* Mock table */
+.mock-table{width:100%;border-collapse:collapse}
+.mock-table th{text-align:left;font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:1px;padding:8px 12px;border-bottom:1px solid rgba(0,0,0,.08)}
+.mock-table td{padding:10px 12px;font-size:.82rem;border-bottom:1px solid rgba(0,0,0,.04)}
+.mock-badge{font-size:.65rem;padding:3px 8px;border-radius:4px;font-weight:600}
+.mock-badge-a{background:rgba(5,150,105,.1);color:#059669}
+.mock-badge-c{background:rgba(217,119,6,.1);color:#d97706}
+.mock-badge-f{background:rgba(220,38,38,.1);color:#dc2626}
+
+/* Plan tree */
+.plan-tree{font-family:'JetBrains Mono','Fira Code',monospace;font-size:.75rem;line-height:2;color:var(--text2)}
+.plan-node{padding-left:16px;border-left:1px solid rgba(0,0,0,.1)}
+.plan-highlight{color:#2563eb;font-weight:600}
+.plan-cost{color:#d97706;font-size:.7rem}
+.plan-warn{color:#dc2626}
+
+/* AI cards */
+.ai-features{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:40px}
+.ai-card{background:linear-gradient(135deg,rgba(79,70,229,.04),rgba(37,99,235,.02));border:1px solid rgba(79,70,229,.12);border-radius:var(--radius);padding:32px;transition:all .3s;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.ai-card:hover{border-color:rgba(79,70,229,.25);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.08)}
+.ai-card h4{font-size:1.1rem;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.ai-card p{font-size:.9rem;color:var(--text2)}
+
+/* Workflow */
+.workflow{display:flex;align-items:flex-start;gap:0;margin-top:48px;position:relative}
+.workflow-step{flex:1;text-align:center;position:relative;padding:0 12px}
+.workflow-num{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-weight:800;font-size:1.1rem;background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--white)}
+.workflow-step h4{font-size:.95rem;font-weight:700;margin-bottom:8px}
+.workflow-step p{font-size:.8rem;color:var(--text3)}
+.workflow-line{position:absolute;top:24px;left:calc(50% + 24px);right:calc(-50% + 24px);height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.workflow-step:last-child .workflow-line{display:none}
+
+/* ROI */
+.roi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:48px}
+.roi-card{background:var(--white);border:1px solid rgba(0,0,0,.06);border-radius:var(--radius);padding:36px;text-align:center;transition:all .3s;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.roi-card:hover{border-color:rgba(5,150,105,.25);background:rgba(5,150,105,.02);box-shadow:0 8px 24px rgba(0,0,0,.08)}
+.roi-icon{font-size:2.5rem;margin-bottom:16px}
+.roi-value{font-size:2.2rem;font-weight:900;margin-bottom:4px}
+.roi-label{font-size:.9rem;color:var(--text2);margin-bottom:12px}
+.roi-desc{font-size:.82rem;color:var(--text3);line-height:1.6}
+
+/* Before/After */
+.compare-block{display:grid;grid-template-columns:1fr auto 1fr;gap:24px;align-items:stretch;margin-top:48px}
+.compare-card{padding:32px;border-radius:var(--radius);border:1px solid rgba(0,0,0,.06)}
+.compare-before{background:rgba(220,38,38,.03);border-color:rgba(220,38,38,.15)}
+.compare-after{background:rgba(5,150,105,.03);border-color:rgba(5,150,105,.15)}
+.compare-card h4{font-size:1rem;font-weight:700;margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.compare-item{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(0,0,0,.04);font-size:.9rem}
+.compare-item span:last-child{font-weight:700}
+.compare-arrow{display:flex;align-items:center;justify-content:center;font-size:2rem;color:var(--accent)}
+
+/* CTA */
+.cta-section{text-align:center;padding:120px 0;position:relative}
+.cta-box{background:linear-gradient(135deg,rgba(37,99,235,.04),rgba(79,70,229,.03));border:1px solid rgba(37,99,235,.12);border-radius:24px;padding:80px 60px;position:relative;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.04)}
+.cta-box::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(circle,rgba(37,99,235,.03),transparent 70%);animation:ctaPulse 8s ease-in-out infinite}
+@keyframes ctaPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+.cta-box h2{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:800;margin-bottom:16px;position:relative}
+.cta-box p{font-size:1.1rem;color:var(--text2);margin-bottom:40px;position:relative}
+
+/* Footer */
+footer{background:#f1f5f9;border-top:1px solid rgba(0,0,0,.06);padding:60px 0 40px}
+.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:40px;margin-bottom:40px}
+.footer-brand p{font-size:.85rem;color:var(--text3);margin-top:12px;line-height:1.8}
+.footer-col h4{font-size:.85rem;font-weight:700;margin-bottom:16px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)}
+.footer-col ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+.footer-col a{font-size:.9rem;color:var(--text2);transition:color .2s}
+.footer-col a:hover{color:var(--text)}
+.footer-bottom{border-top:1px solid rgba(0,0,0,.06);padding-top:24px;display:flex;justify-content:space-between;align-items:center;font-size:.82rem;color:var(--text3)}
+
+/* Animations */
+.animate{opacity:0;transform:translateY(30px);transition:all .8s cubic-bezier(.16,1,.3,1)}
+.animate.visible{opacity:1;transform:translateY(0)}
+
+/* Responsive */
+@media(max-width:1024px){
+  .features-grid,.roi-grid{grid-template-columns:repeat(2,1fr)}
+  .showcase-block{grid-template-columns:1fr;gap:40px}
+  .showcase-block:nth-child(even){direction:ltr}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .compare-block{grid-template-columns:1fr;gap:16px}
+  .compare-arrow{transform:rotate(90deg)}
+  .pricing-grid{grid-template-columns:1fr;max-width:480px}
+}
+@media(max-width:768px){
+  .section{padding:80px 0}
+  .nav-links{display:none}
+  .features-grid,.ai-features{grid-template-columns:1fr}
+  .hero-buttons{flex-direction:column;align-items:center}
+  .footer-grid{grid-template-columns:1fr 1fr}
+  .workflow{flex-direction:column;gap:24px}
+  .workflow-line{display:none!important}
+  .screen-body{grid-template-columns:1fr}
+  .stats-grid{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <nav class="container">
+    <a href="#" class="logo">
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="#2563eb" stroke-width="2"/><path d="M10 16h12M16 10v12" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="16" r="5" fill="rgba(37,99,235,.15)" stroke="#2563eb" stroke-width="1.5"/></svg>
+      나래 <span>TMS 2.0</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">핵심 기능</a></li>
+      <li><a href="#ai">AI 분석</a></li>
+      <li><a href="#workflow">튜닝 프로세스</a></li>
+      <li><a href="#pricing">버전 & 요금</a></li>
+      <li><a href="#roi">도입 효과</a></li>
+    </ul>
+    <button class="nav-cta" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">무료로 시작하기</button>
+  </nav>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-content">
+      <span class="badge badge-blue">🚀 Version 2.0 — AI-Powered</span>
+      <h1>Oracle DB 성능,<br/><span class="gradient-text">AI가 진단하고 최적화합니다</span></h1>
+      <p>실시간 SQL 모니터링부터 AI 기반 자동 튜닝 가이드까지. 나래 TMS 2.0은 DBA의 경험과 AI의 정밀함을 결합하여 데이터베이스 성능을 극대화합니다.</p>
+      <div class="hero-buttons">
+        <a href="https://sqltms.info" target="_blank" class="btn-primary">🌐 SaaS 무료 체험 →</a>
+        <a href="#pricing" class="btn-secondary">📋 버전 비교하기</a>
+      </div>
+    </div>
+
+    <div class="hero-visual animate">
+      <div class="hero-screen">
+        <div class="screen-topbar">
+          <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+          <span style="margin-left:12px;font-size:.8rem;color:var(--text3)">나래 TMS 2.0 — 실시간 모니터링 대시보드</span>
+        </div>
+        <div class="screen-body">
+          <div class="metric-card">
+            <div class="metric-label">Active Sessions</div>
+            <div class="metric-value blue">247</div>
+            <div class="metric-bar"><div class="metric-bar-fill" style="width:72%;background:linear-gradient(90deg,#3b82f6,#6366f1)"></div></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">SQL 튜닝률</div>
+            <div class="metric-value green">94.7%</div>
+            <div class="metric-bar"><div class="metric-bar-fill" style="width:94%;background:linear-gradient(90deg,#10b981,#34d399)"></div></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">AI 진단 완료</div>
+            <div class="metric-value purple">1,283</div>
+            <div class="metric-bar"><div class="metric-bar-fill" style="width:85%;background:linear-gradient(90deg,#6366f1,#a78bfa)"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<div class="stats-banner">
+  <div class="container">
+    <div class="stats-grid">
+      <div class="animate">
+        <div class="stat-number gradient-text">300+</div>
+        <div class="stat-label">모니터링 가능 DB 인스턴스</div>
+      </div>
+      <div class="animate">
+        <div class="stat-number gradient-text">50만+</div>
+        <div class="stat-label">일일 SQL 분석 건수</div>
+      </div>
+      <div class="animate">
+        <div class="stat-number gradient-text">85%</div>
+        <div class="stat-label">평균 성능 개선율</div>
+      </div>
+      <div class="animate">
+        <div class="stat-number gradient-text">24/7</div>
+        <div class="stat-label">무중단 실시간 모니터링</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PRICING / VERSION -->
+<section id="pricing" class="section">
+  <div class="container">
+    <div class="animate" style="text-align:center">
+      <span class="badge badge-green">VERSION & PRICING</span>
+      <h2 class="section-title" style="margin-top:16px">귀사에 맞는 <span class="gradient-text">최적의 버전</span>을 선택하세요</h2>
+      <p class="section-desc" style="margin-left:auto;margin-right:auto">SaaS 버전은 지금 바로 무료로 시작할 수 있습니다. 대규모 환경이나 보안 요건이 있는 경우 온프레미스 버전을 도입하세요.</p>
+    </div>
+
+    <div class="pricing-grid animate">
+      <!-- SaaS -->
+      <div class="pricing-card featured">
+        <span class="pricing-badge pricing-badge-free">✨ 추천</span>
+        <h3>SaaS (클라우드)</h3>
+        <div class="price"><span class="gradient-text">무료</span></div>
+        <div class="price-sub">설치 없이 바로 시작 · 무제한 사용</div>
+        <ul class="pricing-features">
+          <li>즉시 사용 가능 — 설치 불필요</li>
+          <li>실시간 SQL 모니터링 & 성능 분석</li>
+          <li>AI 기반 SQL 튜닝 가이드</li>
+          <li>실행계획 시각화 & 비교 분석</li>
+          <li>SQL 클러스터 분석 (A-F 등급)</li>
+          <li>자동 업데이트 · 최신 기능 즉시 반영</li>
+        </ul>
+        <a href="https://sqltms.info" target="_blank" class="pricing-btn pricing-btn-primary">🌐 지금 무료로 시작하기 →</a>
+      </div>
+
+      <!-- On-premise -->
+      <div class="pricing-card">
+        <span class="pricing-badge pricing-badge-enterprise">🏢 엔터프라이즈</span>
+        <h3>온프레미스 (구축형)</h3>
+        <div class="price" style="font-size:1.8rem;font-weight:800;color:var(--text)">별도 협의</div>
+        <div class="price-sub">고객사 인프라에 직접 설치 · 맞춤 구축</div>
+        <ul class="pricing-features">
+          <li>SaaS 전체 기능 포함</li>
+          <li>고객사 내부 네트워크 설치</li>
+          <li>AWR / ASH / ADDM 연동 (EE)</li>
+          <li>다중 DB 인스턴스 통합 관리</li>
+          <li>사내 보안 정책 완벽 준수</li>
+          <li>전담 기술 지원 & 커스터마이징</li>
+        </ul>
+        <a href="mailto:sijung@naraeit.co.kr?subject=TMS%202.0%20온프레미스%20도입%20문의" class="pricing-btn pricing-btn-secondary">📧 도입 문의하기</a>
+        <div class="contact-links">
+          <a href="mailto:sijung@naraeit.co.kr" class="contact-link">
+            <span>📧</span> sijung@naraeit.co.kr
+          </a>
+          <a href="tel:010-2629-1782" class="contact-link">
+            <span>📞</span> 010-2629-1782 (기술 상담)
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CORE FEATURES -->
+<section id="features" class="section" style="background:var(--white)">
+  <div class="container">
+    <div class="animate">
+      <span class="badge badge-blue">CORE FEATURES</span>
+      <h2 class="section-title" style="margin-top:16px">DBA를 위한<br/><span class="gradient-text">올인원 성능 관리 플랫폼</span></h2>
+      <p class="section-desc">SQL 수집부터 분석, 튜닝, 보고서까지 — 데이터베이스 성능 관리의 전체 라이프사이클을 하나의 플랫폼에서 관리합니다.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card animate">
+        <div class="feature-icon icon-blue">📊</div>
+        <h3>실시간 SQL 모니터링</h3>
+        <p>Oracle V$SQL 뷰 기반의 실시간 성능 데이터 수집. Top SQL, Wait Events, Sessions, Locks를 한눈에 모니터링합니다.</p>
+        <div class="feature-tags"><span class="feature-tag">Top SQL</span><span class="feature-tag">Wait Events</span><span class="feature-tag">Sessions</span><span class="feature-tag">Locks</span></div>
+      </div>
+      <div class="feature-card animate">
+        <div class="feature-icon icon-purple">🤖</div>
+        <h3>AI 성능 진단</h3>
+        <p>LLM 기반 AI가 SQL 성능 문제를 자동 진단하고, 최적화된 튜닝 가이드와 리팩토링 방안을 제시합니다.</p>
+        <div class="feature-tags"><span class="feature-tag">LLM</span><span class="feature-tag">자동 진단</span><span class="feature-tag">튜닝 가이드</span></div>
+      </div>
+      <div class="feature-card animate">
+        <div class="feature-icon icon-cyan">🔍</div>
+        <h3>실행계획 분석</h3>
+        <p>DBMS_XPLAN 기반 실행계획 트리 시각화, 전후 비교 분석, Plan Baseline 관리를 지원합니다.</p>
+        <div class="feature-tags"><span class="feature-tag">DBMS_XPLAN</span><span class="feature-tag">Plan 비교</span><span class="feature-tag">Baseline</span></div>
+      </div>
+      <div class="feature-card animate">
+        <div class="feature-icon icon-green">📋</div>
+        <h3>SQL 클러스터 분석</h3>
+        <p>패턴 기반 SQL 그룹핑으로 유사 SQL을 자동 클러스터링. A~F 등급 체계로 SQL 품질을 즉시 평가합니다.</p>
+        <div class="feature-tags"><span class="feature-tag">A-F 등급</span><span class="feature-tag">패턴 분석</span><span class="feature-tag">클러스터링</span></div>
+      </div>
+      <div class="feature-card animate">
+        <div class="feature-icon icon-amber">📈</div>
+        <h3>AWR / ASH / ADDM</h3>
+        <p>Oracle Enterprise Edition 전용 고급 진단 도구. AWR 리포트, ASH 분석, ADDM 자동 진단을 웹에서 바로 실행합니다.</p>
+        <div class="feature-tags"><span class="feature-tag">AWR</span><span class="feature-tag">ASH</span><span class="feature-tag">ADDM</span><span class="feature-tag">STATSPACK</span></div>
+      </div>
+      <div class="feature-card animate">
+        <div class="feature-icon icon-rose">⚙️</div>
+        <h3>튜닝 워크플로우</h3>
+        <p>SQL 등록 → 할당 → 튜닝 → 검증 → 완료까지, 칸반 보드 기반의 체계적인 튜닝 업무 관리를 제공합니다.</p>
+        <div class="feature-tags"><span class="feature-tag">칸반 보드</span><span class="feature-tag">이력 관리</span><span class="feature-tag">성과 측정</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SHOWCASE -->
+<section class="section" style="padding-top:0">
+  <div class="container">
+    <div class="showcase-block animate">
+      <div class="showcase-text">
+        <span class="badge badge-cyan">MONITORING</span>
+        <h3 style="margin-top:16px">실시간 성능 히스토리 &<br/>Top SQL 추적</h3>
+        <p>시간대별 SQL 성능 변화를 추적하고, Buffer Gets, Elapsed Time, CPU Time 등 핵심 지표별로 Top SQL을 즉시 식별합니다.</p>
+        <ul class="showcase-list">
+          <li>날짜/시간 기반 성능 히스토리 조회</li>
+          <li>다중 정렬 기준(Elapsed Time, CPU, Buffer Gets, Disk Reads)</li>
+          <li>SQL_ID 기반 상세 드릴다운</li>
+          <li>임계치 초과 자동 알림 설정</li>
+        </ul>
+      </div>
+      <div class="showcase-visual">
+        <table class="mock-table">
+          <thead><tr><th>SQL_ID</th><th>등급</th><th>Elapsed(s)</th><th>Buffer Gets</th><th>Exec</th></tr></thead>
+          <tbody>
+            <tr><td style="color:#2563eb;font-family:monospace">a7k2m9p3x</td><td><span class="mock-badge mock-badge-f">F</span></td><td style="color:#dc2626;font-weight:700">45.23</td><td>2,847,291</td><td>1,247</td></tr>
+            <tr><td style="color:#2563eb;font-family:monospace">b3n8q1w5y</td><td><span class="mock-badge mock-badge-c">C</span></td><td style="color:#d97706;font-weight:700">12.08</td><td>892,451</td><td>3,892</td></tr>
+            <tr><td style="color:#2563eb;font-family:monospace">c9x4k7m2z</td><td><span class="mock-badge mock-badge-a">A</span></td><td style="color:#059669">0.03</td><td>1,247</td><td>89,241</td></tr>
+            <tr><td style="color:#2563eb;font-family:monospace">d5p2n8q4r</td><td><span class="mock-badge mock-badge-a">A</span></td><td style="color:#059669">0.01</td><td>342</td><td>156,892</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="showcase-block animate">
+      <div class="showcase-text">
+        <span class="badge badge-purple">EXECUTION PLAN</span>
+        <h3 style="margin-top:16px">실행계획 시각화 &<br/>전후 비교 분석</h3>
+        <p>Oracle DBMS_XPLAN 기반의 실행계획을 트리 구조로 시각화하고, 튜닝 전후 Plan을 나란히 비교 분석합니다.</p>
+        <ul class="showcase-list">
+          <li>실행계획 트리 구조 시각화</li>
+          <li>Full Table Scan, Cartesian Join 등 안티패턴 자동 탐지</li>
+          <li>Cost, Cardinality, Bytes 상세 표시</li>
+          <li>인덱스 생성 다이어그램 자동 제안</li>
+        </ul>
+      </div>
+      <div class="showcase-visual">
+        <div class="plan-tree">
+          <div><span class="plan-highlight">SELECT STATEMENT</span> <span class="plan-cost">Cost: 847</span></div>
+          <div class="plan-node">
+            <div><span class="plan-highlight">NESTED LOOPS</span> <span class="plan-cost">Cost: 847</span></div>
+            <div class="plan-node">
+              <div><span class="plan-warn">⚠ TABLE ACCESS FULL</span> — EMPLOYEES <span class="plan-cost">Cost: 412</span></div>
+            </div>
+            <div class="plan-node">
+              <div><span class="plan-highlight">INDEX RANGE SCAN</span> — IDX_DEPT <span class="plan-cost">Cost: 3</span></div>
+              <div class="plan-node">
+                <div>TABLE ACCESS BY INDEX ROWID — DEPARTMENTS <span class="plan-cost">Cost: 1</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:16px;padding:12px;background:rgba(220,38,38,.05);border:1px solid rgba(220,38,38,.12);border-radius:8px;font-size:.78rem;color:#dc2626">
+          ⚠ Full Table Scan 감지: EMPLOYEES 테이블 — 인덱스 생성을 권장합니다
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- AI SECTION -->
+<section id="ai" class="section" style="background:var(--white)">
+  <div class="container">
+    <div class="animate">
+      <span class="badge badge-purple">AI-POWERED</span>
+      <h2 class="section-title" style="margin-top:16px">AI가 당신의<br/><span class="gradient-text">시니어 DBA를 대신합니다</span></h2>
+      <p class="section-desc">LLM 기반의 AI 엔진이 SQL 성능 문제를 자동으로 진단하고, 실행 가능한 튜닝 가이드를 즉시 제공합니다.</p>
+    </div>
+    <div class="ai-features">
+      <div class="ai-card animate"><h4>🧠 AI 성능 진단</h4><p>SQL 텍스트와 실행계획을 분석하여 성능 병목 원인을 자동 진단. Full Table Scan, 비효율적 조인, 불필요한 서브쿼리 등을 즉시 식별합니다.</p></div>
+      <div class="ai-card animate"><h4>💡 AI 튜닝 가이드</h4><p>문제 SQL에 대해 인덱스 생성, SQL 리팩토링, 힌트 추가 등 구체적인 튜닝 방안을 코드 레벨로 제시합니다.</p></div>
+      <div class="ai-card animate"><h4>🔄 SQL 리팩토링 어시스턴트</h4><p>기존 SQL을 최적화된 형태로 자동 변환. 서브쿼리 → 조인, UNION → UNION ALL, 불필요한 정렬 제거 등을 제안합니다.</p></div>
+      <div class="ai-card animate"><h4>📊 성능 비교 분석</h4><p>튜닝 전후 성능 지표를 자동 비교하고, 개선율을 시각적으로 보여줍니다. ROI 산출 보고서를 자동 생성합니다.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- WORKFLOW -->
+<section id="workflow" class="section">
+  <div class="container">
+    <div class="animate" style="text-align:center">
+      <span class="badge badge-green">WORKFLOW</span>
+      <h2 class="section-title" style="margin-top:16px">체계적인 SQL 튜닝 프로세스</h2>
+      <p class="section-desc" style="margin-left:auto;margin-right:auto">SQL 식별부터 완료까지, 칸반 보드 기반의 5단계 워크플로우로 튜닝 업무를 체계적으로 관리합니다.</p>
+    </div>
+    <div class="workflow animate">
+      <div class="workflow-step"><div class="workflow-line"></div><div class="workflow-num">1</div><h4>식별</h4><p>Top SQL 자동 식별<br/>A-F 등급 평가</p></div>
+      <div class="workflow-step"><div class="workflow-line"></div><div class="workflow-num">2</div><h4>할당</h4><p>우선순위 기반<br/>담당자 배정</p></div>
+      <div class="workflow-step"><div class="workflow-line"></div><div class="workflow-num">3</div><h4>분석 & 튜닝</h4><p>AI 진단 + 수동 분석<br/>실행계획 최적화</p></div>
+      <div class="workflow-step"><div class="workflow-line"></div><div class="workflow-num">4</div><h4>검증</h4><p>성능 비교 테스트<br/>개선율 측정</p></div>
+      <div class="workflow-step"><div class="workflow-num">5</div><h4>완료</h4><p>이력 저장<br/>보고서 생성</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ROI -->
+<section id="roi" class="section" style="background:var(--white)">
+  <div class="container">
+    <div class="animate" style="text-align:center">
+      <span class="badge badge-green">ROI & IMPACT</span>
+      <h2 class="section-title" style="margin-top:16px">TMS 2.0 <span class="gradient-text">도입 효과</span></h2>
+      <p class="section-desc" style="margin-left:auto;margin-right:auto">데이터베이스 성능 개선은 곧 비용 절감이자 매출 향상입니다. TMS 2.0이 만드는 실질적 변화를 확인하세요.</p>
+    </div>
+    <div class="roi-grid">
+      <div class="roi-card animate"><div class="roi-icon">⚡</div><div class="roi-value gradient-text">85%</div><div class="roi-label">SQL 성능 개선율</div><div class="roi-desc">Full Table Scan 제거, 인덱스 최적화, SQL 리팩토링을 통한 평균 응답시간 85% 감소</div></div>
+      <div class="roi-card animate"><div class="roi-icon">⏱️</div><div class="roi-value gradient-text">70%</div><div class="roi-label">튜닝 작업 시간 단축</div><div class="roi-desc">AI 자동 진단으로 문제 SQL 식별 및 튜닝 방안 도출 시간을 획기적으로 단축</div></div>
+      <div class="roi-card animate"><div class="roi-icon">💰</div><div class="roi-value gradient-text">40%</div><div class="roi-label">인프라 비용 절감</div><div class="roi-desc">SQL 최적화를 통한 CPU, 메모리 사용률 감소로 하드웨어 증설 비용 절감</div></div>
+    </div>
+    <div class="compare-block animate">
+      <div class="compare-card compare-before">
+        <h4><span style="color:#dc2626">●</span> TMS 도입 전</h4>
+        <div class="compare-item"><span>평균 SQL 응답시간</span><span style="color:#dc2626">12.5초</span></div>
+        <div class="compare-item"><span>월간 장애 건수</span><span style="color:#dc2626">8건</span></div>
+        <div class="compare-item"><span>튜닝 소요시간</span><span style="color:#dc2626">4시간/건</span></div>
+        <div class="compare-item"><span>미튜닝 SQL 비율</span><span style="color:#dc2626">65%</span></div>
+      </div>
+      <div class="compare-arrow">→</div>
+      <div class="compare-card compare-after">
+        <h4><span style="color:#059669">●</span> TMS 도입 후</h4>
+        <div class="compare-item"><span>평균 SQL 응답시간</span><span style="color:#059669">0.8초</span></div>
+        <div class="compare-item"><span>월간 장애 건수</span><span style="color:#059669">1건</span></div>
+        <div class="compare-item"><span>튜닝 소요시간</span><span style="color:#059669">45분/건</span></div>
+        <div class="compare-item"><span>미튜닝 SQL 비율</span><span style="color:#059669">8%</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section id="contact" class="cta-section">
+  <div class="container">
+    <div class="cta-box animate">
+      <h2>데이터베이스 성능,<br/><span class="gradient-text">나래 TMS 2.0으로 시작하세요</span></h2>
+      <p>SaaS 버전은 지금 바로 무료로 시작할 수 있습니다.<br/>온프레미스 도입은 이메일 또는 전화로 문의해주세요.</p>
+      <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;position:relative">
+        <a href="https://sqltms.info" target="_blank" class="btn-primary">🌐 SaaS 무료 시작</a>
+        <a href="mailto:sijung@naraeit.co.kr?subject=TMS%202.0%20온프레미스%20도입%20문의" class="btn-secondary">📧 sijung@naraeit.co.kr</a>
+        <a href="tel:010-2629-1782" class="btn-secondary">📞 010-2629-1782</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="logo" style="font-size:1.1rem">
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="#2563eb" stroke-width="2"/><path d="M10 16h12M16 10v12" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="16" r="5" fill="rgba(37,99,235,.15)" stroke="#2563eb" stroke-width="1.5"/></svg>
+          나래 <span>TMS 2.0</span>
+        </div>
+        <p>주식회사 나래정보기술<br/>AI 기반 Oracle SQL 튜닝 관리 시스템<br/>데이터베이스 성능 최적화 전문 기업</p>
+      </div>
+      <div class="footer-col">
+        <h4>제품</h4>
+        <ul>
+          <li><a href="#features">핵심 기능</a></li>
+          <li><a href="#ai">AI 분석</a></li>
+          <li><a href="#workflow">튜닝 프로세스</a></li>
+          <li><a href="#pricing">버전 & 요금</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>시작하기</h4>
+        <ul>
+          <li><a href="https://sqltms.info" target="_blank">SaaS 무료 시작</a></li>
+          <li><a href="mailto:sijung@naraeit.co.kr">온프레미스 문의</a></li>
+          <li><a href="tel:010-2629-1782">전화 상담</a></li>
+          <li><a href="#roi">도입 효과</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>회사</h4>
+        <ul>
+          <li><a href="https://www.naraeit.co.kr">회사 소개</a></li>
+          <li><a href="mailto:sijung@naraeit.co.kr">이메일 문의</a></li>
+          <li><a href="https://www.naraeit.co.kr/blog">블로그</a></li>
+          <li><a href="https://www.naraeit.co.kr/location">오시는 길</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; 2026 주식회사 나래정보기술. All rights reserved.</span>
+      <span>www.naraeit.co.kr</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+  const observer=new IntersectionObserver((entries)=>{
+    entries.forEach(entry=>{
+      if(entry.isIntersecting) entry.target.classList.add('visible');
+    });
+  },{threshold:0.1,rootMargin:'0px 0px -40px 0px'});
+  document.querySelectorAll('.animate').forEach(el=>observer.observe(el));
+});
+</script>
+</body>
+</html>

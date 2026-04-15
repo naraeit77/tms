@@ -77,11 +77,30 @@ export class RegexSQLParser implements ISQLParser {
     // Preprocess SQL based on statement type to a SELECT-compatible form
     const processedSql = this.preprocessSQL(normalizedSql)
 
-    const tables = this.parseTables(processedSql)
-    const joins = this.parseJoins(processedSql, tables)
-    const columns = this.parseColumns(processedSql, tables, joins)
-    const orderByColumns = this.parseOrderBy(processedSql)
-    const groupByColumns = this.parseGroupBy(processedSql)
+    let tables = this.parseTables(processedSql)
+
+    // Determine the SQL to use for column/join parsing
+    // If outer query has no real tables (only inline view), use inner SQL
+    let sqlForParsing = processedSql
+    if (tables.length === 0) {
+      const innerSql = this.extractInlineViewSQL(processedSql)
+      if (innerSql) {
+        tables = this.parseTables(innerSql)
+        sqlForParsing = innerSql
+      }
+    } else {
+      // Tables found - check if they were extracted from inline view
+      // If outer query is SELECT * FROM (subquery), use inner SQL for column/join parsing
+      const innerSql = this.extractInlineViewSQL(processedSql)
+      if (innerSql && innerSql.includes('FROM')) {
+        sqlForParsing = innerSql
+      }
+    }
+
+    const joins = this.parseJoins(sqlForParsing, tables)
+    const columns = this.parseColumns(sqlForParsing, tables, joins)
+    const orderByColumns = this.parseOrderBy(sqlForParsing)
+    const groupByColumns = this.parseGroupBy(sqlForParsing)
 
     return {
       tables,
@@ -327,39 +346,29 @@ export class RegexSQLParser implements ISQLParser {
 
   /**
    * Parse tables from FROM and JOIN clauses
+   * Handles inline views (subqueries in FROM) by extracting inner SQL
    */
   private parseTables(sql: string): ParsedTable[] {
     const tables: ParsedTable[] = []
     const tableMap = new Map<string, ParsedTable>()
 
-    // Parse FROM clause
-    const fromMatch = sql.match(/\bFROM\s+([A-Z_][A-Z0-9_]*(?:\.[A-Z_][A-Z0-9_]*)?)\s*(?:AS\s+)?([A-Z_][A-Z0-9_]*)?/i)
-    if (fromMatch) {
-      const table = this.createTable(fromMatch[1], fromMatch[2])
-      tables.push(table)
-      tableMap.set(table.alias, table)
-    }
+    // Extract top-level FROM clause content (skip parenthesized subqueries)
+    const topLevelFromContent = this.extractTopLevelFromClause(sql)
 
-    // Parse JOIN clauses
-    const joinRegex = /\b(LEFT\s+OUTER\s+JOIN|RIGHT\s+OUTER\s+JOIN|FULL\s+OUTER\s+JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|JOIN|CROSS\s+JOIN)\s+([A-Z_][A-Z0-9_]*(?:\.[A-Z_][A-Z0-9_]*)?)\s*(?:AS\s+)?([A-Z_][A-Z0-9_]*)?/gi
-    let joinMatch
-    while ((joinMatch = joinRegex.exec(sql)) !== null) {
-      const joinType = this.normalizeJoinType(joinMatch[1])
-      const isOuterJoinTarget = joinType.includes('OUTER') || joinType === 'LEFT_OUTER' || joinType === 'RIGHT_OUTER'
-      const table = this.createTable(joinMatch[2], joinMatch[3], isOuterJoinTarget)
-      if (!tableMap.has(table.alias)) {
+    if (topLevelFromContent) {
+      // Parse first table from top-level FROM content
+      const firstMatch = topLevelFromContent.match(
+        /^([A-Z_][A-Z0-9_]*(?:\.[A-Z_][A-Z0-9_]*)?)\s*(?:AS\s+)?([A-Z_][A-Z0-9_]*)?/i
+      )
+      if (firstMatch) {
+        const table = this.createTable(firstMatch[1], firstMatch[2])
         tables.push(table)
         tableMap.set(table.alias, table)
       }
-    }
 
-    // Parse comma-separated tables in FROM clause
-    const fromClauseMatch = sql.match(/\bFROM\s+(.+?)(?:\bWHERE\b|\bORDER\s+BY\b|\bGROUP\s+BY\b|\bHAVING\b|$)/i)
-    if (fromClauseMatch) {
-      const fromClause = fromClauseMatch[1]
-      // Only process if there are no JOINs in the clause
-      if (!/\bJOIN\b/i.test(fromClause)) {
-        const tableParts = fromClause.split(',')
+      // If comma-separated tables (no JOINs in the top-level content)
+      if (!/\bJOIN\b/i.test(topLevelFromContent)) {
+        const tableParts = topLevelFromContent.split(',')
         for (const part of tableParts) {
           const trimmed = part.trim()
           const tableMatch = trimmed.match(/^([A-Z_][A-Z0-9_]*(?:\.[A-Z_][A-Z0-9_]*)?)\s*(?:AS\s+)?([A-Z_][A-Z0-9_]*)?$/i)
@@ -369,6 +378,29 @@ export class RegexSQLParser implements ISQLParser {
             tableMap.set(table.alias, table)
           }
         }
+      }
+    }
+
+    // Parse JOIN clauses (only at top level)
+    const joinRegex = /\b(LEFT\s+OUTER\s+JOIN|RIGHT\s+OUTER\s+JOIN|FULL\s+OUTER\s+JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|JOIN|CROSS\s+JOIN)\s+([A-Z_][A-Z0-9_]*(?:\.[A-Z_][A-Z0-9_]*)?)\s*(?:AS\s+)?([A-Z_][A-Z0-9_]*)?/gi
+    let joinMatch
+    // Use top-level SQL (with subqueries replaced) for JOIN detection
+    const topLevelSql = this.replaceParenthesizedBlocks(sql)
+    while ((joinMatch = joinRegex.exec(topLevelSql)) !== null) {
+      const joinType = this.normalizeJoinType(joinMatch[1])
+      const isOuterJoinTarget = joinType.includes('OUTER') || joinType === 'LEFT_OUTER' || joinType === 'RIGHT_OUTER'
+      const table = this.createTable(joinMatch[2], joinMatch[3], isOuterJoinTarget)
+      if (!tableMap.has(table.alias)) {
+        tables.push(table)
+        tableMap.set(table.alias, table)
+      }
+    }
+
+    // If no tables found from outer query, try parsing inner subquery
+    if (tables.length === 0) {
+      const innerSql = this.extractInlineViewSQL(sql)
+      if (innerSql) {
+        return this.parseTables(innerSql)
       }
     }
 
@@ -388,6 +420,93 @@ export class RegexSQLParser implements ISQLParser {
       alias: tableAlias,
       isOuterJoinTarget,
     }
+  }
+
+  /**
+   * Extract the top-level FROM clause content, stripping parenthesized subexpressions.
+   * For: SELECT * FROM (SELECT ...) alias → returns empty (inline view only)
+   * For: SELECT * FROM (SELECT ...) a, table2 b → returns "table2 b"
+   * For: SELECT ... FROM sales, times WHERE ... → returns "sales, times"
+   */
+  private extractTopLevelFromClause(sql: string): string | null {
+    // Find top-level FROM keyword
+    const fromIdx = this.findTopLevelKeyword(sql, 'FROM')
+    if (fromIdx < 0) return null
+
+    const afterFrom = sql.substring(fromIdx + 4).trim()
+
+    // Find the end of FROM clause (top-level WHERE, ORDER BY, GROUP BY, HAVING)
+    let endIdx = afterFrom.length
+    for (const keyword of ['WHERE', 'ORDER BY', 'GROUP BY', 'HAVING']) {
+      const kwIdx = this.findTopLevelKeyword(afterFrom, keyword)
+      if (kwIdx >= 0 && kwIdx < endIdx) {
+        endIdx = kwIdx
+      }
+    }
+
+    const fromContent = afterFrom.substring(0, endIdx).trim()
+
+    // Replace parenthesized blocks with placeholder to handle inline views
+    const topLevel = this.replaceParenthesizedBlocks(fromContent)
+
+    // Remove placeholder tokens (inline views become empty)
+    return topLevel.replace(/__PAREN_BLOCK__/g, '').replace(/\s+/g, ' ').trim() || null
+  }
+
+  /**
+   * Replace balanced parenthesized blocks with a placeholder token.
+   * "(SELECT ...)" → "__PAREN_BLOCK__"
+   */
+  private replaceParenthesizedBlocks(sql: string): string {
+    let result = ''
+    let depth = 0
+    let i = 0
+
+    while (i < sql.length) {
+      if (sql[i] === '(') {
+        if (depth === 0) {
+          result += '__PAREN_BLOCK__'
+        }
+        depth++
+        i++
+      } else if (sql[i] === ')') {
+        depth--
+        i++
+      } else if (depth === 0) {
+        result += sql[i]
+        i++
+      } else {
+        i++
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * Extract the SQL from an inline view (subquery in FROM clause).
+   * For: SELECT * FROM (SELECT ... FROM sales, times WHERE ...) alias
+   * Returns: SELECT ... FROM sales, times WHERE ...
+   */
+  private extractInlineViewSQL(sql: string): string | null {
+    const fromIdx = this.findTopLevelKeyword(sql, 'FROM')
+    if (fromIdx < 0) return null
+
+    const afterFrom = sql.substring(fromIdx + 4).trim()
+    if (afterFrom[0] !== '(') return null
+
+    // Extract balanced parenthesized content
+    let depth = 1
+    let pos = 1
+    while (pos < afterFrom.length && depth > 0) {
+      if (afterFrom[pos] === '(') depth++
+      else if (afterFrom[pos] === ')') depth--
+      pos++
+    }
+
+    if (depth !== 0) return null
+
+    return afterFrom.substring(1, pos - 1).trim()
   }
 
   private normalizeJoinType(joinStr: string): JoinType {
@@ -520,41 +639,69 @@ export class RegexSQLParser implements ISQLParser {
       joinColumns.add(join.targetColumnId)
     }
 
-    // Parse WHERE clause columns
-    const whereMatch = sql.match(/\bWHERE\s+(.+?)(?:\bORDER\s+BY\b|\bGROUP\s+BY\b|\bHAVING\b|$)/i)
-    if (whereMatch) {
-      const whereColumns = this.parseWhereColumns(whereMatch[1], tableByAlias, tableByName, joinColumns)
-      for (const col of whereColumns) {
-        const key = `${col.tableId}_${col.name}`
-        if (!columnSet.has(key)) {
-          columnSet.add(key)
-          columns.push(col)
+    // Parse WHERE clause columns (use findTopLevelKeyword to avoid matching inside subqueries/OVER)
+    const whereIdx = this.findTopLevelKeyword(sql, 'WHERE')
+    if (whereIdx >= 0) {
+      const afterWhere = sql.substring(whereIdx + 5).trim()
+      // Find end of WHERE clause at top level
+      let whereEnd = afterWhere.length
+      for (const kw of ['ORDER BY', 'GROUP BY', 'HAVING']) {
+        const kwIdx = this.findTopLevelKeyword(afterWhere, kw)
+        if (kwIdx >= 0 && kwIdx < whereEnd) whereEnd = kwIdx
+      }
+      const whereClause = afterWhere.substring(0, whereEnd).trim()
+      if (whereClause) {
+        const whereColumns = this.parseWhereColumns(whereClause, tableByAlias, tableByName, joinColumns)
+        for (const col of whereColumns) {
+          const key = `${col.tableId}_${col.name}`
+          if (!columnSet.has(key)) {
+            columnSet.add(key)
+            columns.push(col)
+          }
         }
       }
     }
 
-    // Parse ORDER BY columns
-    const orderByMatch = sql.match(/\bORDER\s+BY\s+(.+?)(?:\bLIMIT\b|\bOFFSET\b|\bFETCH\b|$)/i)
-    if (orderByMatch) {
-      const orderColumns = this.parseOrderByColumns(orderByMatch[1], tableByAlias, tableByName)
-      for (const col of orderColumns) {
-        const key = `${col.tableId}_${col.name}`
-        if (!columnSet.has(key)) {
-          columnSet.add(key)
-          columns.push(col)
+    // Parse ORDER BY columns (use findTopLevelKeyword to skip ORDER BY inside OVER())
+    const orderByIdx = this.findTopLevelKeyword(sql, 'ORDER BY')
+    if (orderByIdx >= 0) {
+      const afterOrderBy = sql.substring(orderByIdx + 8).trim()
+      let orderEnd = afterOrderBy.length
+      for (const kw of ['LIMIT', 'OFFSET', 'FETCH']) {
+        const kwIdx = this.findTopLevelKeyword(afterOrderBy, kw)
+        if (kwIdx >= 0 && kwIdx < orderEnd) orderEnd = kwIdx
+      }
+      const orderByClause = afterOrderBy.substring(0, orderEnd).trim()
+      if (orderByClause) {
+        const orderColumns = this.parseOrderByColumns(orderByClause, tableByAlias, tableByName)
+        for (const col of orderColumns) {
+          const key = `${col.tableId}_${col.name}`
+          if (!columnSet.has(key)) {
+            columnSet.add(key)
+            columns.push(col)
+          }
         }
       }
     }
 
-    // Parse GROUP BY columns
-    const groupByMatch = sql.match(/\bGROUP\s+BY\s+(.+?)(?:\bHAVING\b|\bORDER\s+BY\b|$)/i)
-    if (groupByMatch) {
-      const groupColumns = this.parseGroupByColumns(groupByMatch[1], tableByAlias, tableByName)
-      for (const col of groupColumns) {
-        const key = `${col.tableId}_${col.name}`
-        if (!columnSet.has(key)) {
-          columnSet.add(key)
-          columns.push(col)
+    // Parse GROUP BY columns (use findTopLevelKeyword to avoid issues with nested queries)
+    const groupByIdx = this.findTopLevelKeyword(sql, 'GROUP BY')
+    if (groupByIdx >= 0) {
+      const afterGroupBy = sql.substring(groupByIdx + 8).trim()
+      let groupEnd = afterGroupBy.length
+      for (const kw of ['HAVING', 'ORDER BY']) {
+        const kwIdx = this.findTopLevelKeyword(afterGroupBy, kw)
+        if (kwIdx >= 0 && kwIdx < groupEnd) groupEnd = kwIdx
+      }
+      const groupByClause = afterGroupBy.substring(0, groupEnd).trim()
+      if (groupByClause) {
+        const groupColumns = this.parseGroupByColumns(groupByClause, tableByAlias, tableByName)
+        for (const col of groupColumns) {
+          const key = `${col.tableId}_${col.name}`
+          if (!columnSet.has(key)) {
+            columnSet.add(key)
+            columns.push(col)
+          }
         }
       }
     }
@@ -626,6 +773,8 @@ export class RegexSQLParser implements ISQLParser {
         const [fullMatch, columnName] = match
         // Skip if it looks like table.column pattern
         if (/[A-Z_][A-Z0-9_]*\.[A-Z_][A-Z0-9_]*/i.test(fullMatch)) continue
+        // Skip if preceded by '.' (part of table.column already matched by aliased patterns)
+        if (match.index > 0 && whereClause[match.index - 1] === '.') continue
 
         // Try to find the table for this column (use first table as default)
         const defaultTable = tableByAlias.values().next().value || tableByName.values().next().value
@@ -776,13 +925,22 @@ export class RegexSQLParser implements ISQLParser {
   // ===========================================================================
 
   /**
-   * Parse ORDER BY column names
+   * Parse ORDER BY column names (top-level only, not inside OVER())
    */
   private parseOrderBy(sql: string): string[] {
-    const match = sql.match(/\bORDER\s+BY\s+(.+?)(?:\bLIMIT\b|\bOFFSET\b|\bFETCH\b|$)/i)
-    if (!match) return []
+    const orderByIdx = this.findTopLevelKeyword(sql, 'ORDER BY')
+    if (orderByIdx < 0) return []
 
-    const orderByClause = match[1]
+    const afterOrderBy = sql.substring(orderByIdx + 8).trim()
+    let endIdx = afterOrderBy.length
+    for (const kw of ['LIMIT', 'OFFSET', 'FETCH']) {
+      const kwIdx = this.findTopLevelKeyword(afterOrderBy, kw)
+      if (kwIdx >= 0 && kwIdx < endIdx) endIdx = kwIdx
+    }
+
+    const orderByClause = afterOrderBy.substring(0, endIdx).trim()
+    if (!orderByClause) return []
+
     const columns: string[] = []
     const parts = orderByClause.split(',')
 
@@ -798,13 +956,21 @@ export class RegexSQLParser implements ISQLParser {
   }
 
   /**
-   * Parse GROUP BY column names
+   * Parse GROUP BY column names (top-level only)
    */
   private parseGroupBy(sql: string): string[] {
-    const match = sql.match(/\bGROUP\s+BY\s+(.+?)(?:\bHAVING\b|\bORDER\s+BY\b|$)/i)
-    if (!match) return []
+    const groupByIdx = this.findTopLevelKeyword(sql, 'GROUP BY')
+    if (groupByIdx < 0) return []
 
-    const groupByClause = match[1]
+    const afterGroupBy = sql.substring(groupByIdx + 8).trim()
+    let endIdx = afterGroupBy.length
+    for (const kw of ['HAVING', 'ORDER BY']) {
+      const kwIdx = this.findTopLevelKeyword(afterGroupBy, kw)
+      if (kwIdx >= 0 && kwIdx < endIdx) endIdx = kwIdx
+    }
+
+    const groupByClause = afterGroupBy.substring(0, endIdx).trim()
+    if (!groupByClause) return []
     const columns: string[] = []
     const parts = groupByClause.split(',')
 

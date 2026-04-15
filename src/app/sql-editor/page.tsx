@@ -709,6 +709,13 @@ function SQLEditorContent() {
         }),
       });
 
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('[SQL Editor] Non-JSON response:', text.substring(0, 200));
+        throw new Error(`서버 오류가 발생했습니다 (HTTP ${response.status}). 잠시 후 다시 시도해주세요.`);
+      }
+
       const data = await response.json();
       const duration = Date.now() - startTime;
 
@@ -1125,6 +1132,11 @@ function SQLEditorContent() {
           },
         }),
       });
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error(`서버 오류가 발생했습니다 (HTTP ${response.status})`);
+      }
 
       const data = await response.json();
 

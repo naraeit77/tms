@@ -41,7 +41,7 @@ export default function DashboardHeader({ user }: DashboardHeaderProps) {
 
   return (
     <header className="bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-lg sticky top-0 z-50">
-      <div className="container mx-auto max-w-[1920px] px-4 py-3 flex items-center justify-between">
+      <div className="w-full px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-2xl">🗄️</span>
           <div>

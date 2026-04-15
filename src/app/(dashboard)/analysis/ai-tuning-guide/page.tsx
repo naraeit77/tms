@@ -286,6 +286,7 @@ export default function AITuningGuidePage() {
       sql_text: sqlText,
       context,
       language,
+      connection_id: selectedConnectionId || undefined,
       _timestamp: Date.now(), // Force unique request to trigger streaming
     }
 
@@ -533,19 +534,19 @@ ${executionPlan ? `실행계획:\n${executionPlan}\n\n` : ''}사용자의 추가
   const ContextIcon = CONTEXT_INFO[context].icon
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
       {/* LLM Status Banner */}
       {llmHealth && !llmHealth.healthy && (
         <Card className="border-amber-200 bg-amber-50 dark:bg-amber-900/20">
           <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <WifiOff className="h-5 w-5 text-amber-600" />
-                <div>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center space-x-3 min-w-0">
+                <WifiOff className="h-5 w-5 text-amber-600 flex-shrink-0" />
+                <div className="min-w-0">
                   <p className="font-medium text-amber-900 dark:text-amber-300">
                     LLM 서버 연결 불가
                   </p>
-                  <p className="text-sm text-amber-700 dark:text-amber-400">
+                  <p className="text-sm text-amber-700 dark:text-amber-400 break-words">
                     {llmHealth.error || 'AI 분석 기능을 사용할 수 없습니다.'}
                   </p>
                 </div>
@@ -555,6 +556,7 @@ ${executionPlan ? `실행계획:\n${executionPlan}\n\n` : ''}사용자의 추가
                 size="sm"
                 onClick={checkLLMHealth}
                 disabled={healthLoading}
+                className="self-start sm:self-auto flex-shrink-0"
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${healthLoading ? 'animate-spin' : ''}`} />
                 재연결
@@ -565,21 +567,21 @@ ${executionPlan ? `실행계획:\n${executionPlan}\n\n` : ''}사용자의 추가
       )}
 
       {/* Header */}
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 flex items-center">
-            <Bot className="h-8 w-8 mr-3 text-purple-600" />
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-2 flex items-center">
+            <Bot className="h-6 w-6 sm:h-8 sm:w-8 mr-2 sm:mr-3 text-purple-600 flex-shrink-0" />
             AI 튜닝 가이드
           </h1>
-          <p className="text-gray-500 dark:text-gray-400">
+          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400">
             AI 기반 지능형 SQL 튜닝 분석
           </p>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
           {llmHealth?.healthy && (
             <Badge variant="outline" className="text-green-600 border-green-200" title={llmHealth.model}>
               <span className="w-2 h-2 bg-green-500 rounded-full mr-2" />
-              <span className="truncate max-w-[200px]">{llmHealth.model}</span>
+              <span className="truncate max-w-[140px] sm:max-w-[200px]">{llmHealth.model}</span>
               <span className="ml-1">({llmHealth.latency}ms)</span>
             </Badge>
           )}
@@ -595,7 +597,7 @@ ${executionPlan ? `실행계획:\n${executionPlan}\n\n` : ''}사용자의 추가
       </div>
 
       {/* Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Left Panel - Input */}
         <div className="lg:col-span-2 space-y-4">
           {/* Input Mode Selector */}
@@ -617,16 +619,17 @@ ${executionPlan ? `실행계획:\n${executionPlan}\n\n` : ''}사용자의 추가
                   <div className="space-y-3">
                     <div>
                       <Label>SQL_ID</Label>
-                      <div className="flex space-x-2 mt-1">
+                      <div className="flex gap-2 mt-1">
                         <Input
                           placeholder="예: 0w2qpuc6u2zsp"
                           value={sqlId}
                           onChange={(e) => setSqlId(e.target.value)}
-                          className="font-mono"
+                          className="font-mono min-w-0 flex-1"
                         />
                         <Button
                           onClick={lookupSqlId}
                           disabled={isLoadingSqlId || !selectedConnectionId}
+                          className="flex-shrink-0"
                         >
                           {isLoadingSqlId ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -665,17 +668,17 @@ ${executionPlan ? `실행계획:\n${executionPlan}\n\n` : ''}사용자의 추가
           {/* SQL Input */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
                   <CardTitle className="flex items-center">
-                    <FileText className="h-5 w-5 mr-2" />
+                    <FileText className="h-5 w-5 mr-2 flex-shrink-0" />
                     SQL 입력
                   </CardTitle>
                   <CardDescription>
                     분석할 SQL 문을 입력하세요
                   </CardDescription>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 flex-shrink-0">
                   {sqlText && (
                     <Button variant="ghost" size="sm" onClick={copySQL}>
                       {copied ? (

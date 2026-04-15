@@ -111,17 +111,63 @@ export class AnalyzeQueryUseCase {
 
       // Get table names for index lookup
       const tableNames = parsedSQL.tables.map(t => t.name)
-      const schema = request.owner || request.options?.targetSchema || 'PUBLIC'
+
+      // Determine schema owner:
+      // 1. Explicit request owner
+      // 2. Schema from SQL (e.g., HR.EMPLOYEES)
+      // 3. Will be resolved from connection username in repository
+      const explicitSchema = request.owner || request.options?.targetSchema
+
+      // Collect unique schemas from parsed SQL tables
+      const parsedSchemas = new Set(
+        parsedSQL.tables
+          .filter(t => t.schema)
+          .map(t => t.schema!.toUpperCase())
+      )
 
       // Fetch existing indexes
       let existingIndexes: Map<string, ExistingIndex[]> = new Map()
       if (request.options?.includeStatistics !== false) {
         try {
-          existingIndexes = await this.indexRepository.getIndexesForTables(
-            request.connectionId,
-            schema,
-            tableNames
-          )
+          if (parsedSchemas.size > 1 && !explicitSchema) {
+            // Multiple schemas in SQL - fetch per schema
+            for (const schema of parsedSchemas) {
+              const schemaTables = parsedSQL.tables
+                .filter(t => t.schema?.toUpperCase() === schema)
+                .map(t => t.name)
+              const schemaIndexes = await this.indexRepository.getIndexesForTables(
+                request.connectionId,
+                schema,
+                schemaTables
+              )
+              for (const [table, indexes] of schemaIndexes) {
+                existingIndexes.set(table, indexes)
+              }
+            }
+            // Also fetch for tables without explicit schema using connection user
+            const noSchemaTables = parsedSQL.tables
+              .filter(t => !t.schema)
+              .map(t => t.name)
+            if (noSchemaTables.length > 0) {
+              const defaultIndexes = await this.indexRepository.getIndexesForTables(
+                request.connectionId,
+                '', // empty string signals to use connection username
+                noSchemaTables
+              )
+              for (const [table, indexes] of defaultIndexes) {
+                existingIndexes.set(table, indexes)
+              }
+            }
+          } else {
+            // Single schema or explicit schema provided
+            const schema = explicitSchema
+              || (parsedSchemas.size === 1 ? [...parsedSchemas][0] : '')
+            existingIndexes = await this.indexRepository.getIndexesForTables(
+              request.connectionId,
+              schema,
+              tableNames
+            )
+          }
         } catch {
           // Continue without index metadata if unavailable
           console.warn('Could not fetch index metadata, continuing without it')
@@ -131,8 +177,20 @@ export class AnalyzeQueryUseCase {
       // Analyze columns
       const columnAnalyses = this.analyzeColumns(parsedSQL, existingIndexes)
 
-      // Determine optimal access order
-      const optimalAccessOrder = this.determineAccessOrder(parsedSQL, columnAnalyses)
+      // Fetch table row counts for join direction analysis
+      let tableRowCounts: Map<string, number> = new Map()
+      try {
+        tableRowCounts = await this.fetchTableRowCounts(
+          request.connectionId,
+          explicitSchema || (parsedSchemas.size === 1 ? [...parsedSchemas][0] : ''),
+          tableNames
+        )
+      } catch {
+        console.warn('Could not fetch table row counts, using heuristics for access order')
+      }
+
+      // Determine optimal access order using actual row counts
+      const optimalAccessOrder = this.determineAccessOrder(parsedSQL, columnAnalyses, tableRowCounts)
 
       // Identify index points
       const indexPoints = this.identifyIndexPoints(
@@ -222,15 +280,18 @@ export class AnalyzeQueryUseCase {
   }
 
   /**
-   * Determine optimal table access order
+   * Determine optimal table access order based on actual table statistics
    * Rules:
-   * 1. Entry table = best selectivity WHERE condition
-   * 2. INNER JOINs before OUTER JOINs
-   * 3. Follow join relationships
+   * 1. Entry table = table with WHERE condition that produces smallest result set
+   *    - Consider both selectivity score AND actual row count
+   * 2. Join direction: smaller result set drives, larger is driven (NL Join principle)
+   * 3. INNER JOINs before OUTER JOINs
+   * 4. Follow join relationships
    */
   private determineAccessOrder(
     parsedSQL: ParsedSQL,
-    columnAnalyses: ColumnAnalysis[]
+    columnAnalyses: ColumnAnalysis[],
+    tableRowCounts: Map<string, number> = new Map()
   ): string[] {
     const order: string[] = []
     const visited = new Set<string>()
@@ -239,7 +300,7 @@ export class AnalyzeQueryUseCase {
     const innerTables = parsedSQL.tables.filter(t => !t.isOuterJoinTarget)
     const outerTables = parsedSQL.tables.filter(t => t.isOuterJoinTarget)
 
-    // Find entry table (best selectivity among WHERE conditions)
+    // Find entry table: best selectivity WHERE condition, weighted by actual row count
     const whereColumns = columnAnalyses.filter(
       ca => {
         const col = parsedSQL.columns.find(c => c.id === ca.columnId)
@@ -249,17 +310,56 @@ export class AnalyzeQueryUseCase {
 
     let entryTableId: string | null = null
     if (whereColumns.length > 0) {
-      // Sort by score descending
-      whereColumns.sort((a, b) => b.score - a.score)
-      const bestCol = parsedSQL.columns.find(c => c.id === whereColumns[0].columnId)
-      if (bestCol) {
-        entryTableId = bestCol.tableId
+      // Score each candidate considering both selectivity and actual row count
+      // Lower estimated result rows = better entry point
+      const candidates = whereColumns.map(ca => {
+        const col = parsedSQL.columns.find(c => c.id === ca.columnId)
+        const table = col ? parsedSQL.tables.find(t => t.id === col.tableId) : null
+        const rowCount = table ? (tableRowCounts.get(table.name) || 0) : 0
+
+        // Estimated result rows after applying filter
+        // selectivity of 0.05 means ~5% of rows will remain
+        const estimatedRows = rowCount > 0
+          ? rowCount * (ca.selectivity || 0.05)
+          : 1 / ca.score // fallback: higher score = fewer estimated rows
+
+        return {
+          columnAnalysis: ca,
+          tableId: col?.tableId,
+          tableName: table?.name,
+          rowCount,
+          estimatedRows,
+          score: ca.score,
+        }
+      }).filter(c => c.tableId)
+
+      // Sort by estimated result rows ascending (smallest result set first)
+      // If row counts unavailable, fall back to score descending
+      candidates.sort((a, b) => {
+        if (a.rowCount > 0 && b.rowCount > 0) {
+          return a.estimatedRows - b.estimatedRows
+        }
+        return b.score - a.score
+      })
+
+      if (candidates.length > 0) {
+        entryTableId = candidates[0].tableId!
       }
     }
 
-    // If no WHERE condition, use first INNER table
+    // If no WHERE condition, use smallest INNER table by row count
     if (!entryTableId && innerTables.length > 0) {
-      entryTableId = innerTables[0].id
+      const tablesWithCounts = innerTables
+        .map(t => ({ id: t.id, name: t.name, rows: tableRowCounts.get(t.name) || 0 }))
+
+      const hasRowCounts = tablesWithCounts.some(t => t.rows > 0)
+      if (hasRowCounts) {
+        // Sort by row count ascending (smallest table first)
+        tablesWithCounts.sort((a, b) => (a.rows || Infinity) - (b.rows || Infinity))
+        entryTableId = tablesWithCounts[0].id
+      } else {
+        entryTableId = innerTables[0].id
+      }
     }
 
     // Start with entry table
@@ -269,11 +369,13 @@ export class AnalyzeQueryUseCase {
     }
 
     // BFS through join relationships for INNER tables
+    // When choosing next table, prefer smaller tables (join direction: small → large)
     const queue = [...order]
     while (queue.length > 0) {
       const currentId = queue.shift()!
 
-      // Find connected tables via joins
+      // Find all connected tables via joins
+      const connectedTables: Array<{ id: string; rowCount: number }> = []
       for (const join of parsedSQL.joins) {
         if (join.joinType === 'LEFT_OUTER' || join.joinType === 'RIGHT_OUTER') continue
 
@@ -285,16 +387,39 @@ export class AnalyzeQueryUseCase {
         }
 
         if (nextId && innerTables.some(t => t.id === nextId)) {
-          order.push(nextId)
-          visited.add(nextId)
-          queue.push(nextId)
+          const nextTable = parsedSQL.tables.find(t => t.id === nextId)
+          connectedTables.push({
+            id: nextId,
+            rowCount: nextTable ? (tableRowCounts.get(nextTable.name) || 0) : 0,
+          })
+        }
+      }
+
+      // Sort connected tables by row count ascending (smaller tables first for NL join)
+      const hasRowCounts = connectedTables.some(t => t.rowCount > 0)
+      if (hasRowCounts) {
+        connectedTables.sort((a, b) => (a.rowCount || Infinity) - (b.rowCount || Infinity))
+      }
+
+      for (const next of connectedTables) {
+        if (!visited.has(next.id)) {
+          order.push(next.id)
+          visited.add(next.id)
+          queue.push(next.id)
         }
       }
     }
 
-    // Add remaining INNER tables
-    for (const table of innerTables) {
-      if (!visited.has(table.id)) {
+    // Add remaining INNER tables (sorted by row count if available)
+    const remainingInner = innerTables.filter(t => !visited.has(t.id))
+    if (remainingInner.length > 0) {
+      const hasRowCounts = remainingInner.some(t => tableRowCounts.get(t.name))
+      if (hasRowCounts) {
+        remainingInner.sort((a, b) =>
+          (tableRowCounts.get(a.name) || Infinity) - (tableRowCounts.get(b.name) || Infinity)
+        )
+      }
+      for (const table of remainingInner) {
         order.push(table.id)
         visited.add(table.id)
       }
@@ -306,6 +431,34 @@ export class AnalyzeQueryUseCase {
     }
 
     return order
+  }
+
+  /**
+   * Fetch actual row counts for all tables from Oracle statistics
+   */
+  private async fetchTableRowCounts(
+    connectionId: string,
+    schema: string,
+    tableNames: string[]
+  ): Promise<Map<string, number>> {
+    const rowCounts = new Map<string, number>()
+
+    for (const tableName of tableNames) {
+      try {
+        const count = await this.indexRepository.getTableRowCount(
+          connectionId,
+          schema || '',
+          tableName
+        )
+        if (count > 0) {
+          rowCounts.set(tableName, count)
+        }
+      } catch {
+        // Skip tables where row count is unavailable
+      }
+    }
+
+    return rowCounts
   }
 
   /**

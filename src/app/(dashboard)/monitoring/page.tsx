@@ -986,16 +986,16 @@ export default function MonitoringPage() {
   const effectiveIsActive = isConnected || selectedDbInfo?.is_active
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">실시간 모니터링</h1>
-          <p className="text-gray-500 dark:text-gray-400">Oracle 데이터베이스 시스템 전체 성능을 실시간으로 모니터링합니다</p>
+      <div className="flex flex-col xl:flex-row xl:justify-between xl:items-start gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-2">실시간 모니터링</h1>
+          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400">Oracle 데이터베이스 시스템 전체 성능을 실시간으로 모니터링합니다</p>
         </div>
 
         {/* Controls */}
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* 선택된 데이터베이스 정보 표시 (상단 헤더에서 선택) */}
           {selectedConnection && (
             <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-md">
@@ -1135,11 +1135,11 @@ export default function MonitoringPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="overview">시스템 개요</TabsTrigger>
-          <TabsTrigger value="performance">SQL 성능</TabsTrigger>
-          <TabsTrigger value="details">상세 분석</TabsTrigger>
-          <TabsTrigger value="alerts">알림 & 로그</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
+          <TabsTrigger value="overview" className="text-xs sm:text-sm">시스템 개요</TabsTrigger>
+          <TabsTrigger value="performance" className="text-xs sm:text-sm">SQL 성능</TabsTrigger>
+          <TabsTrigger value="details" className="text-xs sm:text-sm">상세 분석</TabsTrigger>
+          <TabsTrigger value="alerts" className="text-xs sm:text-sm">알림 & 로그</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -1356,7 +1356,7 @@ export default function MonitoringPage() {
                 <CardDescription>실행 시간 기준 상위 성능 문제 SQL 목록</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="rounded-md border">
+                <div className="rounded-md border overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/50">
@@ -1490,7 +1490,7 @@ export default function MonitoringPage() {
                       )}
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="overflow-x-auto">
                     {loading ? (
                       <div className="flex items-center justify-center h-96">
                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -1704,7 +1704,7 @@ export default function MonitoringPage() {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="overflow-x-auto">
                   {loading || trendLoading ? (
                     <div className="flex items-center justify-center h-96">
                       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -1740,7 +1740,7 @@ export default function MonitoringPage() {
                     CPU, 메모리, I/O 사용량 (카테고리별)
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="overflow-x-auto">
                   {loading ? (
                     <div className="flex items-center justify-center h-96">
                       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>

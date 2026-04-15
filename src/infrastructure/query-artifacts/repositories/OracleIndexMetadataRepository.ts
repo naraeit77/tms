@@ -41,12 +41,28 @@ export class OracleIndexMetadataRepository implements IIndexMetadataRepository {
       return result
     }
 
+    // If owner is empty, use the connection username as default schema
+    let resolvedOwner = owner || config.username
+
     // Build placeholders for table names
     const tableBinds: Record<string, string> = {}
     const tablePlaceholders = tableNames.map((name, i) => {
       tableBinds[`table${i}`] = name.toUpperCase()
       return `:table${i}`
     }).join(', ')
+
+    // First, try to resolve the actual table owner if not explicitly provided
+    // This handles cases where connection user differs from table owner (e.g., connecting as SYSTEM but tables owned by SH)
+    if (!owner) {
+      try {
+        const actualOwner = await this.resolveTableOwner(config, tableNames, resolvedOwner)
+        if (actualOwner) {
+          resolvedOwner = actualOwner
+        }
+      } catch {
+        // Continue with connection username
+      }
+    }
 
     const query = `
       SELECT
@@ -68,7 +84,7 @@ export class OracleIndexMetadataRepository implements IIndexMetadataRepository {
       ORDER BY i.index_name, ic.column_position
     `
 
-    const binds = { ...tableBinds, owner: owner.toUpperCase() }
+    const binds = { ...tableBinds, owner: resolvedOwner.toUpperCase() }
 
     try {
       const queryResult = await executeQuery<Record<string, unknown>>(config, query, binds)
@@ -86,6 +102,62 @@ export class OracleIndexMetadataRepository implements IIndexMetadataRepository {
     }
 
     return result
+  }
+
+  /**
+   * Resolve the actual table owner when not explicitly provided.
+   * Queries ALL_TABLES to find which schema owns the given tables.
+   * Returns the owner if all tables belong to the same schema,
+   * or falls back to the default owner.
+   */
+  private async resolveTableOwner(
+    config: OracleConnectionConfig,
+    tableNames: string[],
+    defaultOwner: string
+  ): Promise<string | null> {
+    const tableBinds: Record<string, string> = {}
+    const tablePlaceholders = tableNames.map((name, i) => {
+      tableBinds[`t${i}`] = name.toUpperCase()
+      return `:t${i}`
+    }).join(', ')
+
+    // First check if tables exist under the default owner (connection username)
+    const checkQuery = `
+      SELECT COUNT(*) as CNT
+      FROM all_tables
+      WHERE table_name IN (${tablePlaceholders})
+      AND owner = :defaultOwner
+    `
+    const checkResult = await executeQuery<{ CNT: number }>(
+      config,
+      checkQuery,
+      { ...tableBinds, defaultOwner: defaultOwner.toUpperCase() }
+    )
+
+    if (checkResult.rows && checkResult.rows.length > 0 && checkResult.rows[0].CNT > 0) {
+      return null // Tables found under default owner, no need to resolve
+    }
+
+    // Tables not found under default owner - search ALL_TABLES for actual owner
+    const resolveQuery = `
+      SELECT DISTINCT owner as OWNER
+      FROM all_tables
+      WHERE table_name IN (${tablePlaceholders})
+      AND owner NOT IN ('SYS', 'SYSTEM', 'MDSYS', 'CTXSYS', 'XDB', 'WMSYS', 'DBSNMP', 'ORDSYS')
+    `
+    const resolveResult = await executeQuery<{ OWNER: string }>(
+      config,
+      resolveQuery,
+      tableBinds
+    )
+
+    if (resolveResult.rows && resolveResult.rows.length === 1) {
+      // All tables belong to a single non-system schema
+      console.log(`[OracleIndexMetadataRepository] Resolved table owner: ${resolveResult.rows[0].OWNER} (was: ${defaultOwner})`)
+      return resolveResult.rows[0].OWNER
+    }
+
+    return null // Multiple schemas or not found, use default
   }
 
   /**
@@ -143,6 +215,7 @@ export class OracleIndexMetadataRepository implements IIndexMetadataRepository {
 
   /**
    * Get row count for a table
+   * If owner is empty, resolves the actual owner first
    */
   async getTableRowCount(
     connectionId: string,
@@ -150,6 +223,17 @@ export class OracleIndexMetadataRepository implements IIndexMetadataRepository {
     tableName: string
   ): Promise<number> {
     const config = await this.connectionConfigResolver(connectionId)
+    let resolvedOwner = owner || config.username
+
+    // Resolve actual owner if not explicitly provided
+    if (!owner) {
+      try {
+        const actualOwner = await this.resolveTableOwner(config, [tableName], resolvedOwner)
+        if (actualOwner) resolvedOwner = actualOwner
+      } catch {
+        // Continue with default
+      }
+    }
 
     const query = `
       SELECT num_rows as NUM_ROWS
@@ -160,7 +244,7 @@ export class OracleIndexMetadataRepository implements IIndexMetadataRepository {
 
     const binds = {
       tableName: tableName.toUpperCase(),
-      owner: owner.toUpperCase(),
+      owner: resolvedOwner.toUpperCase(),
     }
 
     try {
