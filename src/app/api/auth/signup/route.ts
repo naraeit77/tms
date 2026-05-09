@@ -60,7 +60,8 @@ export async function POST(request: NextRequest) {
       .where(eq(userRoles.name, 'viewer'))
       .limit(1);
 
-    // 프로필 생성
+    // 프로필 생성 — 신규 가입자는 30일 trial 자동 부여
+    const trialExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     await db.insert(userProfiles).values({
       id: newUser.id,
       email: newUser.email,
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
       roleId: viewerRole?.id || null,
       preferences: {},
       isActive: true,
+      expiresAt: trialExpiresAt,
     });
 
     // 감사 로그 기록

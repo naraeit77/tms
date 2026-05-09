@@ -16,7 +16,8 @@ import { users } from './users';
 
 export const oracleConnections = pgTable('oracle_connections', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-  name: varchar('name', { length: 100 }).notNull().unique(),
+  // name 은 소유자별로 unique (하단 uq_oracle_connections_user_name)
+  name: varchar('name', { length: 100 }).notNull(),
   description: text('description'),
   host: varchar('host', { length: 255 }).notNull(),
   port: integer('port').default(1521),
@@ -36,13 +37,16 @@ export const oracleConnections = pgTable('oracle_connections', {
   lastHealthCheckAt: timestamp('last_health_check_at', { withTimezone: true }),
   healthStatus: varchar('health_status', { length: 20 }).default('UNKNOWN'),
   metadata: jsonb('metadata').default({}),
-  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'cascade' }),
+  // RLS 격리: 소유자가 반드시 존재해야 함
+  createdBy: uuid('created_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, (table) => [
   index('idx_oracle_connections_active').on(table.isActive),
   index('idx_oracle_connections_default').on(table.isDefault),
   index('idx_oracle_connections_health').on(table.healthStatus),
+  index('idx_oracle_connections_created_by').on(table.createdBy),
+  unique('uq_oracle_connections_user_name').on(table.createdBy, table.name),
 ]);
 
 export const systemSettings = pgTable('system_settings', {
@@ -73,13 +77,15 @@ export const schedulerJobs = pgTable('scheduler_jobs', {
   nextRunAt: timestamp('next_run_at', { withTimezone: true }),
   runCount: integer('run_count').default(0),
   failCount: integer('fail_count').default(0),
-  createdBy: uuid('created_by').references(() => users.id),
+  // RLS 격리: 소유자가 반드시 존재해야 함
+  createdBy: uuid('created_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, (table) => [
   index('idx_scheduler_jobs_status').on(table.status),
   index('idx_scheduler_jobs_type').on(table.jobType),
   index('idx_scheduler_jobs_next_run').on(table.nextRunAt),
+  index('idx_scheduler_jobs_created_by').on(table.createdBy),
 ]);
 
 export const auditLogs = pgTable('audit_logs', {

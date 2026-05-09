@@ -43,11 +43,14 @@ export const userProfiles = pgTable('user_profiles', {
   preferences: jsonb('preferences').default({}),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   isActive: boolean('is_active').default(true),
+  // 사용기한. NULL = 무제한. <= now() 이면 로그인 차단.
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, (table) => [
   index('idx_user_profiles_email').on(table.email),
   index('idx_user_profiles_role').on(table.roleId),
+  index('idx_user_profiles_expires_at').on(table.expiresAt),
 ]);
 
 export const userSettings = pgTable('user_settings', {

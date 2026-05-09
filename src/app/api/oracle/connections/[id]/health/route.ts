@@ -1,78 +1,52 @@
 /**
  * Oracle Connection Health Check API
- * GET: 특정 연결의 Health Check 수행
+ * GET: 본인 소유 연결의 Health Check (RLS 적용)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { db } from '@/db';
 import { oracleConnections } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { healthCheck } from '@/lib/oracle';
 import { getOracleConfig, invalidateConnectionCache } from '@/lib/oracle/utils';
+import { withSessionContext, UnauthorizedError } from '@/db/with-user';
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const { id } = await params;
 
-    // 캐싱된 연결 설정 가져오기
-    const config = await getOracleConfig(id);
+    const result = await withSessionContext(async (tx, userId) => {
+      // RLS 컨텍스트 안에서 캐시/조회 — 다른 사용자 연결이면 not found
+      const config = await getOracleConfig(id, userId);
+      const healthCheckResult = await healthCheck(config);
+      const healthStatus = healthCheckResult.isHealthy ? 'HEALTHY' : 'ERROR';
 
-    console.log('Performing health check for connection:', {
-      name: config.name,
-      host: config.host,
-      port: config.port,
-      connectionType: config.connectionType,
+      const updateData: Record<string, unknown> = {
+        lastHealthCheckAt: new Date(),
+        healthStatus,
+      };
+      if (healthCheckResult.isHealthy) {
+        updateData.lastConnectedAt = new Date();
+        updateData.oracleVersion = healthCheckResult.version;
+        updateData.oracleEdition = healthCheckResult.edition || null;
+      }
+
+      await tx.update(oracleConnections).set(updateData).where(eq(oracleConnections.id, id));
+      return healthCheckResult;
     });
 
-    const healthCheckResult = await healthCheck(config);
-
-    console.log('Health check result:', healthCheckResult);
-
-    // 결과 저장
-    const healthStatus = healthCheckResult.isHealthy ? 'HEALTHY' : 'ERROR';
-
-    // Health Check 업데이트 (버전 및 에디션 정보 포함)
-    const updateData: Record<string, any> = {
-      lastHealthCheckAt: new Date(),
-      healthStatus: healthStatus,
-    };
-
-    if (healthCheckResult.isHealthy) {
-      updateData.lastConnectedAt = new Date();
-      updateData.oracleVersion = healthCheckResult.version;
-      updateData.oracleEdition = healthCheckResult.edition || null;
-    }
-
-    try {
-      await db
-        .update(oracleConnections)
-        .set(updateData)
-        .where(eq(oracleConnections.id, id));
-
-      // 연결 정보가 업데이트되었으므로 캐시 무효화
-      invalidateConnectionCache(id);
-    } catch (updateError) {
-      console.error('Failed to update health check status:', updateError);
-    }
-
-    return NextResponse.json({
-      data: healthCheckResult,
-    });
+    invalidateConnectionCache(id);
+    return NextResponse.json({ data: result });
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (error instanceof Error && error.message.includes('not found')) {
+      return NextResponse.json({ error: 'Connection not found' }, { status: 404 });
+    }
     console.error('Health check error:', error);
     return NextResponse.json(
-      {
-        error: 'Health check failed',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
+      { error: 'Health check failed', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 },
     );
   }
 }

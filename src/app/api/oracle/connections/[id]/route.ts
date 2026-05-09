@@ -1,81 +1,59 @@
 /**
  * Oracle Connection Management API
- * DELETE: 특정 연결 삭제
+ * DELETE: 본인 소유 연결 삭제 (RLS 적용 — 다른 사용자 연결 시도 시 404)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { db } from '@/db';
-import { oracleConnections, auditLogs, userProfiles } from '@/db/schema';
+import { oracleConnections, auditLogs } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { invalidateConnectionCache } from '@/lib/oracle/utils';
+import { withSessionContext, UnauthorizedError } from '@/db/with-user';
 
 export async function DELETE(
-  request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    console.log('[DELETE] Session:', session?.user?.email);
-
-    if (!session?.user?.email) {
-      console.error('[DELETE] Unauthorized - No session');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const { id } = await context.params;
-    console.log('[DELETE] Deleting connection:', id);
-
     if (!id) {
       return NextResponse.json({ error: 'Connection ID is required' }, { status: 400 });
     }
 
-    // 연결 정보 조회
-    const connectionResult = await db
-      .select({ id: oracleConnections.id, name: oracleConnections.name })
-      .from(oracleConnections)
-      .where(eq(oracleConnections.id, id))
-      .limit(1);
+    const result = await withSessionContext(async (tx, userId) => {
+      const [connection] = await tx
+        .select({ id: oracleConnections.id, name: oracleConnections.name })
+        .from(oracleConnections)
+        .where(eq(oracleConnections.id, id))
+        .limit(1);
 
-    if (connectionResult.length === 0) {
-      console.error('[DELETE] Connection not found:', id);
-      return NextResponse.json({ error: 'Connection not found' }, { status: 404 });
-    }
+      if (!connection) {
+        return { ok: false as const };
+      }
 
-    const connection = connectionResult[0];
-    console.log('[DELETE] Found connection:', connection.name);
+      await tx.delete(oracleConnections).where(eq(oracleConnections.id, id));
 
-    // 연결 삭제
-    await db
-      .delete(oracleConnections)
-      .where(eq(oracleConnections.id, id));
-
-    // 감사 로그 기록
-    const userProfileResult = await db
-      .select({ id: userProfiles.id })
-      .from(userProfiles)
-      .where(eq(userProfiles.email, session.user.email))
-      .limit(1);
-
-    if (userProfileResult.length > 0) {
-      await db.insert(auditLogs).values({
-        userId: userProfileResult[0].id,
+      await tx.insert(auditLogs).values({
+        userId,
         action: 'DELETE',
         resourceType: 'oracle_connection',
         resourceId: id,
-        details: {
-          name: connection.name,
-        },
+        details: { name: connection.name },
       });
+
+      return { ok: true as const, name: connection.name };
+    });
+
+    if (!result.ok) {
+      return NextResponse.json({ error: 'Connection not found' }, { status: 404 });
     }
 
-    // 연결 캐시 무효화
     invalidateConnectionCache(id);
-
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    console.error('API Error:', error);
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    console.error('Connection delete error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

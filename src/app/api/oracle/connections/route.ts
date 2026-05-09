@@ -1,95 +1,75 @@
 /**
  * Oracle Connections API
- * GET: 모든 연결 조회
- * POST: 새 연결 생성
+ * GET: 본인 소유 연결 목록 조회 (RLS 적용)
+ * POST: 새 연결 생성 (created_by = 세션 user)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { db } from '@/db';
-import { oracleConnections, auditLogs, userProfiles } from '@/db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { oracleConnections, auditLogs } from '@/db/schema';
+import { desc } from 'drizzle-orm';
 import { encrypt } from '@/lib/crypto';
 import { healthCheck, type OracleConnectionConfig } from '@/lib/oracle';
 import { invalidateConnectionCache } from '@/lib/oracle/utils';
+import { withSessionContext, UnauthorizedError } from '@/db/with-user';
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const connections = await withSessionContext(async (tx) =>
+      tx
+        .select({
+          id: oracleConnections.id,
+          name: oracleConnections.name,
+          description: oracleConnections.description,
+          host: oracleConnections.host,
+          port: oracleConnections.port,
+          service_name: oracleConnections.serviceName,
+          sid: oracleConnections.sid,
+          username: oracleConnections.username,
+          connection_type: oracleConnections.connectionType,
+          oracle_version: oracleConnections.oracleVersion,
+          oracle_edition: oracleConnections.oracleEdition,
+          is_active: oracleConnections.isActive,
+          is_default: oracleConnections.isDefault,
+          last_connected_at: oracleConnections.lastConnectedAt,
+          last_health_check_at: oracleConnections.lastHealthCheckAt,
+          health_status: oracleConnections.healthStatus,
+          created_at: oracleConnections.createdAt,
+          updated_at: oracleConnections.updatedAt,
+        })
+        .from(oracleConnections)
+        .orderBy(desc(oracleConnections.createdAt)),
+    );
 
-    // Oracle 연결 목록 조회
-    const connections = await db
-      .select({
-        id: oracleConnections.id,
-        name: oracleConnections.name,
-        description: oracleConnections.description,
-        host: oracleConnections.host,
-        port: oracleConnections.port,
-        service_name: oracleConnections.serviceName,
-        sid: oracleConnections.sid,
-        username: oracleConnections.username,
-        connection_type: oracleConnections.connectionType,
-        oracle_version: oracleConnections.oracleVersion,
-        oracle_edition: oracleConnections.oracleEdition,
-        is_active: oracleConnections.isActive,
-        is_default: oracleConnections.isDefault,
-        last_connected_at: oracleConnections.lastConnectedAt,
-        last_health_check_at: oracleConnections.lastHealthCheckAt,
-        health_status: oracleConnections.healthStatus,
-        created_at: oracleConnections.createdAt,
-        updated_at: oracleConnections.updatedAt,
-      })
-      .from(oracleConnections)
-      .orderBy(desc(oracleConnections.createdAt));
-
-    return NextResponse.json(connections || [], {
-      headers: {
-        'Cache-Control': 'private, s-maxage=60, stale-while-revalidate=120',
-      },
+    return NextResponse.json(connections, {
+      headers: { 'Cache-Control': 'private, no-store' },
     });
   } catch (error) {
-    console.error('Error fetching connections:', {
-      message: error instanceof Error ? error.message : 'Unknown error',
-      details: error instanceof Error ? error.stack : String(error),
-      code: (error as any)?.code || '',
-    });
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    console.error('Error fetching connections:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const body = await request.json();
 
-    // 입력 검증
     if (!body.name || !body.host || !body.port || !body.username || !body.password) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
-
     if (body.connection_type === 'SERVICE_NAME' && !body.service_name) {
       return NextResponse.json({ error: 'Service name is required' }, { status: 400 });
     }
-
     if (body.connection_type === 'SID' && !body.sid) {
       return NextResponse.json({ error: 'SID is required' }, { status: 400 });
     }
 
-    // 비밀번호 암호화
     const encryptedPassword = encrypt(body.password);
-
-    // privilege 값 정규화 (NORMAL이면 저장하지 않음)
     const privilege = body.privilege === 'NORMAL' ? undefined : body.privilege;
 
-    // 연결 테스트
+    // 연결 테스트 (DB 저장 전, RLS와 무관)
     const testConfig: OracleConnectionConfig = {
       id: '',
       name: body.name,
@@ -100,35 +80,20 @@ export async function POST(request: NextRequest) {
       username: body.username,
       password: body.password,
       connectionType: body.connection_type,
-      privilege: privilege,
+      privilege,
     };
 
-    try {
-      const healthCheckResult = await healthCheck(testConfig);
+    const healthCheckResult = await healthCheck(testConfig);
+    if (!healthCheckResult.isHealthy) {
+      return NextResponse.json(
+        { error: 'Connection test failed', details: healthCheckResult.error },
+        { status: 400 },
+      );
+    }
 
-      if (!healthCheckResult.isHealthy) {
-        return NextResponse.json(
-          { error: 'Connection test failed', details: healthCheckResult.error },
-          { status: 400 }
-        );
-      }
-
-      // 사용자 프로필 조회
-      let userId: string | null = null;
-
-      const userProfileResult = await db
-        .select({ id: userProfiles.id })
-        .from(userProfiles)
-        .where(eq(userProfiles.email, session.user.email))
-        .limit(1);
-
-      if (userProfileResult.length > 0) {
-        userId = userProfileResult[0].id;
-      }
-
-      // 연결 정보 저장
+    const responseData = await withSessionContext(async (tx, userId) => {
       const now = new Date();
-      const [connection] = await db
+      const [connection] = await tx
         .insert(oracleConnections)
         .values({
           name: body.name,
@@ -154,8 +119,15 @@ export async function POST(request: NextRequest) {
         })
         .returning();
 
-      // snake_case response for frontend compatibility
-      const responseData = {
+      await tx.insert(auditLogs).values({
+        userId,
+        action: 'CREATE',
+        resourceType: 'oracle_connection',
+        resourceId: connection.id,
+        details: { name: body.name, host: body.host },
+      });
+
+      return {
         id: connection.id,
         name: connection.name,
         description: connection.description,
@@ -181,34 +153,25 @@ export async function POST(request: NextRequest) {
         created_at: connection.createdAt,
         updated_at: connection.updatedAt,
       };
+    });
 
-      // 감사 로그 기록 (userId가 있을 때만)
-      if (userId) {
-        await db.insert(auditLogs).values({
-          userId: userId,
-          action: 'CREATE',
-          resourceType: 'oracle_connection',
-          resourceId: connection.id,
-          details: {
-            name: body.name,
-            host: body.host,
-          },
-        });
-      }
-
-      // 연결 캐시 무효화
-      invalidateConnectionCache(connection.id);
-
-      return NextResponse.json({ data: responseData }, { status: 201 });
-    } catch (error) {
-      console.error('Connection test error:', error);
+    invalidateConnectionCache(responseData.id);
+    return NextResponse.json({ data: responseData }, { status: 201 });
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    // PG unique violation: 본인 namespace 내 동일 name
+    if ((error as { code?: string })?.code === '23505') {
       return NextResponse.json(
-        { error: 'Connection test failed', details: error instanceof Error ? error.message : 'Unknown error' },
-        { status: 400 }
+        { error: '같은 이름의 연결이 이미 존재합니다.' },
+        { status: 409 },
       );
     }
-  } catch (error) {
-    console.error('API Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('Connection create error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 },
+    );
   }
 }

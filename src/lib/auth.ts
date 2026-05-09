@@ -43,6 +43,7 @@ export const authOptions: NextAuthOptions = {
             fullName: userProfiles.fullName,
             roleId: userProfiles.roleId,
             isActive: userProfiles.isActive,
+            expiresAt: userProfiles.expiresAt,
             roleName: userRoles.name,
             roleDisplayName: userRoles.displayName,
             permissions: userRoles.permissions,
@@ -80,6 +81,10 @@ export const authOptions: NextAuthOptions = {
 
         if (!profile.isActive) {
           throw new Error("비활성화된 계정입니다. 관리자에게 문의하세요.");
+        }
+
+        if (profile.expiresAt && profile.expiresAt.getTime() <= Date.now()) {
+          throw new Error("사용기한이 만료되었습니다. 관리자에게 문의하세요.");
         }
 
         // 마지막 로그인 시간 업데이트
