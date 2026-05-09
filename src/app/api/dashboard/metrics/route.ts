@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/db';
+import { withUserContext } from '@/db/with-user';
 import { oracleConnections, sqlStatistics } from '@/db/schema';
 import { eq, and, ne, sql } from 'drizzle-orm';
 import { executeQuery } from '@/lib/oracle';
@@ -127,15 +128,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 전체 연결의 요약 메트릭 (병렬 처리로 최적화)
+    // 전체 연결의 요약 메트릭 (RLS: 본인 소유 연결만)
     const [connectionsData, sqlStatsData] = await Promise.all([
-      db
-        .select({
-          id: oracleConnections.id,
-          is_active: oracleConnections.isActive,
-          health_status: oracleConnections.healthStatus,
-        })
-        .from(oracleConnections),
+      withUserContext(session.user.id, async (tx) =>
+        tx
+          .select({
+            id: oracleConnections.id,
+            is_active: oracleConnections.isActive,
+            health_status: oracleConnections.healthStatus,
+          })
+          .from(oracleConnections),
+      ),
       db
         .select({
           id: sqlStatistics.id,
@@ -146,7 +149,7 @@ export async function GET(request: NextRequest) {
           buffer_gets: sqlStatistics.bufferGets,
         })
         .from(sqlStatistics)
-        .limit(10000), // 성능 최적화: 제한된 수만 조회
+        .limit(10000),
     ]);
 
     const connections = connectionsData || [];

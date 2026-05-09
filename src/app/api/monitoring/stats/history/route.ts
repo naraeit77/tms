@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/db';
+import { withUserContext } from '@/db/with-user';
 import { oracleConnections, statsCollectionHistory } from '@/db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 
@@ -25,17 +26,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Connection ID required' }, { status: 400 });
     }
 
-    // Verify connection ownership
-    const connections = await db
-      .select({ id: oracleConnections.id })
-      .from(oracleConnections)
-      .where(
-        and(
-          eq(oracleConnections.id, connectionId),
-          eq(oracleConnections.isActive, true)
+    // Verify connection ownership (RLS)
+    const connections = await withUserContext(session.user.id, async (tx) =>
+      tx
+        .select({ id: oracleConnections.id })
+        .from(oracleConnections)
+        .where(
+          and(
+            eq(oracleConnections.id, connectionId),
+            eq(oracleConnections.isActive, true),
+          ),
         )
-      )
-      .limit(1);
+        .limit(1),
+    );
 
     if (connections.length === 0) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 });

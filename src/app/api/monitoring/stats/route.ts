@@ -22,15 +22,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Oracle 연결 정보 조회
-    const connections = await db
-      .select({
-        id: oracleConnections.id,
-        isActive: oracleConnections.isActive,
-        healthStatus: oracleConnections.healthStatus,
-      })
-      .from(oracleConnections)
-      .where(eq(oracleConnections.isActive, true));
+    // Oracle 연결 정보 조회 (RLS: 본인 소유)
+    const { withUserContext } = await import('@/db/with-user');
+    const connections = await withUserContext(session.user.id, async (tx) =>
+      tx
+        .select({
+          id: oracleConnections.id,
+          isActive: oracleConnections.isActive,
+          healthStatus: oracleConnections.healthStatus,
+        })
+        .from(oracleConnections)
+        .where(eq(oracleConnections.isActive, true)),
+    );
 
     const activeConnections = connections || [];
     const healthyConnections = activeConnections.filter((c) => c.healthStatus === 'HEALTHY');

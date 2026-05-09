@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeQuery } from '@/lib/oracle/client';
-import { db } from '@/db';
+import { withSessionContext, UnauthorizedError } from '@/db/with-user';
 import { oracleConnections } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { decrypt } from '@/lib/crypto';
@@ -25,12 +25,21 @@ export async function GET(request: NextRequest) {
 
     console.log('[Columns API] Fetching columns for connection:', connectionId, 'schema:', schemaName, 'table:', tableName);
 
-    // Fetch connection details from DB
-    const [connection] = await db
-      .select()
-      .from(oracleConnections)
-      .where(eq(oracleConnections.id, connectionId))
-      .limit(1);
+    // Fetch connection details from DB (RLS)
+    let connection;
+    try {
+      connection = await withSessionContext(async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(oracleConnections)
+          .where(eq(oracleConnections.id, connectionId))
+          .limit(1);
+        return row;
+      });
+    } catch (e) {
+      if (e instanceof UnauthorizedError) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      throw e;
+    }
 
     if (!connection) {
       console.error('[Columns API] Connection not found:', connectionId);

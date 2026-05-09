@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { db } from '@/db';
+import { withUserContext } from '@/db/with-user';
 import { oracleConnections } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { executeQuery } from '@/lib/oracle/client';
@@ -41,16 +41,19 @@ export async function GET(request: NextRequest) {
       userId: session.user.id,
     });
 
-    const [connection] = await db
-      .select()
-      .from(oracleConnections)
-      .where(
-        and(
-          eq(oracleConnections.id, connectionId),
-          eq(oracleConnections.isActive, true)
+    const connection = await withUserContext(session.user.id, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(oracleConnections)
+        .where(
+          and(
+            eq(oracleConnections.id, connectionId),
+            eq(oracleConnections.isActive, true),
+          ),
         )
-      )
-      .limit(1);
+        .limit(1);
+      return row;
+    });
 
     if (!connection) {
       console.error('Connection fetch error:', {

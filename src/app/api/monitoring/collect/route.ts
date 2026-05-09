@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/db';
+import { withUserContext } from '@/db/with-user';
 import { oracleConnections, systemSettings, sqlStatistics, auditLogs } from '@/db/schema';
 import { eq, and, desc, sql, ne, inArray } from 'drizzle-orm';
 import { decrypt } from '@/lib/crypto';
@@ -31,19 +32,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'connection_id is required' }, { status: 400 });
     }
 
-    // 연결 정보 조회
-    const connections = await db
-      .select()
-      .from(oracleConnections)
-      .where(
-        and(
-          eq(oracleConnections.id, connection_id),
-          eq(oracleConnections.isActive, true)
+    // 연결 정보 조회 (RLS: 본인 소유 연결만 조회됨)
+    const connection = await withUserContext(userId, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(oracleConnections)
+        .where(
+          and(
+            eq(oracleConnections.id, connection_id),
+            eq(oracleConnections.isActive, true),
+          ),
         )
-      )
-      .limit(1);
+        .limit(1);
+      return row;
+    });
 
-    const connection = connections[0];
     if (!connection) {
       return NextResponse.json({ error: 'Connection not found or inactive' }, { status: 404 });
     }

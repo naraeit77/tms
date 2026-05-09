@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { db } from '@/db';
+import { withUserContext } from '@/db/with-user';
 import { oracleConnections } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { executeQuery } from '@/lib/oracle/client';
@@ -32,17 +32,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // DB에서 연결 정보 조회
-    const [connection] = await db
-      .select()
-      .from(oracleConnections)
-      .where(
-        and(
-          eq(oracleConnections.id, connection_id),
-          eq(oracleConnections.isActive, true)
+    // DB에서 연결 정보 조회 (RLS: 본인 소유)
+    const connection = await withUserContext(session.user.id, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(oracleConnections)
+        .where(
+          and(
+            eq(oracleConnections.id, connection_id),
+            eq(oracleConnections.isActive, true),
+          ),
         )
-      )
-      .limit(1);
+        .limit(1);
+      return row;
+    });
 
     if (!connection) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 });

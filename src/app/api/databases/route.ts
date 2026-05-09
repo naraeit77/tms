@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { db } from '@/db';
+import { withUserContext } from '@/db/with-user';
 import { oracleConnections } from '@/db/schema';
 import { eq, desc } from 'drizzle-orm';
 
@@ -20,24 +20,26 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get all active database connections
-    const databases = await db
-      .select({
-        id: oracleConnections.id,
-        name: oracleConnections.name,
-        host: oracleConnections.host,
-        port: oracleConnections.port,
-        service_name: oracleConnections.serviceName,
-        sid: oracleConnections.sid,
-        username: oracleConnections.username,
-        oracle_version: oracleConnections.oracleVersion,
-        is_active: oracleConnections.isActive,
-        health_status: oracleConnections.healthStatus,
-        created_at: oracleConnections.createdAt,
-      })
-      .from(oracleConnections)
-      .where(eq(oracleConnections.isActive, true))
-      .orderBy(desc(oracleConnections.createdAt));
+    // Get current user's active database connections (RLS)
+    const databases = await withUserContext(session.user.id, async (tx) =>
+      tx
+        .select({
+          id: oracleConnections.id,
+          name: oracleConnections.name,
+          host: oracleConnections.host,
+          port: oracleConnections.port,
+          service_name: oracleConnections.serviceName,
+          sid: oracleConnections.sid,
+          username: oracleConnections.username,
+          oracle_version: oracleConnections.oracleVersion,
+          is_active: oracleConnections.isActive,
+          health_status: oracleConnections.healthStatus,
+          created_at: oracleConnections.createdAt,
+        })
+        .from(oracleConnections)
+        .where(eq(oracleConnections.isActive, true))
+        .orderBy(desc(oracleConnections.createdAt)),
+    );
 
     return NextResponse.json({
       success: true,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/db';
+import { withUserContext } from '@/db/with-user';
 import { reports, reportActivities } from '@/db/schema';
 import { eq, and, desc, ilike, or, gte, lte, arrayOverlaps, sql, count } from 'drizzle-orm';
 import { oracleConnections } from '@/db/schema';
@@ -180,14 +181,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate Oracle connections exist (if databases specified)
+    // Validate Oracle connections exist (if databases specified) — RLS: 본인 소유만 인정
     if (config.databases && config.databases.length > 0) {
-      const connections = await db
-        .select({ id: oracleConnections.id })
-        .from(oracleConnections)
-        .where(
-          sql`${oracleConnections.id} IN ${config.databases}`
-        );
+      const connections = await withUserContext(userId, async (tx) =>
+        tx
+          .select({ id: oracleConnections.id })
+          .from(oracleConnections)
+          .where(sql`${oracleConnections.id} IN ${config.databases}`),
+      );
 
       if (!connections || connections.length !== config.databases.length) {
         return NextResponse.json(

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/db';
+import { withUserContext } from '@/db/with-user';
 import { oracleConnections, sqlStatistics } from '@/db/schema';
 import { eq, and, gte, asc } from 'drizzle-orm';
 
@@ -138,16 +139,17 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Get database connection to verify ownership
-    const [dbConnection] = await db
-      .select()
-      .from(oracleConnections)
-      .where(and(
-        eq(oracleConnections.id, databaseId),
-        eq(oracleConnections.createdBy, userId),
-        eq(oracleConnections.isActive, true)
-      ))
-      .limit(1);
+    // Get database connection to verify ownership (RLS already enforces created_by = userId)
+    const [dbConnection] = await withUserContext(userId, async (tx) =>
+      tx
+        .select()
+        .from(oracleConnections)
+        .where(and(
+          eq(oracleConnections.id, databaseId),
+          eq(oracleConnections.isActive, true),
+        ))
+        .limit(1),
+    );
 
     if (!dbConnection) {
       return NextResponse.json({
