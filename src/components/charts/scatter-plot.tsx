@@ -140,6 +140,16 @@ export function ScatterPlot({
   const [hoveredPoint, setHoveredPoint] = useState<PerformancePoint | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [selectedPoints, setSelectedPoints] = useState<PerformancePoint[]>([]);
+  const [dragInfo, setDragInfo] = useState<{ count: number; x: number; y: number } | null>(null);
+
+  // 콜백을 ref에 보관하여 effect 재실행 방지
+  const onPointClickRef = useRef(onPointClick);
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  useEffect(() => { onPointClickRef.current = onPointClick; }, [onPointClick]);
+  useEffect(() => { onSelectionChangeRef.current = onSelectionChange; }, [onSelectionChange]);
+
+  // 선택 상태를 ref로도 보관 (리렌더 없이 D3에서 참조)
+  const selectedIdsRef = useRef<Set<string>>(new Set());
 
   // 스케일 참조 저장
   const scalesRef = useRef<{
@@ -165,14 +175,10 @@ export function ScatterPlot({
 
   // 선택 해제
   const clearSelection = useCallback(() => {
+    selectedIdsRef.current = new Set();
     setSelectedPoints([]);
-    onSelectionChange?.([]);
-
-    // 선택 박스 제거
-    if (svgRef.current) {
-      d3.select(svgRef.current).selectAll('.selection-rect').remove();
-    }
-  }, [onSelectionChange]);
+    onSelectionChangeRef.current?.([]);
+  }, []);
 
   useEffect(() => {
     if (!svgRef.current || !filteredData.length) return;
@@ -354,6 +360,7 @@ export function ScatterPlot({
     let startY = 0;
     let isDragging = false;
     let hasDragged = false; // 실제로 드래그가 발생했는지 추적
+    const DRAG_THRESHOLD = 4; // 드래그 인식 최소 이동 거리(px)
 
     // 데이터 포인트 그룹 (먼저 추가)
     const pointsGroup = g.append('g').attr('class', 'points-group');
@@ -363,8 +370,9 @@ export function ScatterPlot({
       .attr('class', 'selection-rect')
       .attr('fill', 'rgba(59, 130, 246, 0.15)')
       .attr('stroke', '#3b82f6')
-      .attr('stroke-width', 1)
+      .attr('stroke-width', 1.5)
       .attr('stroke-dasharray', '4,2')
+      .attr('rx', 2)
       .style('display', 'none')
       .style('pointer-events', 'none'); // 이벤트 무시
 
@@ -410,145 +418,212 @@ export function ScatterPlot({
       .attr('fill', 'transparent')
       .style('cursor', 'crosshair');
 
-    // 드래그 이벤트 핸들러 (dragArea에 연결)
-    dragArea
-      .on('mousedown', function(event) {
-        event.preventDefault();
-        isDragging = true;
-        hasDragged = false;
-        const [x, y] = d3.pointer(event);
-        startX = x;
-        startY = y;
+    // 화면좌표(clientX/Y)를 차트 내부좌표로 변환
+    const clientToChart = (clientX: number, clientY: number): [number, number] => {
+      const svgRect = svgRef.current!.getBoundingClientRect();
+      return [
+        clientX - svgRect.left - margin.left,
+        clientY - svgRect.top - margin.top,
+      ];
+    };
 
-        selectionRect
-          .attr('x', x)
-          .attr('y', y)
-          .attr('width', 0)
-          .attr('height', 0)
-          .style('display', 'block');
-      })
-      .on('mousemove', function(event) {
-        const [x, y] = d3.pointer(event);
+    // 드래그 중 선택 박스 내 포인트 수 계산 (실시간 표시용)
+    const countInRect = (rx: number, ry: number, rw: number, rh: number) => {
+      let count = 0;
+      for (const d of processedData) {
+        const cx = xScale(d.elapsedPerExec);
+        const cy = yScale(d.bufferPerExec);
+        if (cx >= rx && cx <= rx + rw && cy >= ry && cy <= ry + rh) count++;
+      }
+      return count;
+    };
 
-        // 호버 효과 처리
-        const hoveredPt = findPointAtPosition(x, y);
-        if (hoveredPt) {
-          // 포인트 호버 효과
-          pointsGroup.selectAll('.point')
-            .attr('fill-opacity', (d: any) => d.sql_id === hoveredPt.sql_id ? 1 : 0.7)
-            .attr('stroke-width', (d: any) => d.sql_id === hoveredPt.sql_id ? 3 : 1.5);
+    // window-level 핸들러: 차트 밖에서 마우스업해도 선택 완료되도록
+    const handleWindowMove = (event: MouseEvent) => {
+      if (!isDragging) return;
+      event.preventDefault();
+      const [rawX, rawY] = clientToChart(event.clientX, event.clientY);
 
-          const rect = containerRef.current?.getBoundingClientRect();
-          if (rect) {
-            setHoveredPoint(hoveredPt);
-            setTooltipPos({
-              x: event.clientX - rect.left + 15,
-              y: event.clientY - rect.top - 10,
-            });
-          }
-          dragArea.style('cursor', 'pointer');
-        } else {
-          // 호버 해제
-          if (selectedPoints.length === 0) {
-            pointsGroup.selectAll('.point')
-              .attr('fill-opacity', 0.7)
-              .attr('stroke-width', 1.5);
-          }
-          setHoveredPoint(null);
-          dragArea.style('cursor', 'crosshair');
-        }
-
-        // 드래그 처리
-        if (!isDragging) return;
-
-        const rectX = Math.min(startX, x);
-        const rectY = Math.min(startY, y);
-        const rectWidth = Math.abs(x - startX);
-        const rectHeight = Math.abs(y - startY);
-
-        // 일정 거리 이상 이동하면 드래그로 인식
-        if (rectWidth > 5 || rectHeight > 5) {
-          hasDragged = true;
-        }
-
-        // 차트 영역 내로 제한
-        const clampedX = Math.max(0, Math.min(rectX, innerWidth));
-        const clampedY = Math.max(0, Math.min(rectY, innerHeight));
-        const clampedWidth = Math.min(rectWidth, innerWidth - clampedX);
-        const clampedHeight = Math.min(rectHeight, innerHeight - clampedY);
-
-        selectionRect
-          .attr('x', clampedX)
-          .attr('y', clampedY)
-          .attr('width', clampedWidth)
-          .attr('height', clampedHeight);
-      })
-      .on('mouseup', function(event) {
-        if (!isDragging) return;
-        isDragging = false;
-
-        const [x, y] = d3.pointer(event);
-        const rectX = Math.min(startX, x);
-        const rectY = Math.min(startY, y);
-        const rectWidth = Math.abs(x - startX);
-        const rectHeight = Math.abs(y - startY);
-
-        // 최소 드래그 크기 체크 (드래그가 아닌 클릭인 경우)
-        if (rectWidth < 10 || rectHeight < 10) {
-          selectionRect.style('display', 'none');
-
-          // 클릭 처리 - 포인트 위인지 확인
-          if (!hasDragged) {
-            const clickedPoint = findPointAtPosition(x, y);
-            if (clickedPoint && onPointClick) {
-              onPointClick(clickedPoint);
-            } else {
-              // 빈 영역 클릭 - 선택 해제
-              clearSelection();
-              pointsGroup.selectAll('.point').attr('opacity', 1);
-            }
-          }
-          hasDragged = false;
-          return;
-        }
-
-        // 선택 영역 내의 포인트 찾기
-        const selected = processedData.filter(d => {
-          const cx = xScale(d.elapsedPerExec);
-          const cy = yScale(d.bufferPerExec);
-          return cx >= rectX && cx <= rectX + rectWidth &&
-                 cy >= rectY && cy <= rectY + rectHeight;
-        });
-
-        setSelectedPoints(selected);
-        onSelectionChange?.(selected);
-
-        // 선택된 포인트 하이라이트
+      const dx = rawX - startX;
+      const dy = rawY - startY;
+      if (!hasDragged && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+        hasDragged = true;
+        // 드래그 시작 확정 → 이전 선택 하이라이트 해제
         pointsGroup.selectAll('.point')
-          .attr('opacity', (d: any) => {
-            const isSelected = selected.some(s => s.sql_id === d.sql_id);
-            return isSelected ? 1 : 0.3;
+          .attr('fill-opacity', 0.7)
+          .attr('stroke-width', 1.5);
+      }
+
+      // 차트 영역 밖으로 나가도 차트 경계로 클램프
+      const endX = Math.max(0, Math.min(rawX, innerWidth));
+      const endY = Math.max(0, Math.min(rawY, innerHeight));
+
+      const rectX = Math.min(startX, endX);
+      const rectY = Math.min(startY, endY);
+      const rectWidth = Math.abs(endX - startX);
+      const rectHeight = Math.abs(endY - startY);
+
+      selectionRect
+        .attr('x', rectX)
+        .attr('y', rectY)
+        .attr('width', rectWidth)
+        .attr('height', rectHeight);
+
+      if (hasDragged) {
+        const count = countInRect(rectX, rectY, rectWidth, rectHeight);
+        const containerRect = containerRef.current?.getBoundingClientRect();
+        if (containerRect) {
+          setDragInfo({
+            count,
+            x: event.clientX - containerRect.left + 12,
+            y: event.clientY - containerRect.top + 12,
           });
-
-        hasDragged = false;
-      })
-      .on('mouseleave', function() {
-        // 호버 해제
-        if (selectedPoints.length === 0) {
-          pointsGroup.selectAll('.point')
-            .attr('fill-opacity', 0.7)
-            .attr('stroke-width', 1.5);
         }
-        setHoveredPoint(null);
+      }
+    };
 
-        if (isDragging) {
-          isDragging = false;
-          hasDragged = false;
-          selectionRect.style('display', 'none');
+    const handleWindowUp = (event: MouseEvent) => {
+      if (!isDragging) return;
+      isDragging = false;
+      setDragInfo(null);
+
+      window.removeEventListener('mousemove', handleWindowMove);
+      window.removeEventListener('mouseup', handleWindowUp);
+
+      const [rawX, rawY] = clientToChart(event.clientX, event.clientY);
+      const endX = Math.max(0, Math.min(rawX, innerWidth));
+      const endY = Math.max(0, Math.min(rawY, innerHeight));
+      const rectX = Math.min(startX, endX);
+      const rectY = Math.min(startY, endY);
+      const rectWidth = Math.abs(endX - startX);
+      const rectHeight = Math.abs(endY - startY);
+
+      // 드래그가 아니면 클릭 처리
+      if (!hasDragged) {
+        selectionRect.style('display', 'none');
+        // SVG 내부에서 mouseup 했을 때만 클릭으로 인식
+        const svgRect = svgRef.current!.getBoundingClientRect();
+        const insideSvg =
+          event.clientX >= svgRect.left && event.clientX <= svgRect.right &&
+          event.clientY >= svgRect.top && event.clientY <= svgRect.bottom;
+
+        if (insideSvg) {
+          const clickedPoint = findPointAtPosition(endX, endY);
+          if (clickedPoint) {
+            onPointClickRef.current?.(clickedPoint);
+          } else {
+            // 빈 영역 클릭 → 선택 해제
+            selectedIdsRef.current = new Set();
+            setSelectedPoints([]);
+            onSelectionChangeRef.current?.([]);
+          }
         }
+        return;
+      }
+
+      // 선택 영역 내의 포인트 찾기 (면적 0이어도 통과 — 선/점도 허용)
+      const selected = processedData.filter(d => {
+        const cx = xScale(d.elapsedPerExec);
+        const cy = yScale(d.bufferPerExec);
+        return cx >= rectX && cx <= rectX + rectWidth &&
+               cy >= rectY && cy <= rectY + rectHeight;
       });
 
-  }, [filteredData, width, height, onPointClick, onSelectionChange, clearSelection, selectedPoints.length]);
+      // 선택 박스는 계속 표시해서 사용자가 선택 범위를 시각적으로 확인
+      selectedIdsRef.current = new Set(selected.map(s => s.sql_id));
+      setSelectedPoints(selected);
+      onSelectionChangeRef.current?.(selected);
+    };
+
+    // 드래그 영역 mousedown — window에 move/up을 붙여 차트 밖에서도 처리
+    dragArea.on('mousedown', function (event: MouseEvent) {
+      if (event.button !== 0) return; // 좌클릭만
+      event.preventDefault();
+      isDragging = true;
+      hasDragged = false;
+
+      const [x, y] = d3.pointer(event, svgRef.current);
+      startX = x - margin.left;
+      startY = y - margin.top;
+
+      // 호버 툴팁은 드래그 중 숨김
+      setHoveredPoint(null);
+
+      // 기존 선택 박스 초기화
+      selectionRect
+        .attr('x', startX)
+        .attr('y', startY)
+        .attr('width', 0)
+        .attr('height', 0)
+        .style('display', 'block');
+
+      window.addEventListener('mousemove', handleWindowMove);
+      window.addEventListener('mouseup', handleWindowUp);
+    });
+
+    // 호버 처리 (드래그 중에는 비활성)
+    dragArea.on('mousemove', function (event) {
+      if (isDragging) return;
+      const [x, y] = d3.pointer(event);
+      const hoveredPt = findPointAtPosition(x, y);
+
+      if (hoveredPt) {
+        pointsGroup.selectAll('.point')
+          .attr('stroke-width', (d: any) => d.sql_id === hoveredPt.sql_id ? 3 : 1.5);
+
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (rect) {
+          setHoveredPoint(hoveredPt);
+          setTooltipPos({
+            x: event.clientX - rect.left + 15,
+            y: event.clientY - rect.top - 10,
+          });
+        }
+        dragArea.style('cursor', 'pointer');
+      } else {
+        pointsGroup.selectAll('.point').attr('stroke-width', 1.5);
+        setHoveredPoint(null);
+        dragArea.style('cursor', 'crosshair');
+      }
+    });
+
+    dragArea.on('mouseleave', function () {
+      if (isDragging) return;
+      pointsGroup.selectAll('.point').attr('stroke-width', 1.5);
+      setHoveredPoint(null);
+    });
+
+    // 초기 선택 상태 반영 (effect 재실행 시 하이라이트 복원)
+    if (selectedIdsRef.current.size > 0) {
+      const ids = selectedIdsRef.current;
+      pointsGroup.selectAll('.point')
+        .attr('fill-opacity', (d: any) => (ids.has(d.sql_id) ? 0.9 : 0.15))
+        .attr('stroke-opacity', (d: any) => (ids.has(d.sql_id) ? 1 : 0.3));
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMove);
+      window.removeEventListener('mouseup', handleWindowUp);
+    };
+  }, [filteredData, width, height]);
+
+  // 선택 상태 변경 시 포인트 하이라이트 업데이트 (차트 재생성 없이)
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const ids = new Set(selectedPoints.map(p => p.sql_id));
+    selectedIdsRef.current = ids;
+
+    const points = d3.select(svgRef.current).selectAll<SVGCircleElement, any>('.point');
+    if (ids.size === 0) {
+      points.attr('fill-opacity', 0.7).attr('stroke-opacity', 1);
+      // 선택이 없으면 선택 박스도 숨김
+      d3.select(svgRef.current).select('.selection-rect').style('display', 'none');
+    } else {
+      points
+        .attr('fill-opacity', (d: any) => (ids.has(d.sql_id) ? 0.9 : 0.15))
+        .attr('stroke-opacity', (d: any) => (ids.has(d.sql_id) ? 1 : 0.3));
+    }
+  }, [selectedPoints]);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
@@ -558,7 +633,7 @@ export function ScatterPlot({
           <h3 className="text-sm font-medium text-gray-900">SQL Cluster Distribution</h3>
           <p className="text-xs text-gray-500 mt-0.5">
             X: Elapsed Time/Exec (log), Y: Buffer Gets/Exec (log), Size: Executions
-            <span className="ml-2 text-blue-500">• 드래그하여 범위 선택</span>
+            <span className="ml-2 text-blue-500">• 드래그하여 범위 선택 (빈 영역 클릭 시 해제)</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -579,11 +654,21 @@ export function ScatterPlot({
       </div>
 
       {/* 차트 영역 */}
-      <div ref={containerRef} className="p-4 relative bg-white">
+      <div ref={containerRef} className="p-4 relative bg-white select-none">
         <svg ref={svgRef}></svg>
 
+        {/* 드래그 중 선택 개수 표시 */}
+        {dragInfo && (
+          <div
+            className="absolute pointer-events-none z-40 bg-blue-600 text-white text-xs font-medium px-2 py-1 rounded shadow"
+            style={{ left: dragInfo.x, top: dragInfo.y }}
+          >
+            {dragInfo.count}개 선택 중
+          </div>
+        )}
+
         {/* 툴팁 */}
-        {hoveredPoint && (
+        {hoveredPoint && !dragInfo && (
           <div
             className="absolute bg-white border border-gray-200 rounded-lg p-3 shadow-lg pointer-events-none z-50 max-w-xs"
             style={{ left: tooltipPos.x, top: tooltipPos.y }}

@@ -51,11 +51,28 @@ export async function GET(request: NextRequest) {
     const failures: string[] = [];
 
     // 에디션 확인 (프론트엔드에서 기능 분기에 사용)
-    const edition = await getConnectionEdition(connectionId);
-    const isEnterprise = edition === 'Enterprise';
+    // edition은 PostgreSQL 조회 → 대부분 Oracle 쿼리보다 훨씬 빠름
+    // await하지 않고 Promise로 보관해 크리티컬 패스에서 제거
+    const editionPromise = getConnectionEdition(connectionId);
 
-    // ── Batch 1: 핵심 정보 (DB정보, 세션, SQL통계, 메모리, 성능통계) ──
-    const [dbInfoResult, sessionResult, sqlStatsResult, memoryResult, perfStatsResult] = await Promise.all([
+    // ── 모든 Oracle 쿼리를 하나의 Promise.all로 병렬 실행 ──
+    // pool cap(poolMax: 8)이 자연스럽게 concurrency 제한
+    // edition에 의존하는 sqlStats/topSql은 queryFn 내부에서 await
+    const [
+      dbInfoResult,
+      sessionResult,
+      sqlStatsResult,
+      memoryResult,
+      perfStatsResult,
+      ioStatsResult,
+      topWaitsResult,
+      topSqlResult,
+      tablespaceResult,
+      waitClassResult,
+      memoryDetailResult,
+      resourceLimitResult,
+      blockedSessionsResult,
+    ] = await Promise.all([
       trackedQuery('dbInfo', () => executeQuery(config, `
         SELECT instance_name, version, startup_time, status, database_status
         FROM v$instance
@@ -73,7 +90,9 @@ export async function GET(request: NextRequest) {
 
       // EE: v$sqlarea 풀스캔이 대규모 shared pool에서 타임아웃되므로 ASH+sysmetric 사용
       // SE: v$sqlarea 직접 조회 (shared pool이 작아서 빠름)
-      trackedQuery('sqlStats', () => executeQuery(config,
+      trackedQuery('sqlStats', async () => {
+        const isEnterprise = (await editionPromise) === 'Enterprise';
+        return executeQuery(config,
         isEnterprise
           ? `SELECT
               NVL((SELECT COUNT(DISTINCT sql_id) FROM v$active_session_history
@@ -98,7 +117,8 @@ export async function GET(request: NextRequest) {
             FROM v$sqlarea
             WHERE parsing_schema_name NOT IN ('SYS', 'SYSTEM')
               AND executions > 0`
-      , [], queryOpts), { rows: [{ UNIQUE_SQL_COUNT: 0, TOTAL_EXECUTIONS: 0, AVG_ELAPSED_TIME: 0, AVG_CPU_TIME: 0, AVG_BUFFER_GETS: 0 }] as any[] }, failures),
+      , [], queryOpts);
+      }, { rows: [{ UNIQUE_SQL_COUNT: 0, TOTAL_EXECUTIONS: 0, AVG_ELAPSED_TIME: 0, AVG_CPU_TIME: 0, AVG_BUFFER_GETS: 0 }] as any[] }, failures),
 
       trackedQuery('memory', () => executeQuery(config, `
         SELECT name, ROUND(value / 1024 / 1024, 2) as size_mb
@@ -118,10 +138,7 @@ export async function GET(request: NextRequest) {
           NVL((SELECT SUM(value) FROM v$sysstat WHERE name IN ('user commits', 'user rollbacks')), 0) as total_transactions
         FROM dual
       `, [], queryOpts), { rows: [{ BUFFER_CACHE_HIT_RATE: 0, TPS: 0, TOTAL_TRANSACTIONS: 0 }] as any[] }, failures),
-    ]);
 
-    // ── Batch 2: I/O, 대기이벤트, Top SQL, 테이블스페이스, Wait Class, 메모리상세, 리소스제한, 블록세션 ──
-    const [ioStatsResult, topWaitsResult, topSqlResult, tablespaceResult, waitClassResult, memoryDetailResult, resourceLimitResult, blockedSessionsResult] = await Promise.all([
       trackedQuery('ioStats', () => executeQuery(config, `
         SELECT
           NVL(MAX(CASE WHEN metric_name = 'Physical Read Total IO Requests Per Sec' THEN value END), 0) as read_iops,
@@ -156,7 +173,9 @@ export async function GET(request: NextRequest) {
 
       // EE: ASH에서 최근 활성 SQL 식별 후 v$sql 포인트 조회 (v$sqlarea 풀스캔 회피)
       // SE: v$sqlarea 직접 조회
-      trackedQuery('topSql', () => executeQuery(config,
+      trackedQuery('topSql', async () => {
+        const isEnterprise = (await editionPromise) === 'Enterprise';
+        return executeQuery(config,
         isEnterprise
           ? `SELECT
               top_sql.sql_id,
@@ -195,7 +214,8 @@ export async function GET(request: NextRequest) {
                 AND last_active_time >= SYSDATE - 1
               ORDER BY elapsed_time DESC
             ) WHERE ROWNUM <= 20`
-      , [], queryOpts), { rows: [] }, failures),
+      , [], queryOpts);
+      }, { rows: [] }, failures),
 
       // 테이블스페이스 (Oracle 12c+ 시도 → 11g 폴백)
       trackedQuery('tablespace', async () => {
@@ -275,6 +295,8 @@ export async function GET(request: NextRequest) {
       `, [], queryOpts), { rows: [] }, failures),
     ]);
 
+    // edition Promise는 이미 resolve되었을 것이나(PostgreSQL 조회), 안전하게 await
+    const edition = await editionPromise;
     const queryTime = Date.now() - startTime;
     console.log(`[Metrics API] Oracle queries completed in ${queryTime}ms (failures: ${failures.length > 0 ? failures.join(', ') : 'none'})`);
 

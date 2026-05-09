@@ -280,8 +280,6 @@ export default function MonitoringPage() {
       default: return 10
     }
   }
-  const [databases, setDatabases] = useState<DatabaseConnection[]>([])
-
   // 시간 범위 선택 관련 상태
   const [selectedTimeRange, setSelectedTimeRange] = useState<{ start: Date; end: Date } | null>(null)
   const [timeRangeSQLs, setTimeRangeSQLs] = useState<any[]>([])
@@ -326,38 +324,23 @@ export default function MonitoringPage() {
   const [showAlertDetailModal, setShowAlertDetailModal] = useState(false)
   const [selectedAlert, setSelectedAlert] = useState<any>(null)
 
-  // Fetch databases using React Query (전역 캐시 공유)
-  const { data: databasesData } = useQuery({
-    queryKey: ['oracle-connections'], // 전역 쿼리 키로 통일
-    queryFn: async () => {
-      const response = await fetch('/api/oracle/connections')
-      if (!response.ok) throw new Error('Failed to fetch databases')
-      const data = await response.json()
-      return data.map((conn: any) => ({
-        id: conn.id,
-        name: conn.name,
-        host: conn.host,
-        port: conn.port,
-        service_name: conn.service_name,
-        sid: conn.sid,
-        oracle_version: conn.oracle_version,
-        oracle_edition: conn.oracle_edition,
-        is_active: conn.is_active === true,
-        health_status: (conn.health_status || 'unknown').toLowerCase(),
-      })) || []
-    },
-    staleTime: 5 * 60 * 1000, // 5분
-    gcTime: 10 * 60 * 1000, // 10분간 가비지 컬렉션 방지
-    refetchOnWindowFocus: false, // 포커스 시 재요청 비활성화
-  })
+  // Note: 데이터베이스 연결 목록은 DatabaseSelector가 Zustand 스토어에 채워두므로
+  // 여기서 중복 fetch하지 않음. useSelectedDatabase()로 selectedConnection을 직접 참조.
 
-  // Update databases state when data changes
-  useEffect(() => {
-    if (databasesData) {
-      setDatabases(databasesData)
+  // sessionStorage에 캐시된 마지막 메트릭 응답 — 재진입 시 즉시 hydration
+  const METRICS_CACHE_KEY = selectedConnectionId ? `tms:monitoring-metrics:${selectedConnectionId}` : null
+  const metricsInitial = useMemo(() => {
+    if (typeof window === 'undefined' || !METRICS_CACHE_KEY) return undefined
+    try {
+      const raw = sessionStorage.getItem(METRICS_CACHE_KEY)
+      if (!raw) return undefined
+      const parsed = JSON.parse(raw) as { data: any; ts: number }
+      if (!parsed || typeof parsed.ts !== 'number') return undefined
+      return parsed
+    } catch {
+      return undefined
     }
-  }, [databasesData])
-
+  }, [METRICS_CACHE_KEY])
 
   // Fetch monitoring metrics using React Query with DMA cache support
   // 성능 최적화: staleTime을 늘려 초기 로딩 시 캐시 활용도 증가
@@ -377,7 +360,19 @@ export default function MonitoringPage() {
     refetchOnMount: 'always', // 마운트 시 stale 데이터면 백그라운드 갱신
     refetchOnWindowFocus: false, // 윈도우 포커스 시 재요청 비활성화
     placeholderData: (previousData) => previousData, // 이전 데이터 유지하여 깜빡임 방지
+    initialData: metricsInitial?.data,
+    initialDataUpdatedAt: metricsInitial?.ts,
   })
+
+  // 응답을 sessionStorage에 보관하여 재방문 시 즉시 복원 (connection별 키 분리)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !METRICS_CACHE_KEY || !metricsResponse) return
+    try {
+      sessionStorage.setItem(METRICS_CACHE_KEY, JSON.stringify({ data: metricsResponse, ts: Date.now() }))
+    } catch {
+      // quota exceeded 등은 무시
+    }
+  }, [metricsResponse, METRICS_CACHE_KEY])
 
   // metricsResponse에서 데이터와 경고 분리
   const metricsData = metricsResponse?.data
@@ -395,9 +390,10 @@ export default function MonitoringPage() {
       const result = await res.json()
       return result
     },
-    enabled: !!selectedConnectionId && !!metricsData, // 메트릭 로드 후 실행
-    refetchInterval: isAutoRefresh ? 60000 : false, // 60초마다 갱신
-    staleTime: 45 * 1000, // 45초로 증가
+    // Details 탭에서만 실행 — 초기 Overview 로딩을 가속
+    enabled: !!selectedConnectionId && activeTab === 'details',
+    refetchInterval: isAutoRefresh && activeTab === 'details' ? 60000 : false,
+    staleTime: 45 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
@@ -405,7 +401,7 @@ export default function MonitoringPage() {
   })
 
   // OS 레벨 리소스 메트릭 - Oracle V$OSSTAT 기반 실제 데이터 조회
-  // 메인 메트릭 로드 완료 후 지연 로드하여 초기 로딩 속도 개선
+  // Details 탭에서만 지연 로드하여 초기 로딩 속도 개선
   const { data: osStatsData, refetch: refetchOsStats } = useQuery({
     queryKey: ['monitoring-os-stats', selectedConnectionId],
     queryFn: async () => {
@@ -415,10 +411,11 @@ export default function MonitoringPage() {
       const result = await res.json()
       return result.data
     },
-    enabled: !!selectedConnectionId && !!metricsData, // 메트릭 로드 후 실행
-    refetchInterval: isAutoRefresh ? refreshInterval * 1000 : false, // 메인 갱신 주기와 동기화
-    staleTime: 30 * 1000, // 30초로 증가
-    gcTime: 2 * 60 * 1000, // 2분간 캐시 유지
+    // Details 탭에서만 실행
+    enabled: !!selectedConnectionId && activeTab === 'details',
+    refetchInterval: isAutoRefresh && activeTab === 'details' ? refreshInterval * 1000 : false,
+    staleTime: 30 * 1000,
+    gcTime: 2 * 60 * 1000,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     placeholderData: (previousData) => previousData,
@@ -978,7 +975,26 @@ export default function MonitoringPage() {
     setShowAlertDetailModal(true)
   }
 
-  const selectedDbInfo = databases.find(db => db.id === selectedConnectionId)
+  // Zustand store의 selectedConnection(카멜케이스)을 기존 JSX에서 쓰는 스네이크케이스 모양으로 정규화
+  const selectedDbInfo = useMemo<DatabaseConnection | undefined>(() => {
+    if (!selectedConnection) return undefined
+    const rawHealth = (selectedConnection.healthStatus || 'UNKNOWN').toString().toLowerCase()
+    const health = (['healthy', 'warning', 'error', 'degraded', 'unhealthy', 'unknown'].includes(rawHealth)
+      ? rawHealth
+      : 'unknown') as DatabaseConnection['health_status']
+    return {
+      id: selectedConnection.id,
+      name: selectedConnection.name,
+      host: selectedConnection.host,
+      port: selectedConnection.port,
+      service_name: selectedConnection.serviceName ?? null,
+      sid: selectedConnection.sid ?? null,
+      oracle_version: selectedConnection.oracleVersion ?? '',
+      oracle_edition: selectedConnection.oracleEdition ?? null,
+      health_status: health,
+      is_active: selectedConnection.isActive,
+    }
+  }, [selectedConnection])
 
   // 실제 연결 상태 결정: metricsData가 있으면 연결된 것으로 간주
   const isConnected = !!metricsData && !loading

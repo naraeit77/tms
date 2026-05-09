@@ -1,0 +1,10 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - img [ref=e6]
+    - paragraph [ref=e10]: Loading Narae TMS...
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e11]:
+    - progressbar
+  - alert [ref=e12]
