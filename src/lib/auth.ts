@@ -2,7 +2,7 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { db } from "@/db";
-import { users, userProfiles, userRoles } from "@/db/schema";
+import { users, userProfiles, userRoles, loginHistory } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 export const authOptions: NextAuthOptions = {
@@ -13,10 +13,19 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email", placeholder: "user@example.com" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials?.email || !credentials?.password) {
           throw new Error("이메일과 비밀번호를 입력해주세요.");
         }
+
+        // 접속 IP / User-Agent 추출 (프록시 환경 고려)
+        const headers = (req?.headers ?? {}) as Record<string, string | undefined>;
+        const forwardedFor = headers["x-forwarded-for"];
+        const ipAddress =
+          (forwardedFor ? forwardedFor.split(",")[0].trim() : undefined) ||
+          headers["x-real-ip"] ||
+          null;
+        const userAgent = headers["user-agent"] || null;
 
         // PostgreSQL에서 사용자 조회
         const [user] = await db
@@ -69,6 +78,8 @@ export const authOptions: NextAuthOptions = {
             isActive: true,
           });
 
+          await recordLogin(user.id, user.email, ipAddress, userAgent);
+
           return {
             id: user.id,
             email: user.email,
@@ -92,6 +103,9 @@ export const authOptions: NextAuthOptions = {
           .update(userProfiles)
           .set({ lastLoginAt: new Date() })
           .where(eq(userProfiles.id, user.id));
+
+        // 접속 이력 기록
+        await recordLogin(user.id, profile.email, ipAddress, userAgent);
 
         return {
           id: user.id,
@@ -146,6 +160,26 @@ export const authOptions: NextAuthOptions = {
 
   debug: process.env.NEXTAUTH_DEBUG === 'true',
 };
+
+// 접속 이력을 login_history 에 기록. 실패해도 로그인 흐름은 막지 않는다.
+async function recordLogin(
+  userId: string,
+  email: string,
+  ipAddress: string | null,
+  userAgent: string | null,
+) {
+  try {
+    await db.insert(loginHistory).values({
+      userId,
+      email,
+      ipAddress,
+      userAgent,
+      success: true,
+    });
+  } catch (err) {
+    console.error("[auth] login history 기록 실패:", err);
+  }
+}
 
 // 타입 확장
 declare module "next-auth" {

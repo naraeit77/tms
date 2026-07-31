@@ -9,6 +9,7 @@ import {
   jsonb,
   uniqueIndex,
   index,
+  inet,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -51,6 +52,22 @@ export const userProfiles = pgTable('user_profiles', {
   index('idx_user_profiles_email').on(table.email),
   index('idx_user_profiles_role').on(table.roleId),
   index('idx_user_profiles_expires_at').on(table.expiresAt),
+]);
+
+// 사용자 로그인(접속) 이력 — 접속 아이디별 접속일자·월접속 횟수 집계용.
+// 사용자 삭제 시에도 이력을 보존하도록 userId 는 SET NULL, email 은 비정규화 저장.
+export const loginHistory = pgTable('login_history', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  email: varchar('email', { length: 255 }).notNull(),
+  success: boolean('success').default(true).notNull(),
+  ipAddress: inet('ip_address'),
+  userAgent: text('user_agent'),
+  loginAt: timestamp('login_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_login_history_user').on(table.userId),
+  index('idx_login_history_email').on(table.email),
+  index('idx_login_history_login_at').on(table.loginAt),
 ]);
 
 export const userSettings = pgTable('user_settings', {

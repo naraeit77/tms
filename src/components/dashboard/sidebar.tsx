@@ -181,13 +181,22 @@ const navigation = [
   },
 ];
 
-const ADMIN_NAV = {
-  name: '사용자 관리',
-  href: '/admin/users',
-  icon: ShieldCheck,
-  badge: 'ADMIN',
-  badgeColor: 'bg-rose-500',
-} as const;
+const ADMIN_NAV = [
+  {
+    name: '사용자 관리',
+    href: '/admin/users',
+    icon: ShieldCheck,
+    badge: 'ADMIN',
+    badgeColor: 'bg-rose-500',
+  },
+  {
+    name: '접속기록',
+    href: '/admin/login-history',
+    icon: History,
+    badge: 'ADMIN',
+    badgeColor: 'bg-rose-500',
+  },
+] as const;
 
 export default function DashboardSidebar() {
   const pathname = usePathname();
@@ -240,7 +249,7 @@ export default function DashboardSidebar() {
     }
   };
 
-  const navItems = isAdmin ? [...navigation, ADMIN_NAV] : navigation;
+  const navItems = isAdmin ? [...navigation, ...ADMIN_NAV] : navigation;
 
   return (
     <aside className="w-64 bg-white border-r border-slate-200 flex-shrink-0 overflow-y-auto">
