@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { db } from '@/db';
 import { users, userProfiles, userRoles, auditLogs } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { sendWelcomeEmail } from '@/lib/emails/welcome';
 
 /**
  * POST /api/auth/signup
@@ -80,10 +81,26 @@ export async function POST(request: NextRequest) {
       details: { email, full_name: fullName },
     });
 
+    // 환영 메일 발송 — 실패해도 가입 자체는 성공으로 처리
+    let emailSent = true;
+    try {
+      await sendWelcomeEmail({
+        email: newUser.email,
+        fullName: fullName || null,
+        trialExpiresAt,
+      });
+    } catch (mailErr) {
+      emailSent = false;
+      console.error('[signup] welcome email send failed:', mailErr);
+    }
+
     return NextResponse.json(
       {
         success: true,
-        message: '회원가입이 완료되었습니다.',
+        message: emailSent
+          ? '회원가입이 완료되었습니다. 가입한 이메일로 안내 메일을 보내드렸어요.'
+          : '회원가입이 완료되었습니다. (안내 메일 발송에는 실패했어요. 잠시 후 다시 확인해 주세요.)',
+        emailSent,
         user: {
           id: newUser.id,
           email: newUser.email,
